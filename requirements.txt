@@ -1,0 +1,23 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+psycopg[binary]==3.2.3
+python-dotenv==1.0.1
+requests==2.32.3
+tenacity==9.0.0
+polyline==2.0.2
+openpyxl==3.1.5
+PyYAML==6.0.2
+ngrok==1.7.0
+staticmap==0.5.7
+Pillow==12.3.0
+# --- tests ---
+pytest==8.3.4
+httpx==0.28.1
+pypdf==6.19.0
+# --- visor de rutas (escritorio) ---
+pywebview==6.2.1        # ventana HTML/Leaflet (WebView2); instala pythonnet en Windows
+tkintermapview==1.30    # ventana Tkinter de respaldo (--tk)
+lxml==6.1.3             # visor_rutas/kmz_capas.py: lee el KMZ de la red (panel Lugares)
+# --- empaquetado ---
+pyinstaller==6.22.3     # build_visor.bat: VisorRutas.exe (visor en modo remoto) para otras computadoras

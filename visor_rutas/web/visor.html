@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visor de rutas – Fiber Budget</title>
+  <!-- Solo copias locales (lib/): funciona aunque la red bloquee los CDN. -->
+  <link rel="stylesheet" href="lib/leaflet/leaflet.css">
+  <link rel="stylesheet" href="lib/markercluster/MarkerCluster.css">
+  <link rel="stylesheet" href="lib/markercluster/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="lib/geoman/leaflet-geoman.css">
+  <link rel="stylesheet" href="lib/quill/quill.snow.css">
+  <link rel="stylesheet" href="visor.css">
+  <link rel="stylesheet" href="redes/redes.css">
+</head>
+<body>
+  <main id="mapa" aria-label="Mapa"></main>
+
+  <!-- Panel "Lugares": la red del KMZ como en Google Earth (lugares.js, visor_rutas/kmz_capas.py) -->
+  <aside id="lugares" class="lugares" aria-label="Lugares">
+    <header class="lg-cabecera">
+      <h2>Lugares</h2>
+      <button id="lg-restablecer" type="button" class="btn btn-chico" title="Solo las troncales encendidas, como al principio">Restablecer</button>
+      <button id="lg-plegar" type="button" class="btn-icono" title="Ocultar el panel" aria-label="Ocultar el panel">&#x276E;</button>
+    </header>
+    <div class="lg-busqueda">
+      <input id="lg-buscar" type="search" autocomplete="off" spellcheck="false" placeholder="Buscar carpetas y elementos…" aria-label="Buscar en Lugares">
+      <label title="Buscar también en descripciones y notas"><input id="lg-en-descripcion" type="checkbox"> descripción</label>
+    </div>
+    <label class="lg-opcion"><input id="lg-distintivos" type="checkbox" checked> Colores distintivos para troncales</label>
+    <div id="lg-estado" class="lg-estado" role="status" hidden></div>
+    <div id="lg-arbol" class="lg-arbol" role="tree">
+      <div id="lg-espaciador" class="lg-espaciador"></div>
+      <div id="lg-filas" class="lg-filas"></div>
+    </div>
+    <div id="lg-info" class="lg-info"></div>
+    <div id="lg-tirador" class="lg-tirador" title="Arrastrar para cambiar el ancho"></div>
+  </aside>
+  <button id="abrir-lugares" type="button" class="abrir-lugares" hidden title="Mostrar el panel Lugares">Lugares &#x276F;</button>
+  <ul id="lg-menu" class="menu lg-menu" hidden>
+    <li data-lg-accion="solo">Mostrar solo esta</li>
+    <li data-lg-accion="encuadrar">Encuadrar</li>
+    <li data-lg-accion="opacidad">Opacidad…</li>
+    <li data-lg-accion="etiquetas" id="lg-menu-etiquetas">Etiquetas de nombre</li>
+  </ul>
+  <div id="lg-opacidad" class="lg-opacidad" hidden>
+    <label for="lg-opacidad-valor">Opacidad <span id="lg-opacidad-texto">100%</span></label>
+    <input id="lg-opacidad-valor" type="range" min="5" max="100" step="5" value="100">
+    <button id="lg-opacidad-cerrar" type="button" class="btn btn-chico">Listo</button>
+  </div>
+  <div id="lg-foto-grande" class="lg-foto-grande" hidden title="Clic para cerrar"><img alt=""></div>
+
+  <!-- Íconos del menú (SVG en la página: sin archivos ni CDN) -->
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="i-plegar" viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></symbol>
+    <symbol id="i-mapa" viewBox="0 0 24 24"><path d="M15 5.1 9 3 3 5v16l6-2.1 6 2.1 6-2V3l-6 2.1zM9 5.4l6 2.1v11.1l-6-2.1z"/></symbol>
+    <symbol id="i-presupuesto" viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5zM7 11v2h10v-2zm0 4v2h10v-2zm0-8v2h5V7z"/></symbol>
+    <symbol id="i-proyectos" viewBox="0 0 24 24"><path d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z"/></symbol>
+    <symbol id="i-problemas" viewBox="0 0 24 24"><path d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></symbol>
+    <symbol id="i-pendientes" viewBox="0 0 24 24"><path d="M16 3h-1.2A3 3 0 0 0 9.2 3H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-4 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-1.2 14.4-3.3-3.3 1.4-1.4 1.9 1.9 4.6-4.6 1.4 1.4z"/></symbol>
+    <symbol id="i-migracion" viewBox="0 0 24 24"><path d="M4 20h16v-2H4zm1-4h3V9H5zm5.5 0h3V4h-3zM16 16h3v-5h-3z"/></symbol>
+    <symbol id="i-usuarios" viewBox="0 0 24 24"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-3.3 0-9 1.7-9 5v2h18v-2c0-3.3-5.7-5-9-5z"/></symbol>
+    <symbol id="i-backup" viewBox="0 0 24 24"><path d="M12 2C7 2 3 3.6 3 5.5v13C3 20.4 7 22 12 22s9-1.6 9-3.5v-13C21 3.6 17 2 12 2zm0 2c4.4 0 7 1.2 7 1.5S16.4 7 12 7 5 5.8 5 5.5 7.6 4 12 4zm7 14.4c-.4.5-3 1.6-7 1.6s-6.6-1.1-7-1.6v-2.5C6.6 16.6 9.2 17 12 17s5.4-.4 7-1.1zm0-5c-.4.5-3 1.6-7 1.6s-6.6-1.1-7-1.6v-2.6C6.6 11.6 9.2 12 12 12s5.4-.4 7-1.2z"/></symbol>
+    <symbol id="i-config" viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.5 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 0 0 1.7 1L11 21h4l.4-2.9a7.6 7.6 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></symbol>
+    <symbol id="i-lapiz" viewBox="0 0 24 24"><path d="M3 17.3V21h3.7L17.8 9.9l-3.7-3.7zM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.7 3.7z"/></symbol>
+    <symbol id="i-reloj" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10.4 3.5 2.1-.8 1.3L11 13V7h2z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2zm0-8h-2V7h2z"/></symbol>
+    <symbol id="i-duplicar" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11z"/></symbol>
+    <symbol id="i-papelera" viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></symbol>
+    <symbol id="i-restaurar" viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></symbol>
+    <symbol id="i-diagrama" viewBox="0 0 24 24"><path d="M2 9h6v6H2zm14-6h6v6h-6zm0 12h6v6h-6zM8 11h3V6h5v2h-3v8h3v2h-5v-5H8z"/></symbol>
+    <symbol id="i-lupa" viewBox="0 0 24 24"><path d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></symbol>
+  </svg>
+
+  <!-- Menú lateral (menu.js): con texto o solo íconos -->
+  <nav id="menu-lateral" class="menu-lateral" aria-label="Vistas del visor">
+    <button id="menu-plegar" type="button" class="menu-plegar" title="Contraer el menú" aria-label="Contraer el menú">
+      <svg width="18" height="18" fill="currentColor"><use href="#i-plegar"/></svg></button>
+    <div class="menu-items">
+      <button type="button" class="menu-item activo" data-vista="mapa" title="Mapa: ruta, capas y presupuesto aproximado">
+        <svg><use href="#i-mapa"/></svg><span class="menu-texto">Mapa</span></button>
+      <button type="button" class="menu-item" data-vista="presupuesto" title="Presupuestos: generar un presupuesto completo">
+        <svg><use href="#i-presupuesto"/></svg><span class="menu-texto">Presupuestos</span></button>
+      <div class="menu-separador"></div>
+      <button type="button" class="menu-item" data-vista="proyectos" data-redes="1" title="Proyectos de red">
+        <svg><use href="#i-proyectos"/></svg><span class="menu-texto">Proyectos</span></button>
+      <button type="button" class="menu-item" data-vista="problemas" data-redes="1" title="Problemas">
+        <svg><use href="#i-problemas"/></svg><span class="menu-texto">Problemas</span></button>
+      <button type="button" class="menu-item" data-vista="pendientes" data-redes="1" title="Pendientes">
+        <svg><use href="#i-pendientes"/></svg><span class="menu-texto">Pendientes</span></button>
+      <button type="button" class="menu-item" data-vista="migracion" data-redes="1" title="Red existente (Visio): avance y cola de corrección">
+        <svg><use href="#i-migracion"/></svg><span class="menu-texto">Red existente</span></button>
+      <button type="button" class="menu-item" data-vista="usuarios" data-redes="1" title="Usuarios del módulo de redes">
+        <svg><use href="#i-usuarios"/></svg><span class="menu-texto">Usuarios</span></button>
+      <button type="button" class="menu-item" data-vista="backup" data-redes="1" title="Backup">
+        <svg><use href="#i-backup"/></svg><span class="menu-texto">Backup</span></button>
+      <div class="menu-separador"></div>
+      <button type="button" class="menu-item" data-vista="configuracion" title="Configuración: modo local o remoto, servidor y clave">
+        <svg><use href="#i-config"/></svg><span class="menu-texto">Configuración</span></button>
+    </div>
+    <div class="menu-pie">
+      <div id="menu-usuario" class="menu-usuario" title="Usuario del módulo de redes">
+        <svg><use href="#i-usuarios"/></svg><span class="menu-pie-texto">Identificando…</span></div>
+    </div>
+  </nav>
+
+  <!-- Configuración: modo local / remoto, servidor y clave (config_visor.py) -->
+  <div id="modal-config" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="config-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera">
+        <h2 id="config-titulo">Configuración del visor</h2>
+        <button id="config-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="config-cuerpo">
+        <fieldset id="config-modos" class="config-modos">
+          <legend>Modo</legend>
+          <label><input type="radio" name="config-modo" value="local">
+            <span><b>Local</b> – calcula en esta PC, con sus bases de datos y Google.</span></label>
+          <label><input type="radio" name="config-modo" value="remoto">
+            <span><b>Remoto</b> – usa el servidor de presupuestos por internet (sin bases en esta PC).</span></label>
+        </fieldset>
+        <div class="vp-campo"><label for="config-url">URL del servidor</label>
+          <input id="config-url" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx.ngrok-free.dev"></div>
+        <div class="vp-campo"><label for="config-clave">Clave del visor (X-Visor-Key)</label>
+          <input id="config-clave" type="password" autocomplete="off" spellcheck="false"></div>
+        <div id="config-estado" class="vp-estado" role="status"></div>
+        <div class="config-acciones">
+          <button id="config-probar" type="button" class="btn">Probar conexión</button>
+          <button id="config-guardar" type="button" class="btn btn-primario">Guardar</button>
+        </div>
+        <p class="config-nota">La clave se guarda cifrada para su usuario de Windows en
+          <span id="config-archivo">%APPDATA%\VisorRutas\config.json</span>. Pida la URL y su clave a quien administra el servidor.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vista "Generar presupuesto": presupuesto completo, como el de n8n (no se envía) -->
+  <!-- Editor de red del proyecto sobre el mapa principal (redes/editor_mapa.js, fase 3) -->
+  <div id="editor-red" class="editor-red" hidden>
+    <div class="er-titulo" title="Proyecto abierto en el mapa">
+      <span id="er-proyecto"></span><span id="er-cambios" class="er-cambios"></span>
+    </div>
+    <div id="er-paleta" class="er-paleta" role="toolbar" aria-label="Elementos de red">
+      <button type="button" class="er-herr" draggable="true" data-er-nuevo="poste" title="Poste: arrástrelo al mapa (o clic y luego clic en el mapa)">
+        <span class="er-ico er-ico-poste"></span>Poste</button>
+      <button type="button" class="er-herr" draggable="true" data-er-nuevo="mufa" title="Mufa: arrástrela al mapa">
+        <span class="er-ico er-ico-mufa"></span>Mufa</button>
+      <button type="button" class="er-herr" draggable="true" data-er-nuevo="cliente" title="Casa de cliente: arrástrela al mapa">
+        <span class="er-ico er-ico-cliente"></span>Cliente</button>
+      <button type="button" class="er-herr" draggable="true" data-er-nuevo="nodo" title="Nodo / OLT: arrástrelo al mapa">
+        <span class="er-ico er-ico-nodo"></span>Nodo</button>
+      <button type="button" class="er-herr" id="er-cable" title="Cable: clic en el elemento de inicio, puntos intermedios y el elemento final">
+        <span class="er-ico er-ico-cable"></span>Cable</button>
+      <button type="button" class="er-herr" id="er-nota" title="Nota con formato: clic en el mapa o sobre un elemento">
+        <span class="er-ico er-ico-nota">T</span>Nota</button>
+    </div>
+    <div class="er-acciones">
+      <button id="er-deshacer" type="button" class="btn-icono" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button>
+      <button id="er-rehacer" type="button" class="btn-icono" title="Rehacer (Ctrl+Y)" aria-label="Rehacer">↷</button>
+      <select id="er-problemas" class="er-select" title="Íconos de alerta de los problemas del proyecto en el mapa" aria-label="Problemas en el mapa">
+        <option value="activos">⚠ Problemas abiertos</option><option value="activos_alta">⚠ Abiertos de severidad alta y crítica</option>
+        <option value="todos">⚠ Todos los problemas</option><option value="ninguno">Ocultar problemas</option></select>
+      <button id="er-diagrama" type="button" class="btn btn-chico" title="Diagrama lógico de red del proyecto">Diagrama lógico</button>
+      <button id="er-guardar" type="button" class="btn btn-primario btn-chico" title="Guardar (Ctrl+S)">Guardar</button>
+      <button id="er-cerrar" type="button" class="btn btn-chico">Cerrar proyecto</button>
+    </div>
+  </div>
+  <div id="er-ayuda" class="er-ayuda" hidden></div>
+  <div id="er-inspector" class="er-inspector" hidden></div>
+
+  <div id="modal-er-elemento" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="er-el-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="er-el-titulo">Elemento</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-er-elemento" aria-label="Cerrar">✕</button></header>
+      <form id="er-el-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-campo"><label for="er-el-nombre">Nombre *</label><input id="er-el-nombre" maxlength="160"><small></small></div>
+        <div class="vp-campo" id="er-el-subtipo-campo"><label for="er-el-subtipo">Tipo</label><select id="er-el-subtipo"></select></div>
+        <div class="vp-fila" id="er-el-mufa">
+          <div class="vp-campo"><label for="er-el-capacidad">Capacidad (hilos)</label><input id="er-el-capacidad" type="number" min="1" max="1000"></div>
+          <div class="vp-campo"><label for="er-el-bandejas">Bandejas</label><input id="er-el-bandejas" type="number" min="0" max="100"></div>
+        </div>
+        <div class="vp-fila" id="er-el-cliente">
+          <div class="vp-campo"><label for="er-el-codigo">Código de cliente</label><input id="er-el-codigo" maxlength="10" placeholder="C#####"></div>
+          <div class="vp-campo"><label for="er-el-id_servicio">ID de servicio</label><input id="er-el-id_servicio" maxlength="40"></div>
+        </div>
+        <div class="vp-campo"><label for="er-el-descripcion">Descripción</label><textarea id="er-el-descripcion" rows="2" maxlength="2000"></textarea></div>
+        <div class="config-acciones"><span id="er-el-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-er-cerrar="modal-er-elemento">Cancelar</button>
+          <button type="submit" class="btn btn-primario">Aceptar</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-er-cable" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="er-ca-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="er-ca-titulo">Cable de fibra</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-er-cable" aria-label="Cerrar">✕</button></header>
+      <form id="er-ca-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-campo"><label for="er-ca-nombre">Nombre *</label><input id="er-ca-nombre" maxlength="160"><small></small></div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="er-ca-clase">Clase</label><select id="er-ca-clase">
+            <option value="troncal">Troncal</option><option value="distribucion">Distribución</option><option value="acometida">Acometida</option></select></div>
+          <div class="vp-campo"><label for="er-ca-tipo">Tipo</label><select id="er-ca-tipo"><option>ADSS</option><option>FLAT</option></select></div>
+          <div class="vp-campo"><label for="er-ca-color">Color en el mapa</label><input id="er-ca-color" type="color" value="#1f6feb"></div>
+        </div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="er-ca-hilos">Hilos</label><select id="er-ca-hilos">
+            <option>12</option><option>24</option><option>48</option><option>72</option><option>96</option><option>144</option>
+            <option>2</option><option>4</option><option>6</option><option>8</option><option value="">Desconocido</option></select></div>
+          <div class="vp-campo"><label for="er-ca-buffer">Hilos por buffer</label><select id="er-ca-buffer"><option>12</option><option>8</option>
+            <option>6</option><option>4</option><option>2</option></select></div>
+          <div class="vp-campo"><label for="er-ca-cruces">Cruces de calle</label><input id="er-ca-cruces" type="number" min="0" max="500" value="0"></div>
+        </div>
+        <div class="vp-campo"><label for="er-ca-descripcion">Descripción</label><textarea id="er-ca-descripcion" rows="2" maxlength="2000"></textarea></div>
+        <div class="config-acciones"><span id="er-ca-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-er-cerrar="modal-er-cable">Cancelar</button>
+          <button type="submit" id="er-ca-aceptar" class="btn btn-primario">Dibujar en el mapa</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-er-nota" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="er-no-titulo">
+    <div class="modal-caja config-caja er-nota-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="er-no-titulo">Nota</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-er-nota" aria-label="Cerrar">✕</button></header>
+      <div class="config-cuerpo">
+        <div id="er-quill" class="er-quill"></div>
+        <div class="config-acciones"><span id="er-no-estado" class="vp-estado"></span>
+          <label class="er-no-ancho">Ancho <input id="er-no-ancho" type="number" min="80" max="1200" step="10" value="220"> px</label>
+          <button type="button" class="btn" data-er-cerrar="modal-er-nota">Cancelar</button>
+          <button type="button" id="er-no-aceptar" class="btn btn-primario">Aceptar</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Editor de mufa: hilos, splitters, conectores y conexiones (redes/editor_mufa.js, fase 4) -->
+  <div id="modal-mufa" class="modal mu-modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-titulo">
+    <div class="modal-caja mu-caja">
+      <header class="mu-cabecera">
+        <nav id="mu-migas" class="mu-migas" aria-label="Ruta de navegación"></nav>
+        <span id="mu-cambios" class="er-cambios"></span>
+        <label class="mu-nombre">Nombre <input id="mu-nombre" readonly></label>
+        <button id="mu-max" type="button" class="btn-icono" title="Maximizar / restaurar" aria-label="Maximizar">⛶</button>
+        <button id="mu-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="mu-barra" role="toolbar" aria-label="Herramientas de la mufa">
+        <div class="mu-grupo mu-edicion">
+          <select id="mu-tipo-splitter" title="Tipo de splitter">
+            <option value="2">1x2</option><option value="4">1x4</option><option value="8" selected>1x8</option>
+            <option value="16">1x16</option><option value="32">1x32</option>
+            <option value="2:70/30">1x2 70/30</option><option value="2:80/20">1x2 80/20</option><option value="2:90/10">1x2 90/10</option>
+          </select>
+          <button id="mu-splitter" type="button" class="btn btn-chico">＋ Splitter</button>
+          <button id="mu-conector" type="button" class="btn btn-chico">＋ Conector</button>
+          <button id="mu-nota" type="button" class="btn btn-chico">＋ Nota</button>
+        </div>
+        <div class="mu-grupo">
+          <label class="mu-estado-lbl">Estado del hilo
+            <select id="mu-estado" disabled>
+              <option value="activo">Activo</option><option value="oscura">Fibra oscura</option><option value="baja">Cliente de baja</option>
+              <option value="reservado">Reservado</option><option value="danado">Dañado</option>
+            </select></label>
+        </div>
+        <div class="mu-grupo mu-edicion">
+          <button type="button" class="btn-icono" data-mu-alinear="izquierda" title="Alinear a la izquierda (Ctrl+clic para elegir varios)">⇤</button>
+          <button type="button" class="btn-icono" data-mu-alinear="derecha" title="Alinear a la derecha">⇥</button>
+          <button type="button" class="btn-icono" data-mu-alinear="arriba" title="Alinear arriba">⤒</button>
+          <button type="button" class="btn-icono" data-mu-alinear="abajo" title="Alinear abajo">⤓</button>
+          <button type="button" class="btn-icono" data-mu-alinear="vertical" title="Distribuir en vertical">☰</button>
+          <button type="button" class="btn-icono" data-mu-alinear="horizontal" title="Distribuir en horizontal">⋯</button>
+          <button id="mu-ordenar" type="button" class="btn btn-chico" title="Volver a la distribución automática">Ordenar</button>
+        </div>
+        <div class="mu-grupo mu-edicion">
+          <button id="mu-eliminar" type="button" class="btn btn-chico" title="Eliminar lo seleccionado (Supr)">Eliminar</button>
+          <button id="mu-deshacer" type="button" class="btn-icono" title="Deshacer (Ctrl+Z)">↶</button>
+          <button id="mu-rehacer" type="button" class="btn-icono" title="Rehacer (Ctrl+Y)">↷</button>
+        </div>
+        <div class="mu-grupo">
+          <button id="mu-alejar" type="button" class="btn-icono" title="Alejar">−</button>
+          <button id="mu-acercar" type="button" class="btn-icono" title="Acercar">＋</button>
+          <button id="mu-ajustar" type="button" class="btn btn-chico" title="Ver todo">Ajustar</button>
+          <button id="mu-trazar" type="button" class="btn btn-chico" disabled title="Seguir el hilo seleccionado de punta a punta (T)">Trazar hilo</button>
+          <button id="mu-diagrama" type="button" class="btn btn-chico" title="Diagrama lógico de red desde esta mufa">Diagrama lógico</button>
+          <button id="mu-clientes" type="button" class="btn btn-chico" title="Clientes de esta mufa sin puerto de splitter conocido (del Visio)" disabled>Clientes</button>
+          <button id="mu-vista" type="button" class="btn btn-chico" title="Cambiar entre la vista de cables y la de bandejas">Ver bandejas</button>
+          <button id="mu-red" type="button" class="btn btn-chico" title="Esta mufa y sus vecinas a 1 o 2 saltos; Enter o doble clic entra a otra">Red de mufas</button>
+        </div>
+        <div class="mu-grupo">
+          <button id="mu-visio" type="button" class="btn btn-chico" title="El diagrama Visio de esta mufa al lado, para comparar">Ver Visio original</button>
+          <button id="mu-validar" type="button" class="btn btn-chico" hidden>Marcar como validada</button>
+          <label class="mu-colores">Color <select id="mu-colores" title="Color de las conexiones">
+            <option value="hilo">del hilo</option><option value="fuente">por fuente del dato</option></select></label>
+        </div>
+      </div>
+      <div id="mu-resumen" class="mu-resumen" aria-live="polite"></div>
+      <div id="mu-lienzo" class="mu-lienzo">
+        <div id="mu-bandejas" class="mu-bandejas" hidden></div>
+        <div id="mu-red-vista" class="mu-red-vista" hidden></div>
+        <div id="mu-konva" class="mu-konva"></div>
+        <div id="mu-notas" class="mu-notas"></div>
+        <div id="mu-tooltip" class="mu-tooltip" hidden></div>
+      </div>
+      <footer class="mu-pie">
+        <span class="nota">Arrastre desde un hilo (círculo) hasta otro hilo o un puerto de splitter / conector para conectar ·
+          clic en una línea y Supr para quitarla · doble clic (o Enter) en «→ destino» abre esa mufa · clic derecho en un hilo: estado</span>
+        <button type="button" class="btn btn-chico" disabled title="Próximamente">Código QR</button>
+        <button id="mu-aplicar" type="button" class="btn">Aplicar</button>
+        <button id="mu-guardar" type="button" class="btn btn-primario">Guardar / Cerrar</button>
+      </footer>
+    </div>
+  </div>
+  <ul id="mu-menu" class="menu mu-menu" hidden></ul>
+
+  <!-- Diagrama lógico de red (redes/diagrama.js, fase 6) -->
+  <div id="modal-dg" class="modal dg-modal" hidden role="dialog" aria-modal="true" aria-labelledby="dg-titulo">
+    <div class="modal-caja dg-caja">
+      <header class="mu-cabecera">
+        <h2 id="dg-titulo" class="dg-titulo">Diagrama lógico de red</h2>
+        <button id="dg-max" type="button" class="btn-icono" title="Maximizar / restaurar" aria-label="Maximizar">⛶</button>
+        <button id="dg-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <form id="dg-form" class="dg-form" autocomplete="off" novalidate>
+        <label class="dg-campo dg-ancho">Título <input id="dg-f-titulo" maxlength="120" placeholder="Se llena solo al elegir el inicio"></label>
+        <label class="dg-campo dg-ancho">Elemento de inicio <select id="dg-f-inicio"></select></label>
+        <label class="dg-campo">Dirección <select id="dg-f-direccion"><option value="derecha">Derecha</option><option value="izquierda">Izquierda</option></select></label>
+        <label class="dg-check"><input id="dg-f-clientes" type="checkbox"> Incluir inmuebles / clientes</label>
+        <button type="submit" class="btn btn-chico">Generar</button>
+        <button id="dg-guardar" type="button" class="btn btn-primario btn-chico" title="Guardar en la lista de diagramas del proyecto">Guardar</button>
+        <button id="dg-nuevo" type="button" class="btn btn-chico" title="Limpiar el formulario para un diagrama nuevo">Nuevo</button>
+        <span id="dg-estado" class="vp-estado"></span>
+      </form>
+      <div class="dg-tabla-caja">
+        <table class="dg-tabla">
+          <thead><tr><th>#</th><th>Título</th><th>Elemento</th><th>Caja</th><th>Dirección</th><th>Incluir clientes</th><th></th></tr></thead>
+          <tbody id="dg-lista"></tbody>
+        </table>
+      </div>
+      <div class="mu-barra dg-barra" role="toolbar" aria-label="Diagrama">
+        <span id="dg-info" class="nota"></span>
+        <div class="mu-grupo">
+          <button id="dg-alejar" type="button" class="btn-icono" title="Alejar">−</button>
+          <button id="dg-acercar" type="button" class="btn-icono" title="Acercar">＋</button>
+          <button id="dg-ajustar" type="button" class="btn btn-chico" title="Ver todo">Ajustar</button>
+        </div>
+        <div class="mu-grupo">
+          <button id="dg-png" type="button" class="btn btn-chico" disabled>Exportar PNG</button>
+          <button id="dg-pdf" type="button" class="btn btn-chico" disabled>Exportar PDF</button>
+        </div>
+      </div>
+      <div id="dg-lienzo" class="mu-lienzo dg-lienzo"><div id="dg-konva" class="mu-konva"></div>
+        <div id="dg-tooltip" class="mu-tooltip" hidden></div>
+        <p id="dg-vacio" class="dg-vacio">Elija el elemento de inicio y presione <b>Generar</b>, o abra un diagrama de la lista.</p></div>
+    </div>
+  </div>
+
+  <!-- Trazado de hilo de punta a punta (redes/trazado.js, fase 5) -->
+  <aside id="panel-trazado" class="panel-trazado" hidden aria-labelledby="tz-titulo">
+    <header class="tz-cabecera">
+      <h2 id="tz-titulo">Trazado de hilo</h2>
+      <button id="tz-mapa" type="button" class="btn btn-chico" title="Resaltar el recorrido en el mapa del proyecto">Ver en el mapa</button>
+      <button id="tz-cerrar" type="button" class="btn-icono" title="Cerrar el trazado" aria-label="Cerrar">✕</button>
+    </header>
+    <div id="tz-cuerpo" class="tz-cuerpo"></div>
+  </aside>
+
+  <div id="modal-mu-modelo" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-mo-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-mo-titulo">Modelo de la mufa</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-mu-modelo" aria-label="Cerrar">✕</button></header>
+      <form id="mu-mo-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="mu-mo-capacidad">Capacidad</label><select id="mu-mo-capacidad">
+            <option value="48">48 hilos (2 bandejas)</option><option value="96">96 hilos (4 bandejas)</option></select></div>
+          <div class="vp-campo"><label for="mu-mo-formato">Formato</label><select id="mu-mo-formato">
+            <option value="desconocido">Desconocido</option><option value="domo">Domo (vertical)</option><option value="horizontal">Cierre horizontal</option></select></div>
+        </div>
+        <p id="mu-mo-motivo" class="nota"></p>
+        <div class="config-acciones"><span id="mu-mo-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-er-cerrar="modal-mu-modelo">Cancelar</button>
+          <button type="submit" class="btn btn-primario">Guardar modelo</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-mu-cable" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-cb-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-cb-titulo">Configuración del cable</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-mu-cable" aria-label="Cerrar">✕</button></header>
+      <form id="mu-cb-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="mu-cb-hilos">Hilos</label><select id="mu-cb-hilos">
+            <option value="">Desconocido</option><option>2</option><option>4</option><option>6</option><option>8</option><option>12</option>
+            <option>24</option><option>48</option><option>72</option><option>96</option><option>144</option></select></div>
+          <div class="vp-campo"><label for="mu-cb-buffer">Hilos por buffer</label><select id="mu-cb-buffer">
+            <option>2</option><option>4</option><option>6</option><option>8</option><option>12</option></select></div>
+        </div>
+        <p id="mu-cb-config" class="nota"></p>
+        <p class="nota">Los hilos conservan su número, así que sus conexiones se mantienen; cambian el buffer y el color.</p>
+        <div class="config-acciones"><span id="mu-cb-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-er-cerrar="modal-mu-cable">Cancelar</button>
+          <button type="submit" class="btn btn-primario">Guardar</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-mu-clientes" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-cl-titulo">
+    <div class="modal-caja config-caja mu-cl-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-cl-titulo">Clientes de la mufa</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-mu-clientes" aria-label="Cerrar">✕</button></header>
+      <div class="config-cuerpo">
+        <p class="nota">Listados en el Visio en esta mufa, sin puerto de splitter conocido (fusionados directo, en sangría…). Los que tienen
+          puerto se ven junto a la salida del splitter.</p>
+        <div class="mu-cl-tabla"><table class="dg-tabla">
+          <thead><tr><th>Código</th><th>Nombre</th><th>ID servicio</th><th>En el mapa</th></tr></thead>
+          <tbody id="mu-cl-lista"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-mu-objeto" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-ob-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-ob-titulo">Splitter</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-mu-objeto" aria-label="Cerrar">✕</button></header>
+      <form id="mu-ob-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-campo"><label for="mu-ob-nombre">Nombre *</label><input id="mu-ob-nombre" maxlength="120"><small></small></div>
+        <div class="vp-fila" id="mu-ob-splitter">
+          <div class="vp-campo"><label for="mu-ob-salidas">Salidas</label><select id="mu-ob-salidas">
+            <option>2</option><option>4</option><option>8</option><option>16</option><option>32</option></select></div>
+          <div class="vp-campo"><label for="mu-ob-relacion">Relación (1x2)</label><select id="mu-ob-relacion">
+            <option value="">Balanceado</option><option>70/30</option><option>80/20</option><option>90/10</option><option>60/40</option></select></div>
+          <div class="vp-campo"><label for="mu-ob-conector">Conector</label><input id="mu-ob-conector" maxlength="20" placeholder="RC, APC…"></div>
+        </div>
+        <div class="vp-campo" id="mu-ob-tipo-campo"><label for="mu-ob-tipo">Tipo de conector</label><input id="mu-ob-tipo" maxlength="40" placeholder="SC/APC"></div>
+        <div class="config-acciones"><span id="mu-ob-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-er-cerrar="modal-mu-objeto">Cancelar</button>
+          <button type="submit" class="btn btn-primario">Aceptar</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-mu-nota" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-no-titulo">
+    <div class="modal-caja config-caja er-nota-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-no-titulo">Nota en la mufa</h2>
+        <button type="button" class="btn-icono" data-er-cerrar="modal-mu-nota" aria-label="Cerrar">✕</button></header>
+      <div class="config-cuerpo">
+        <div id="mu-quill" class="er-quill"></div>
+        <div class="config-acciones"><span id="mu-no-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-er-cerrar="modal-mu-nota">Cancelar</button>
+          <button type="button" id="mu-no-aceptar" class="btn btn-primario">Aceptar</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vista "Proyectos" del módulo de redes (redes/proyectos.js) -->
+  <section id="vista-proyectos" class="vista vista-modulo" data-vista="proyectos" hidden aria-label="Proyectos">
+    <header class="vp-cabecera">
+      <h1>Proyectos</h1>
+      <div class="pr-buscar"><svg><use href="#i-lupa"/></svg>
+        <input id="pr-filtro" type="search" autocomplete="off" placeholder="Filtrar proyectos" aria-label="Filtrar proyectos"></div>
+      <label id="pr-eliminados-lbl" class="pr-check" hidden><input id="pr-eliminados" type="checkbox"> Ver eliminados</label>
+      <span class="vp-nota"></span>
+      <button id="pr-recargar" type="button" class="btn">Recargar</button>
+    </header>
+    <div id="pr-estado" class="vp-estado vm-estado" role="status"></div>
+    <div class="vm-cuerpo"><div id="pr-lista" class="pr-lista"></div></div>
+    <button id="pr-crear" type="button" class="btn btn-primario pr-crear" hidden>+ Crear proyecto</button>
+  </section>
+
+  <!-- Datos del proyecto (crear / editar) -->
+  <div id="modal-proyecto" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="pr-modal-titulo">
+    <div class="modal-caja pr-caja">
+      <header class="modal-cabecera pr-cabecera">
+        <h2 id="pr-modal-titulo">Datos del proyecto</h2>
+        <button id="pr-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <form id="pr-form" class="pr-cuerpo" autocomplete="off" novalidate>
+        <div class="pr-arriba">
+          <div class="pr-imagen">
+            <div id="pr-imagen-vista" class="pr-imagen-vista"></div>
+            <input id="pr-imagen-archivo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <button id="pr-imagen-elegir" type="button" class="btn btn-primario btn-chico">Seleccionar archivo</button>
+            <button id="pr-imagen-quitar" type="button" class="btn btn-chico">Eliminar la imagen</button>
+            <div class="vp-campo"><small id="pr-imagen-error"></small></div>
+          </div>
+          <div class="pr-campos">
+            <div class="vp-fila">
+              <div class="vp-campo"><label for="pr-nombre">Nombre *</label><input id="pr-nombre" maxlength="160" placeholder="Nombre del proyecto"><small></small></div>
+              <div class="vp-campo pr-codigo"><label for="pr-codigo">Identificador *</label><input id="pr-codigo" maxlength="30" placeholder="RLR-01"><small></small></div>
+            </div>
+            <div class="vp-campo"><label for="pr-usuario-agregar">Usuarios con acceso</label>
+              <div id="pr-usuarios" class="pr-chips"></div>
+              <select id="pr-usuario-agregar"><option value="">Agregar usuario…</option></select><small id="pr-usuarios-error"></small></div>
+            <div class="vp-campo"><label for="pr-padre_id">Proyecto principal</label>
+              <select id="pr-padre_id"><option value="">(ninguno)</option></select><small></small></div>
+            <div class="vp-campo"><label for="pr-descripcion">Descripción</label>
+              <textarea id="pr-descripcion" rows="2" maxlength="4000"></textarea><small></small></div>
+          </div>
+        </div>
+        <div class="pr-direccion">
+          <input id="pr-direccion" type="search" autocomplete="off" placeholder="Buscar por dirección o pegar una coordenada (12.13, -86.25)"
+            title="Ubica el proyecto. Con ＋ Agregar en el mapa activo, agrega un cliente en ese lugar.">
+          <button id="pr-buscar" type="button" class="btn" title="Buscar"><svg><use href="#i-lupa"/></svg></button>
+          <ul id="pr-resultados" class="pr-resultados" hidden></ul>
+        </div>
+        <div class="pr-mapa-campo"><div id="pr-mapa" class="pr-mapa"></div>
+          <small id="pr-ubicacion-error" class="pr-error"></small><small id="pr-area-error" class="pr-error"></small>
+          <div class="pr-leyenda"><span class="pr-ley-proyecto"></span> Ubicación del proyecto (clic en el mapa o dirección)
+            <span class="pr-ley-cliente"></span> Clientes (arrastre para ajustar)</div></div>
+        <!-- Clientes del proyecto: varios por proyecto (elementos tipo "cliente") -->
+        <section class="pr-clientes" aria-label="Clientes del proyecto">
+          <div class="pr-clientes-cabecera">
+            <b>Clientes del proyecto <span id="pr-clientes-n" class="nota"></span></b>
+            <button id="pr-cliente-mapa" type="button" class="btn btn-chico" title="Cada clic en el mapa agrega un cliente">＋ Agregar en el mapa</button>
+            <button id="pr-cliente-pegar" type="button" class="btn btn-chico" title="Varias coordenadas a la vez, una por línea">Pegar coordenadas</button>
+          </div>
+          <div id="pr-pegar" class="pr-pegar" hidden>
+            <textarea id="pr-pegar-texto" rows="4" spellcheck="false"
+              placeholder="Una por línea:  latitud, longitud[, nombre][, código]&#10;12.1051, -86.2951, Casa Pérez, C12345&#10;12.1062, -86.2940"></textarea>
+            <div class="pr-pegar-acciones">
+              <button id="pr-pegar-agregar" type="button" class="btn btn-chico btn-primario">Agregar</button>
+              <button id="pr-pegar-cancelar" type="button" class="btn btn-chico">Cancelar</button>
+              <span id="pr-pegar-estado" class="nota"></span>
+            </div>
+          </div>
+          <small id="pr-clientes-error" class="pr-error"></small>
+          <table class="pr-tabla-clientes">
+            <thead><tr><th>#</th><th>Nombre *</th><th>Código</th><th>ID de servicio</th><th>Coordenada (lat, lon)</th><th></th></tr></thead>
+            <tbody id="pr-clientes-filas"></tbody>
+          </table>
+        </section>
+        <div class="pr-pie">
+          <button id="pr-area" type="button" class="btn">Diseñar área</button>
+          <button id="pr-area-borrar" type="button" class="btn" hidden>Borrar área</button>
+          <span id="pr-form-estado" class="vp-estado pr-form-estado" role="status"></span>
+          <button id="pr-cancelar" type="button" class="btn">Cancelar</button>
+          <button id="pr-guardar" type="submit" class="btn btn-primario">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Información del proyecto (solo lectura) -->
+  <div id="modal-pr-info" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="pr-info-titulo">
+    <div class="modal-caja pr-caja pr-info-caja">
+      <header class="modal-cabecera pr-cabecera">
+        <h2 id="pr-info-titulo">Proyecto</h2>
+        <button id="pr-info-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="pr-info-cuerpo">
+        <div id="pr-info-datos" class="pr-info-datos"></div>
+        <div id="pr-info-mapa" class="pr-mapa"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vista "Problemas" (redes/problemas.js, fase 7.1) -->
+  <section id="vista-problemas" class="vista vista-modulo" data-vista="problemas" hidden aria-label="Problemas">
+    <header class="vp-cabecera">
+      <h1>Problemas</h1>
+      <div class="vm-filtros">
+        <select id="pb-f-proyecto" aria-label="Proyecto"><option value="">Todos los proyectos</option></select>
+        <select id="pb-f-estado" aria-label="Estado"><option value="activos">Abiertos y en proceso</option><option value="">Todos los estados</option>
+          <option value="abierto">Abiertos</option><option value="en_proceso">En proceso</option><option value="cerrado">Cerrados</option></select>
+        <select id="pb-f-severidad" aria-label="Severidad"><option value="">Toda severidad</option><option value="alta_o_mas">Alta y crítica</option>
+          <option value="critica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select>
+        <div class="pr-buscar"><svg><use href="#i-lupa"/></svg><input id="pb-f-texto" type="search" autocomplete="off" placeholder="Buscar" aria-label="Buscar"></div>
+      </div>
+      <button id="pb-recargar" type="button" class="btn">Recargar</button>
+      <button id="pb-nuevo" type="button" class="btn btn-primario">+ Reportar problema</button>
+    </header>
+    <div id="pb-estado" class="vp-estado vm-estado" role="status"></div>
+    <div class="vm-cuerpo">
+      <table class="vm-tabla">
+        <thead><tr><th></th><th>Problema</th><th>Proyecto</th><th>Elemento / cable</th><th>Severidad</th><th>Estado</th><th>Reportado</th><th></th></tr></thead>
+        <tbody id="pb-filas"></tbody>
+      </table>
+      <p class="vm-ayuda">Cada problema está ligado a un elemento (mufa, poste, cliente, nodo) o a un cable de un proyecto, y se ve en el
+        mapa del proyecto como un ícono de alerta del color de su severidad (filtro en la franja del proyecto). Cualquier usuario con
+        acceso al proyecto puede reportar uno; lo cambian quien edita el proyecto o quien lo reportó.</p>
+    </div>
+  </section>
+
+  <div id="modal-problema" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="pb-modal-titulo">
+    <div class="modal-caja config-caja tk-caja">
+      <header class="modal-cabecera"><h2 id="pb-modal-titulo">Problema</h2>
+        <button type="button" class="btn-icono" data-tk-cerrar="modal-problema" title="Cerrar (Esc)" aria-label="Cerrar">✕</button></header>
+      <form id="pb-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-campo"><label for="pb-titulo">Título *</label><input id="pb-titulo" maxlength="160"><small></small></div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="pb-proyecto">Proyecto *</label><select id="pb-proyecto"></select><small></small></div>
+          <div class="vp-campo"><label for="pb-vinculo">Elemento o cable *</label><select id="pb-vinculo"></select><small></small></div>
+        </div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="pb-severidad">Severidad</label><select id="pb-severidad"><option value="baja">Baja</option>
+            <option value="media" selected>Media</option><option value="alta">Alta</option><option value="critica">Crítica</option></select><small></small></div>
+          <div class="vp-campo"><label for="pb-estado-sel">Estado</label><select id="pb-estado-sel"><option value="abierto">Abierto</option>
+            <option value="en_proceso">En proceso</option><option value="cerrado">Cerrado</option></select><small></small></div>
+        </div>
+        <div class="vp-campo"><label for="pb-descripcion">Descripción</label><textarea id="pb-descripcion" rows="4" maxlength="4000"></textarea><small></small></div>
+        <div class="vp-campo"><label>Fotos (hasta 6, de hasta 2 MB)</label>
+          <div id="pb-fotos" class="tk-fotos"></div>
+          <input id="pb-fotos-archivo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple><small id="pb-fotos-error"></small></div>
+        <p id="pb-info" class="nota"></p>
+        <div class="config-acciones tk-acciones">
+          <button id="pb-historial" type="button" class="btn btn-chico">Historial</button>
+          <button id="pb-mapa" type="button" class="btn btn-chico">Ver en el mapa</button>
+          <button id="pb-eliminar" type="button" class="btn btn-chico peligro">Eliminar</button>
+          <span id="pb-form-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-tk-cerrar="modal-problema">Cancelar</button>
+          <button id="pb-guardar" type="submit" class="btn btn-primario">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-foto" class="modal tk-foto-modal" hidden role="dialog" aria-modal="true" aria-label="Foto del problema">
+    <div class="tk-foto-caja"><img id="tk-foto-img" alt="Foto del problema">
+      <button type="button" class="btn-icono tk-foto-cerrar" data-tk-cerrar="modal-foto" title="Cerrar (Esc)" aria-label="Cerrar">✕</button></div>
+  </div>
+
+  <!-- Vista "Red existente" (redes/migracion.js, migración Visio fase 6): tablero y cola de corrección -->
+  <section id="vista-migracion" class="vista vista-modulo" data-vista="migracion" hidden aria-label="Red existente">
+    <header class="vp-cabecera">
+      <h1>Red existente (Visio)</h1>
+      <div class="vm-filtros">
+        <select id="mg-f-proyecto" aria-label="Zona"><option value="">Todas las zonas</option></select>
+        <select id="mg-f-motivo" aria-label="Motivo"><option value="">Todos los motivos</option></select>
+        <div class="pr-buscar"><svg><use href="#i-lupa"/></svg><input id="mg-f-texto" type="search" autocomplete="off" placeholder="Buscar mufa" aria-label="Buscar mufa"></div>
+      </div>
+      <button id="mg-recargar" type="button" class="btn">Recargar</button>
+      <button id="mg-exportar" type="button" class="btn btn-primario" title="Tablero y lista de correcciones (con los filtros) en Excel para Planta Externa">Exportar a Excel</button>
+    </header>
+    <div id="mg-estado" class="vp-estado vm-estado" role="status"></div>
+    <div class="vm-cuerpo">
+      <h2 class="mg-subtitulo">Avance por zona</h2>
+      <table class="vm-tabla mg-tablero">
+        <thead><tr><th>Zona</th><th>Mufas migradas</th><th>Con fusiones</th><th>Con supuestos</th><th>Validadas</th><th>Editadas</th>
+          <th>Sin ubicar</th><th>Sin diagramar</th><th>Por corregir</th><th>Avance</th></tr></thead>
+        <tbody id="mg-zonas"></tbody>
+      </table>
+      <h2 class="mg-subtitulo">Cola de corrección <span id="mg-cuenta" class="nota"></span></h2>
+      <table class="vm-tabla">
+        <thead><tr><th>Prioridad</th><th>Motivo</th><th>Mufa</th><th>Zona</th><th>Detalle</th><th></th></tr></thead>
+        <tbody id="mg-filas"></tbody>
+      </table>
+      <p class="vm-ayuda">La lista va de lo más urgente (sin ubicar, el Visio pedía revisarla, excede la capacidad) a lo que solo es un
+        supuesto por confirmar. Una mufa validada sale de la lista. Clic en una fila: abre la mufa; las que no tienen coordenada se
+        colocan con un clic en el mapa de su zona.</p>
+    </div>
+  </section>
+
+  <!-- Vista "Pendientes" (redes/pendientes.js, fase 7.2) -->
+  <section id="vista-pendientes" class="vista vista-modulo" data-vista="pendientes" hidden aria-label="Pendientes">
+    <header class="vp-cabecera">
+      <h1>Pendientes</h1>
+      <div class="vm-filtros">
+        <select id="pe-f-proyecto" aria-label="Proyecto"><option value="">Todos los proyectos</option></select>
+        <select id="pe-f-estado" aria-label="Estado"><option value="abiertos">Por hacer y en proceso</option><option value="">Todos los estados</option>
+          <option value="pendiente">Por hacer</option><option value="en_proceso">En proceso</option><option value="hecho">Hechos</option></select>
+        <select id="pe-f-responsable" aria-label="Responsable"><option value="">Cualquier responsable</option><option value="yo">Asignados a mí</option>
+          <option value="nadie">Sin responsable</option></select>
+        <label class="pr-check"><input id="pe-f-vencidos" type="checkbox"> Solo vencidos</label>
+        <div class="pr-buscar"><svg><use href="#i-lupa"/></svg><input id="pe-f-texto" type="search" autocomplete="off" placeholder="Buscar" aria-label="Buscar"></div>
+      </div>
+      <button id="pe-recargar" type="button" class="btn">Recargar</button>
+      <button id="pe-nuevo" type="button" class="btn btn-primario">+ Nuevo pendiente</button>
+    </header>
+    <div id="pe-estado" class="vp-estado vm-estado" role="status"></div>
+    <div class="vm-cuerpo">
+      <table class="vm-tabla">
+        <thead><tr><th>Tarea</th><th>Proyecto</th><th>Elemento / cable</th><th>Responsable</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead>
+        <tbody id="pe-filas"></tbody>
+      </table>
+      <p class="vm-ayuda">Tareas de un proyecto ("validar existencia de mufa", "dar continuidad a hilos"), si se quiere ligadas a un elemento o
+        cable. Las crea y edita quien edita el proyecto; el responsable puede cambiar su estado. En rojo, las vencidas.</p>
+    </div>
+  </section>
+
+  <div id="modal-pendiente" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="pe-modal-titulo">
+    <div class="modal-caja config-caja tk-caja">
+      <header class="modal-cabecera"><h2 id="pe-modal-titulo">Pendiente</h2>
+        <button type="button" class="btn-icono" data-tk-cerrar="modal-pendiente" title="Cerrar (Esc)" aria-label="Cerrar">✕</button></header>
+      <form id="pe-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-campo"><label for="pe-titulo">Tarea *</label><input id="pe-titulo" maxlength="160" placeholder="Validar existencia de mufa"><small></small></div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="pe-proyecto">Proyecto *</label><select id="pe-proyecto"></select><small></small></div>
+          <div class="vp-campo"><label for="pe-vinculo">Elemento o cable</label><select id="pe-vinculo"></select><small></small></div>
+        </div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="pe-responsable">Responsable</label><select id="pe-responsable"></select><small></small></div>
+          <div class="vp-campo"><label for="pe-fecha">Fecha límite</label><input id="pe-fecha" type="date"><small></small></div>
+          <div class="vp-campo"><label for="pe-estado-sel">Estado</label><select id="pe-estado-sel"><option value="pendiente">Por hacer</option>
+            <option value="en_proceso">En proceso</option><option value="hecho">Hecho</option></select><small></small></div>
+        </div>
+        <div class="vp-campo"><label for="pe-descripcion">Descripción</label><textarea id="pe-descripcion" rows="4" maxlength="4000"></textarea><small></small></div>
+        <p id="pe-info" class="nota"></p>
+        <div class="config-acciones tk-acciones">
+          <button id="pe-historial" type="button" class="btn btn-chico">Historial</button>
+          <button id="pe-eliminar" type="button" class="btn btn-chico peligro">Eliminar</button>
+          <span id="pe-form-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-tk-cerrar="modal-pendiente">Cancelar</button>
+          <button id="pe-guardar" type="submit" class="btn btn-primario">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Vista "Backup" (redes/respaldos.js, fase 7.4) -->
+  <section id="vista-backup" class="vista vista-modulo" data-vista="backup" hidden aria-label="Backup">
+    <header class="vp-cabecera">
+      <h1>Backup</h1>
+      <span id="bk-carpeta" class="vp-nota"></span>
+      <button id="bk-recargar" type="button" class="btn">Recargar</button>
+      <button id="bk-crear" type="button" class="btn btn-primario" hidden>Crear respaldo</button>
+    </header>
+    <div id="bk-estado" class="vp-estado vm-estado" role="status"></div>
+    <div class="vm-cuerpo">
+      <section id="bk-seccion-respaldos" class="vm-seccion">
+        <h2 class="vm-h2">Respaldos</h2>
+        <table class="vm-tabla">
+          <thead><tr><th>Fecha</th><th>Archivo</th><th>Proyectos</th><th>Tamaño</th><th>Base completa (pg_dump)</th><th></th></tr></thead>
+          <tbody id="bk-filas"></tbody>
+        </table>
+        <p class="vm-ayuda"><b>Crear respaldo</b> guarda todos los proyectos con todo su contenido (datos, imagen, usuarios, red, mufas,
+          diagramas, problemas con fotos y pendientes) en un archivo <code>.json</code> con fecha y hora, y además el esquema completo
+          en <code>.sql</code> con <code>pg_dump</code> si está instalado. <b>Restaurar</b> carga un proyecto del respaldo como
+          <b>copia nueva</b> (identificador -R1, -R2…): nunca pisa el actual. La carpeta se cambia con <code>REDES_RESPALDOS_DIR</code>
+          en el <code>.env</code> del servidor.</p>
+      </section>
+      <section id="bk-seccion-verificar" class="vm-seccion">
+        <h2 class="vm-h2">Integridad de los datos</h2>
+        <div class="vm-filtros"><button id="bk-verificar" type="button" class="btn">Verificar la base</button>
+          <span id="bk-ver-resumen" class="nota"></span></div>
+        <table id="bk-ver-tabla" class="vm-tabla" hidden>
+          <thead><tr><th>Nivel</th><th>Proyecto</th><th>Regla</th><th>Detalle</th></tr></thead>
+          <tbody id="bk-ver-filas"></tbody>
+        </table>
+        <p class="vm-ayuda">Revisa las reglas del modelo que cruzan tablas: hilos completos y con su buffer y color TIA, conexiones con
+          hilos o puertos válidos y de cables que llegan a esa mufa, un hilo conectado una sola vez por mufa, cables sin extremos
+          eliminados; y avisa de diagramas, problemas o pendientes que apuntan a algo eliminado. Solo lee: no cambia nada.</p>
+      </section>
+      <section class="vm-seccion">
+        <h2 class="vm-h2">Exportar un proyecto</h2>
+        <div class="vm-filtros">
+          <select id="bk-proyecto" aria-label="Proyecto"></select>
+          <button id="bk-kmz" type="button" class="btn">KMZ (Google Earth)</button>
+          <button id="bk-geojson" type="button" class="btn">GeoJSON</button>
+        </div>
+        <p class="vm-ayuda">KMZ: carpetas Área, Nodos / OLT, Mufas, Postes, Clientes, Cables (con su color) y Problemas, con íconos
+          incluidos (se abre sin internet). GeoJSON: los mismos elementos con sus datos, para un SIG.</p>
+      </section>
+    </div>
+  </section>
+
+  <div id="modal-restaurar" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="bk-rest-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera"><h2 id="bk-rest-titulo">Restaurar desde el respaldo</h2>
+        <button type="button" class="btn-icono" data-tk-cerrar="modal-restaurar" title="Cerrar (Esc)" aria-label="Cerrar">✕</button></header>
+      <div class="config-cuerpo">
+        <p class="nota">Elija el proyecto: se crea una <b>copia nueva</b>; el proyecto actual no se toca.</p>
+        <div id="bk-rest-lista" class="bk-rest-lista"></div>
+        <div class="config-acciones"><span id="bk-rest-estado" class="vp-estado"></span>
+          <button type="button" class="btn" data-tk-cerrar="modal-restaurar">Cancelar</button>
+          <button id="bk-rest-si" type="button" class="btn btn-primario">Restaurar como copia</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vista "Usuarios" del módulo de redes (redes/usuarios.js) -->
+  <section id="vista-usuarios" class="vista vista-modulo" data-vista="usuarios" hidden aria-label="Usuarios">
+    <header class="vp-cabecera">
+      <h1>Usuarios</h1>
+      <span id="us-yo" class="vp-nota"></span>
+      <button id="us-recargar" type="button" class="btn">Recargar</button>
+      <button id="us-nuevo" type="button" class="btn btn-primario" hidden>+ Nuevo usuario</button>
+    </header>
+    <div id="us-estado" class="vp-estado vm-estado" role="status"></div>
+    <div class="vm-cuerpo">
+      <table class="vm-tabla">
+        <thead><tr><th>Nombre</th><th>Rol</th><th>Correo</th><th>Persona del visor</th><th>Usuario de Windows</th><th>Estado</th><th></th></tr></thead>
+        <tbody id="us-filas"></tbody>
+      </table>
+      <p class="vm-ayuda">Cada persona se identifica sola al abrir el visor: en esta PC, por su usuario de Windows;
+        en otra PC (VisorRutas.exe), por su clave <b>X-Visor-Key</b> (la "persona del visor" de <code>VISOR_API_KEYS</code>).
+        Quien entra por primera vez queda como <b>lector</b>. <b>Administrador</b>: todo, incluidos los usuarios;
+        <b>editor</b>: edita los proyectos donde está asignado; <b>lector</b>: solo los ve. Desactivar no borra al usuario:
+        se puede reactivar.</p>
+    </div>
+  </section>
+
+  <div id="modal-usuario" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="us-modal-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera">
+        <h2 id="us-modal-titulo">Usuario</h2>
+        <button id="us-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <form id="us-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <div class="vp-campo"><label for="us-nombre">Nombre *</label><input id="us-nombre" maxlength="120"><small></small></div>
+        <div class="vp-campo"><label for="us-correo">Correo</label><input id="us-correo" type="email" maxlength="200"><small></small></div>
+        <div class="vp-campo"><label for="us-rol">Rol *</label>
+          <select id="us-rol"><option value="lector">Lector</option><option value="editor">Editor</option><option value="administrador">Administrador</option></select><small></small></div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="us-persona_visor">Persona del visor (X-Visor-Key)</label><input id="us-persona_visor" maxlength="64" placeholder="marlon"><small></small></div>
+          <div class="vp-campo"><label for="us-usuario_windows">Usuario de Windows</label><input id="us-usuario_windows" maxlength="64" placeholder="jgutierrez"><small></small></div>
+        </div>
+        <div id="us-form-estado" class="vp-estado" role="status"></div>
+        <div class="config-acciones">
+          <button id="us-cancelar" type="button" class="btn">Cancelar</button>
+          <button id="us-guardar" type="submit" class="btn btn-primario">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-historial" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="hist-titulo">
+    <div class="modal-caja config-caja hist-caja">
+      <header class="modal-cabecera">
+        <h2 id="hist-titulo">Historial</h2>
+        <button id="hist-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <div id="hist-cuerpo" class="config-cuerpo"></div>
+    </div>
+  </div>
+
+  <div id="modal-confirmar" class="modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="conf-texto">
+    <div class="modal-caja config-caja">
+      <div class="config-cuerpo">
+        <p id="conf-texto" class="conf-texto"></p>
+        <div class="config-acciones">
+          <button id="conf-no" type="button" class="btn">Cancelar</button>
+          <button id="conf-si" type="button" class="btn btn-primario">Aceptar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section id="vista-presupuesto" class="vista vista-presupuesto" data-vista="presupuesto" hidden aria-label="Generar presupuesto">
+    <header class="vp-cabecera">
+      <h1>Presupuestos</h1>
+      <span class="vp-nota">Misma generación que la API (plantilla, reglas, mapa y LibreOffice). Se guarda en output/visor; no se envía.</span>
+      <button id="vp-volver" type="button" class="btn">&#x2190; Volver al mapa</button>
+    </header>
+    <div class="vp-cuerpo">
+      <div class="vp-izquierda">
+      <div class="vp-tabs" role="tablist">
+        <button type="button" class="vp-tab activa" data-vp-tab="nuevo" role="tab">Nuevo presupuesto</button>
+        <button type="button" class="vp-tab" data-vp-tab="historial" role="tab">Historial</button>
+      </div>
+      <form id="vp-form" class="vp-form" autocomplete="off" novalidate>
+        <div class="vp-campo"><label for="f-ticket_id">Ticket</label>
+          <input id="f-ticket_id" name="ticket_id" maxlength="64" placeholder="Vacío: VISOR-AAAAMMDD-HHMMSS"><small></small></div>
+        <div class="vp-campo"><label for="f-coordenada">Coordenada cliente (lat, lon) *</label>
+          <input id="f-coordenada" name="coordenada" placeholder="12.15, -86.26"><small></small></div>
+        <div class="vp-campo"><label for="f-client_name">Cliente *</label>
+          <input id="f-client_name" name="client_name" maxlength="200"><small></small></div>
+        <div class="vp-campo"><label for="f-client_code">Código cliente *</label>
+          <input id="f-client_code" name="client_code" maxlength="64"><small></small></div>
+        <div class="vp-campo"><label for="f-sales_exec">Ejecutivo de ventas *</label>
+          <input id="f-sales_exec" name="sales_exec" maxlength="200"><small></small></div>
+        <div class="vp-campo"><label for="f-contact_name">Contacto</label>
+          <input id="f-contact_name" name="contact_name" maxlength="200" placeholder="Vacío: el cliente"><small></small></div>
+        <div class="vp-campo"><label for="f-contact_phone">Teléfono contacto *</label>
+          <input id="f-contact_phone" name="contact_phone" maxlength="64"><small></small></div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="f-service_type">Servicio *</label>
+            <select id="f-service_type" name="service_type"></select><small></small></div>
+          <div class="vp-campo"><label for="f-medium">Medio *</label>
+            <select id="f-medium" name="medium"></select><small></small></div>
+        </div>
+        <div class="vp-fila">
+          <div class="vp-campo"><label for="f-bandwidth">Velocidad *</label>
+            <input id="f-bandwidth" name="bandwidth" placeholder="10 Mbps"><small></small></div>
+          <div class="vp-campo"><label for="f-technology">Tecnología</label>
+            <select id="f-technology" name="technology">
+              <option value="auto">Automático</option><option value="gpon">GPON</option><option value="metro">Metro</option>
+            </select><small></small></div>
+          <div class="vp-campo"><label for="f-odf_rack_ports">ODF de rack</label>
+            <select id="f-odf_rack_ports" name="odf_rack_ports">
+              <option value="ninguno">Ninguno</option><option value="12">12</option><option value="24">24</option>
+            </select><small></small></div>
+        </div>
+        <div class="vp-campo"><label for="f-raw_comment">Comentario del ticket</label>
+          <textarea id="f-raw_comment" name="raw_comment" rows="4" maxlength="30000"></textarea><small></small></div>
+        <div class="vp-acciones-form">
+          <button id="vp-generar" type="submit" class="btn btn-primario">Generar presupuesto</button>
+          <button id="vp-desde-mapa" type="button" class="btn" title="Usar la coordenada de la barra del mapa">Usar coordenada del mapa</button>
+        </div>
+      </form>
+      <!-- Historial: presupuestos guardados por el visor (output/visor; en remoto, los del servidor) -->
+      <section id="vp-historial" class="vp-historial" hidden aria-label="Historial de presupuestos">
+        <div class="vp-hist-filtros">
+          <input id="vp-hist-filtro" type="search" autocomplete="off" placeholder="Filtrar por cliente, fecha o coordenada">
+          <label><input id="vp-hist-estimaciones" type="checkbox" checked> Incluir aproximados</label>
+          <button id="vp-hist-recargar" type="button" class="btn btn-chico" title="Volver a leer la carpeta">Recargar</button>
+        </div>
+        <ul id="vp-hist-lista" class="vp-hist-lista"></ul>
+      </section>
+      <div id="vp-estado" class="vp-estado" role="status"></div>
+      </div>
+
+      <div class="vp-resultado">
+        <div id="vp-vacio" class="vp-vacio">Complete los datos y presione <b>Generar presupuesto</b>.</div>
+        <div id="vp-contenido" hidden>
+          <div class="vp-barra">
+            <div id="vp-titulo" class="vp-titulo"></div>
+            <button type="button" class="btn btn-chico" data-guardar="xlsx">Guardar Excel como…</button>
+            <button type="button" class="btn btn-chico" data-guardar="pdf" id="vp-guardar-pdf">Guardar PDF como…</button>
+            <button type="button" class="btn btn-chico" id="vp-abrir-excel">Abrir en Excel</button>
+            <button type="button" class="btn btn-chico" id="vp-abrir-carpeta">Abrir carpeta</button>
+          </div>
+          <div id="vp-avisos" class="vp-avisos"></div>
+          <div class="vp-pestanas" role="tablist">
+            <button type="button" class="vp-pestana activa" data-hoja="Presupuesto">Presupuesto</button>
+            <button type="button" class="vp-pestana" data-hoja="Ruta proyectada">Ruta proyectada</button>
+            <button type="button" class="vp-pestana" data-hoja="PDF" id="vp-pestana-pdf">PDF</button>
+            <span class="vp-zoom">
+              <button type="button" class="btn btn-chico" id="vp-zoom-menos" title="Alejar">−</button>
+              <span id="vp-zoom-valor">100%</span>
+              <button type="button" class="btn btn-chico" id="vp-zoom-mas" title="Acercar">+</button>
+            </span>
+          </div>
+          <div id="vp-hoja" class="vp-hoja"></div>
+          <iframe id="vp-pdf" class="vp-pdf" title="PDF del presupuesto" hidden></iframe>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Buscador de mufas (arriba, al centro) -->
+  <div id="buscador" class="buscador" role="search">
+    <span class="lupa" aria-hidden="true">&#x1F50D;</span>
+    <input id="buscar-mufa" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Buscar mufa por nombre…" aria-label="Buscar mufa por nombre">
+    <span id="buscar-spinner" class="spinner" hidden></span>
+    <ul id="buscar-resultados" class="buscar-resultados" hidden role="listbox"></ul>
+  </div>
+
+  <!-- Panel de resumen (flotante, colapsable) -->
+  <aside id="panel" class="panel">
+    <div id="panel-tirador" class="panel-tirador" title="Arrastrar para cambiar el ancho del panel"></div>
+    <header class="panel-cabecera">
+      <nav class="pestanas" role="tablist">
+        <button type="button" role="tab" class="pestana activa" data-pestana="resumen" aria-selected="true">Resumen</button>
+        <button type="button" role="tab" class="pestana" data-pestana="fusion" aria-selected="false">Ruta de fusión</button>
+        <button type="button" role="tab" class="pestana" data-pestana="diagrama" aria-selected="false">Diagrama</button>
+        <button type="button" role="tab" class="pestana" data-pestana="presupuesto" aria-selected="false">Presupuesto<span id="pestana-pres-spinner" class="spinner spinner-chico" hidden></span></button>
+      </nav>
+      <button id="cerrar-panel" type="button" class="btn-icono" title="Ocultar panel" aria-label="Ocultar panel">&#x276F;</button>
+    </header>
+    <div class="panel-acciones">
+      <button id="copiar-resumen" type="button" class="btn btn-chico" disabled>Copiar resumen</button>
+      <button id="copiar-fusion" type="button" class="btn btn-chico" hidden disabled>Copiar ruta de fusión</button>
+    </div>
+    <div id="tarjetas" class="tarjetas" role="tabpanel">
+      <p class="vacio">Pegue la coordenada del cliente abajo y presione <b>Generar ruta</b>.</p>
+    </div>
+    <div id="fusion" class="tarjetas fusion" role="tabpanel" hidden></div>
+    <!-- Presupuesto aproximado de la ruta generada (solo la coordenada, supuestos por defecto) -->
+    <div id="presupuesto-aprox" class="tarjetas" role="tabpanel" hidden></div>
+    <!-- Diagrama Visio de una mufa (buscada o de la ruta de fusión), dentro del panel -->
+    <section id="panel-diagrama" class="panel-diagrama" role="tabpanel" hidden>
+      <div id="pd-info" class="pd-info">
+        <p class="vacio">Busque una mufa arriba, o use <b>Ver diagrama</b> en la ruta de fusión.</p>
+      </div>
+      <div class="pd-barra">
+        <select id="pd-archivo" title="Diagramas donde aparece esta mufa"></select>
+        <button id="pd-menos" type="button" class="btn btn-chico" title="Alejar">−</button>
+        <button id="pd-mas" type="button" class="btn btn-chico" title="Acercar">+</button>
+        <button id="pd-ubicar" type="button" class="btn btn-chico" title="Ir a la mufa en el diagrama">Ubicar mufa</button>
+        <button id="pd-ajustar" type="button" class="btn btn-chico" title="Ver el diagrama completo">Completo</button>
+        <button id="pd-pantalla" type="button" class="btn btn-chico" title="Abrir en pantalla completa">&#x26F6;</button>
+      </div>
+      <div id="pd-lienzo" class="diagrama-lienzo pd-lienzo">
+        <img id="pd-img" alt="" draggable="false" hidden>
+        <div id="pd-anillo" class="anillo-mufa" hidden></div>
+        <div id="pd-estado" class="diagrama-estado"></div>
+      </div>
+    </section>
+  </aside>
+  <button id="abrir-panel" type="button" class="abrir-panel" hidden>&#x276E; Resumen</button>
+
+  <!-- Indicaciones mientras se mide -->
+  <div id="medir-ayuda" class="medir-ayuda" hidden>
+    <b>Medir:</b> clic para agregar puntos · doble clic, Enter o clic derecho para terminar ·
+    <b>N</b> o <b>＋ Nueva medida</b> guarda esta y empieza otra de otro color ·
+    Retroceso quita el último punto · Esc cancela
+    <span id="medir-total" class="medir-total"></span>
+  </div>
+
+  <!-- Barra inferior -->
+  <footer id="barra" class="barra">
+    <label for="coord" class="barra-etiqueta">Coordenada cliente (lat, lon):</label>
+    <div class="campo" id="campo">
+      <input id="coord" type="text" autocomplete="off" spellcheck="false"
+             placeholder="12.153328, -86.263438">
+      <button id="hist-btn" type="button" class="hist-btn" title="Últimas coordenadas" aria-label="Últimas coordenadas">&#x25BE;</button>
+      <ul id="historial" class="historial" hidden></ul>
+    </div>
+    <button id="generar" type="button" class="btn btn-primario">Generar ruta</button>
+    <button id="limpiar" type="button" class="btn">Limpiar</button>
+    <span class="separador"></span>
+    <button id="medir" type="button" class="btn" title="Medir distancias sobre el mapa">&#x1F4CF; Medir</button>
+    <button id="nueva-medida" type="button" class="btn" hidden title="Guarda la medida actual y empieza otra de otro color (N)">&#xFF0B; Nueva medida</button>
+    <button id="borrar-medidas" type="button" class="btn" disabled>Borrar medidas</button>
+    <div id="mensaje" class="mensaje" role="status">
+      <span id="spinner" class="spinner" hidden></span>
+      <span id="mensaje-texto">Cargando…</span>
+    </div>
+    <button id="estado-modo" type="button" class="estado-modo" title="Modo y servidor (clic: configuración)"></button>
+  </footer>
+
+  <!-- Visor del diagrama Visio real de una mufa -->
+  <div id="modal-diagrama" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="diagrama-titulo">
+    <div class="modal-caja">
+      <header class="modal-cabecera">
+        <h2 id="diagrama-titulo">Diagrama</h2>
+        <select id="diagrama-archivo" title="Diagramas donde aparece esta mufa"></select>
+        <div class="modal-acciones">
+          <button id="diagrama-menos" type="button" class="btn btn-chico" title="Alejar">−</button>
+          <button id="diagrama-mas" type="button" class="btn btn-chico" title="Acercar">+</button>
+          <button id="diagrama-ubicar" type="button" class="btn btn-chico" title="Ir a la mufa en el diagrama">Ubicar mufa</button>
+          <button id="diagrama-ajustar" type="button" class="btn btn-chico" title="Ver completo">Ajustar</button>
+          <button id="diagrama-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+        </div>
+      </header>
+      <div id="diagrama-lienzo" class="diagrama-lienzo">
+        <img id="diagrama-img" alt="" draggable="false" hidden>
+        <div id="diagrama-anillo" class="anillo-mufa" hidden></div>
+        <div id="diagrama-estado" class="diagrama-estado"></div>
+      </div>
+      <footer class="modal-pie">Rueda del mouse: zoom · Arrastrar: mover · Doble clic: acercar · <span id="diagrama-ruta"></span></footer>
+    </div>
+  </div>
+
+  <!-- Menú de clic derecho -->
+  <ul id="menu" class="menu" hidden>
+    <li data-accion="usar">Usar esta coordenada</li>
+    <li data-accion="copiar">Copiar coordenada</li>
+    <li data-accion="medir">Medir desde aquí</li>
+  </ul>
+
+  <script src="lib/leaflet/leaflet.js"></script>
+  <script src="lib/markercluster/leaflet.markercluster.js"></script>
+  <script src="lib/polylinedecorator/leaflet.polylineDecorator.js"></script>
+  <script src="lib/geoman/leaflet-geoman.js"></script>
+  <script src="lib/quill/quill.js"></script>
+  <script src="lib/konva/konva.min.js"></script>
+  <script src="lugares.js"></script>
+  <script src="menu.js"></script>
+  <script src="redes/comun.js"></script>
+  <script src="redes/usuarios.js"></script>
+  <script src="redes/proyectos.js"></script>
+  <script src="redes/editor_mapa.js"></script>
+  <script src="redes/editor_mufa.js"></script>
+  <script src="redes/bandejas.js"></script>
+  <script src="redes/red_mufas.js"></script>
+  <script src="redes/trazado.js"></script>
+  <script src="redes/diagrama.js"></script>
+  <script src="redes/problemas.js"></script>
+  <script src="redes/pendientes.js"></script>
+  <script src="redes/migracion.js"></script>
+  <script src="redes/respaldos.js"></script>
+  <script src="visor.js"></script>
+</body>
+</html>

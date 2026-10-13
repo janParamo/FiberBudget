@@ -1,0 +1,399 @@
+# Quantity rules only. Prices, formulas and layout live in the Excel template.
+# Segments whose `tipo` contains ANY of these words (case-insensitive) are ignored.
+excluded_tipo_keywords:
+  - "mal estado"
+  - "deshabilitado"
+  - "sin info"
+
+budget_alerts:
+  distance_threshold_km: 5.0
+
+connection:
+  # Nearest mufa within this radius, else nearest reserva within it,
+  # else the nearest mufa or reserva at any distance.
+  mufa_search_radius_m: 500
+  # Intervened mufas when connecting to an existing mufa: follow existing fiber lines
+  # upstream, mufa by mufa, to the first distribution mufa and count every mufa on the way.
+  # A mufa is a distribution mufa by the first rule that matches:
+  #   1. a cable of >= distribution_min_fibers hilos passes it ("FO 24H")
+  #   2. a line of a trunk tipo, or named/described with a distribution keyword, passes it
+  #   3. its own description contains a distribution keyword
+  # The nearest point by straight line can be a long way round by street (one-way streets,
+  # blocks) or have no hilos. When its Google route is longer than detour_factor x the straight
+  # distance (and min_detour_m more), or it is marked with an unavailable_keywords word, the
+  # max_candidates nearest KMZ mufas within candidate_radius_m are compared by route length
+  # (one Directions call each, driving mode as always) and the shortest one without those
+  # marks is used. Marks are read from the KMZ name/description ("MF ELIMINADA / PROBABLEMENTE
+  # NO EXISTA") and from the Visio mufa at that point (its notes, SATURADA next to its label).
+  # The response's connection_point.selection lists the points compared; the warning asks to
+  # validate available hilos. A Visio node used as the connection point is kept as is.
+  route_selection:
+    enabled: true
+    detour_factor: 2.0
+    min_detour_m: 300
+    max_candidates: 5
+    candidate_radius_m: 2000
+    unavailable_keywords:
+      - "ELIMINADA"
+      - "NO EXISTA"
+      - "SATURAD"
+      - "NO REALIZAR PRESUPUESTO"
+      - "NO PROYECTAR"
+      - "NO USAR"
+      - "ANULADA"
+      - "SALIO DE USO"
+      - "FUERA DE SERVICIO"
+      - "SIN HILOS"
+  upstream_chain:
+    line_tolerance_m: 5
+    max_hops: 6
+    distribution_min_fibers: 24
+    distribution_line_tipos:
+      - "troncal%"
+      - "trunk%"
+      - "principales%"
+    distribution_keywords:
+      - "TRONCAL"
+      - "BACKBONE"
+
+route:
+  aerial_install_row_label: "Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)"
+  adss_install_row_label: "Instalacion de Fibra Optica Area ADSS (24H - 48H)"
+  safety_margin: 0.0
+  slack_per_endpoint_m: 0
+  reserve_interval_m: 300
+  reserve_percent: 0.20
+  connection_reserve_m: 35
+
+poles:
+  new_pole_row_label: "Instalacion de poste metalico tipo tuvo 8 mt."
+  new_pole_material_row_label: "POSTE 8 MTRS"
+  spacing_m: 50
+  # Longest span accepted between two poles: a gap up to this length needs no new
+  # pole; a longer gap gets new poles every spacing_m.
+  max_span_m: 60
+  corner_angle_deg: 35
+  extra_poles_per_corner: 0
+  existing_pole_row_label: "Instalacion de herraje en poste existente"
+  existing_pole_search_buffer_m: 15
+
+cable:
+  adss_threshold_m: 600
+  flat_material_label: "FIBRA OPTICA 12 Hilos ADSS Flat SingleMode Span 100 m"
+  adss_material_label: "FIBRA OPTICA 24 Hilos ADSS SingleMode Span 150 m"
+  clevis_label: "Clevis tipo D Chico"
+  band_label: "Cinta Band It 3/4\" (50mts)"
+  buckle_label: "Hebilla Band It 3/4"
+  s_clamp_label: "Grapa Metalica en S"
+  ftth_clamp_label: "Grapa p/ cable fibra FTTH"
+  green_preformed_label: "Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"
+  # Fiber material = aerial installation metres only. Duct is not budgeted for now: the
+  # template's Flat formula (=G12+G28) is replaced and the ADSS row (constant 0) gets one.
+  fiber_material_from_install:
+    "FIBRA OPTICA 12 Hilos ADSS Flat SingleMode Span 100 m":
+      same_as_install: "Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)"
+    "FIBRA OPTICA 24 Hilos ADSS SingleMode Span 150 m":
+      same_as_install: "Instalacion de Fibra Optica Area ADSS (24H - 48H)"
+  # One clamp type per support point. These MATERIALES rows are set by cable type and
+  # may replace the template's formula for that row (documented exception):
+  # a number is written as is; same_as writes a live formula to that row's quantity.
+  #   Flat: 2 S clamps per pole (template formula) and as many FTTH clamps; no green preformed (0).
+  #   ADSS: no clamps; green preformed = 2 x Clevis tipo D Chico (2 per pole). That formula
+  #         (=G37*2) lives in the template and is not listed here, so it is kept as is.
+  hardware_by_cable_type:
+    flat:
+      "Grapa p/ cable fibra FTTH":
+        same_as: "Grapa Metalica en S"
+      "Preformada Punto Verde ADSS 11.7 mm / 12.8 mm": 0
+    adss:
+      "Grapa Metalica en S": 0
+      "Grapa p/ cable fibra FTTH": 0
+
+splice:
+  backbone_splice_row_label: "Empalme de fibra optica cables de Red Backbone (core/troncal)"
+  access_splice_row_label: "Empalme de Fibra Optica Red de Acceso, Ultima Milla"
+  mufa_intervention_row_label: "Intervencion de Mufa Existente"
+  new_mufa_row_label: "Instalacion de mufas"
+  # A reserva connection installs a new mufa: it adds these sangrias and no
+  # "Intervencion de Mufa Existente" (the new-mufa price already includes it).
+  sangria_row_label: "Sangria de Cable o Buffer"
+  sangrias_per_new_mufa: 2
+
+fixed_events:
+  backbone_splice_per_mufa: 1
+  last_mile_splice_per_new_connection: 1
+  odf_per_new_connection: 1
+  labeling_min_per_new_connection: 1
+  otdr_certification_per_project: 2   # always 2 per budget
+  route_mufa_search_buffer_m: 50
+  rotulation_row_label: "Rotulacion de Cable de fibra en mufas y ODF"
+  otdr_row_label: "Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"
+
+odf:
+  odf_row_label: "Instalacion de Caja Terminal / ODF"
+  corporate_service_values:
+    - "corporativo"
+    - "corporate"
+  corporate_bandwidth_threshold: 10
+
+# Customer equipment written to MATERIALES (labels must match column E exactly).
+# Technology: the request's `technology` field, else a single "gpon"/"metro" word in the
+# ticket comment, else bandwidth above metro_bandwidth_threshold_mbps -> metro, otherwise gpon.
+equipment:
+  metro_bandwidth_threshold_mbps: 100
+  kits:
+    gpon:
+      "Huawei HG8310M Gpon": 1
+      "PATCH CORD SC-SC SM (SINGLE MODE) UPC SIMPLEX 3MTS": 1
+      "PATCH CORD CAT6 7FT": 1
+      "HAP AC³ WITH ROUTER/RBD53IG-5HACD2HND": 1
+    metro:
+      "SFS-7020-WA-SC-DD": 1
+      "SFS-7020-WB-SC-DD": 1
+      "FMC-1001S": 2
+      "HAP AC³ WITH ROUTER/RBD53IG-5HACD2HND": 1
+  # Every installation gets one ODF 2 Hilos (GPON or Metro). A rack ODF is added on top
+  # only when the request sends odf_rack_ports.
+  odf_label: "ODF 2 Hilos"
+  odf_rack_labels:
+    12: "Odf Rack 12 Acopladores"
+    24: "Odf Rack 24 Acopladores"
+
+# Not included in the budget: the template row stays at 0.
+technical_visit:
+  visit_row_label: "Visita Técnica (Certificación de FO existente cuantificación de obra)"
+
+# These rows remain available for a technician to complete manually.
+manual_zero_row_labels:
+  - "Instalacion de poste metalico tipo tuvo 9 mt."
+  - "Desplazamiento a [Ciudad] / [xxx] Km"
+  - "Sangria de Cable o Buffer"
+  - "Levantamieto de hilos mufa"
+  - "Movimiento de Reserva existente"
+  - "Instalacion de Fibra en Ducto ADSS-FLAT/FTTH..."
+
+# "Origen de Tráfico (Nodo)": read from the Visio diagrams database (red_fibra/red_fibra.db).
+# The connection mufa is matched to the nearest Visio mufa (an exact name wins), then the
+# network is walked mufa by mufa until the first one whose labels name a node below
+# after the word OLT or NODO ("SPL 1X16 OLT GALERIAS Puerto 6"). GPON and Metro alike.
+# Confidence: alta = label on the connection mufa itself; media = up to media_max_hops
+# mufas away; baja = farther, two nodes tied, no Visio mufa within match_radius_m, or matched
+# by name (name_match below).
+traffic_origin:
+  match_radius_m: 40
+  fallback_radius_m: 150
+  max_hops: 8
+  media_max_hops: 3
+  saturated_text_distance_cm: 3
+  # A KMZ connection point with no Visio mufa within match_radius_m is flagged requiere_revision.
+  # When the KMZ has no mufa/reserva within connection.mufa_search_radius_m, the nearest Visio
+  # node (RADIO_BUSQUEDA_M around the client) becomes the connection point if it is closer.
+  # Intervened mufas = every mufa on the traced diagram path, connection mufa up to the mufa
+  # labelled with the node (each one is used to bring the hilo to the client). Used only when
+  # the path follows cables from an exactly matched connection mufa; otherwise the PostGIS
+  # upstream chain (connection.upstream_chain) counts.
+  count_path_mufas: true
+  ignore_label_words: ["RESPALDO", "REDUNDAN"]
+  # When no Visio mufa is within fallback_radius_m, the connection point is matched by name
+  # (always confidence baja: "(validar)" in the Excel, never counts the diagram path as
+  # intervened mufas):
+  #   c) a Visio node whose normalized name (no accents, no MF/MUFA/MN prefixes, no IDEAY/UFINET)
+  #      is at least min_similarity alike, within max_distance_m or without coordinates;
+  #   d) search_texts: the name written in a diagram without coordinates. The walk starts at the
+  #      mufa that a text with one of dependency_words points to ("SPL DEPENDE DE 1/8 PM2" ->
+  #      MUFA PLAZA MAYOR 2), else at the diagram's main mufa. The diagram must have a
+  #      georeferenced mufa within max_distance_m (or none at all): same name in another city is skipped.
+  # Similarity = shared words / all words (Dice); a misspelled word counts ("AGUSTO" ~ "AUGUSTO"),
+  # numbers must be equal. enabled: false keeps only the diagnosis (diagnostico) of why it failed.
+  name_match:
+    enabled: true
+    min_similarity: 0.8
+    max_distance_m: 2000
+    search_texts: true
+    dependency_words: ["SPL DEPENDE DE", "DEPENDE DE", "VIENE DE", "VIENE DEL"]
+  # Name written in the Excel (as the technicians write it, e.g. "OLT GRUTA XAVIER"):
+  # spellings found in the diagrams (accents and case are ignored).
+  nodes:
+    "OLT VILLA FONTANA": ["VILLA FONTANA", "VF"]
+    "OLT GALERÍAS": ["GALERIAS", "GALERIA"]
+    "OLT MERCED": ["LA MERCED", "MERCED"]
+    "OLT SERVIPRO": ["SERVIPRO"]
+    "OLT LAS COLINAS": ["LAS COLINAS", "LAS COLINA", "L. COLINAS", "L.COLINAS", "L COLINAS", "LC"]
+    "OLT SANTO DOMINGO": ["SANTO DOMINGO", "SD"]
+    "OLT CARRETERA SUR": ["CARRETERA SUR", "CARRET SUR", "CARR. SUR", "C. SUR", "C.SUR"]
+    "OLT PERIODISTA": ["EL PERIODISTA", "PERIODISTA"]
+    "OLT GRUTA XAVIER": ["LA GRUTA", "GRUTA XAVIER", "GRUTA", "GX"]
+    "NODO MATEARE": ["MATEARE"]
+    "NODO ORIENTAL": ["ORIENTAL"]
+    "NODO LAS SIERRITAS": ["LAS SIERRITAS", "SIERRITAS"]
+    "NODO DIRIAMBA": ["DIRIAMBA"]
+    "OLT CONSOVIPE": ["CONSOVIPE"]
+    "OLT ALAMO": ["ALAMO"]
+    "OLT SINTER": ["SINTER"]
+    "OLT ENTHEOS": ["ENTHEOS"]
+    "OLT MASAYA": ["MASAYA"]
+    "OLT LEÓN": ["LEON"]
+    "OLT CHINANDEGA": ["CHINANDEGA"]
+    "OLT GRANADA": ["GRANADA"]
+    "OLT ESTELÍ": ["ESTELI"]
+
+# Satellite map of the route (Esri World Imagery + street labels), placed in the
+# "ESQUEMA DE RUTA PROYECTADA" box of the route sheet. If the tiles cannot be downloaded
+# the box says "Mapa no disponible" and the budget is still produced.
+route_map:
+  enabled: true
+  tile_timeout_s: 10
+  max_zoom: 19          # closest zoom; where Esri has no zoom-19 imagery it falls back to 18
+  same_point_m: 15      # nearby network nodes closer than this to the connection point are not drawn
+
+# Desktop route viewer (visor_rutas) only: the "Presupuesto aproximado" made right after a route
+# is drawn, from the coordinate alone. It uses the same budget generation as POST /presupuesto
+# (files in output/visor, never sent, never in budget_index.json) with these assumed values:
+#   bandwidth / medium: request values (10 Mbps -> GPON by equipment.metro_bandwidth_threshold_mbps)
+#   service_type: servicio_hasta_umbral when the final metres (route + reserves) are up to
+#     cable.adss_threshold_m (Flat cable), servicio_sobre_umbral above it (ADSS cable)
+#   cliente: client name, code, sales executive and contact of the estimate
+# "Ajustar datos" in the viewer opens the full form prefilled with these values.
+visor_estimacion:
+  bandwidth: "10 Mbps"
+  medium: "FO"
+  servicio_hasta_umbral: "Residencial"
+  servicio_sobre_umbral: "Empresarial"
+  cliente: "Estimación visor"
+
+# Network design module (viewer, map editor): metraje of each project cable, shown when the mouse
+# is over the cable ("detalle del metraje"). It does NOT affect the budget (route: above).
+# Decided by Jan on 2026-10-09: the same values as the budget's route rules.
+#   metraje = distancia lineal + contingencia + salida de nodo + reservas (mufa, tendido, cruce,
+#             cliente), rounded up to the metre.
+diseno_red:
+  contingencia_porcentaje: 0.0       # % of the linear distance (= route.safety_margin)
+  contingencia_m: 0                  # fixed metres per cable
+  salida_nodo_m: 0                   # per cable end at a node / OLT
+  reserva_por_mufa_m: 35             # per cable end at a mufa (= route.connection_reserve_m)
+  reserva_tendido_intervalo_m: 300   # periodic reserve: ceil(d / 300) x 300 x 20 % (= route.reserve_interval_m)
+  reserva_tendido_porcentaje: 0.20   #                                              (= route.reserve_percent)
+  reserva_por_cruce_m: 0             # per street crossing marked on the cable
+  reserva_extremo_cliente_m: 0       # per cable end at a client house (= route.slack_per_endpoint_m)
+
+# Network design module, logical network diagram (phase 6): colour of each cable by its fibre count
+# (legend "Cable de 144 hilos" red, "Cable de 48 hilos" purple). A cable with another count takes
+# the next larger capacity listed. It does NOT affect the budget.
+diagrama_logico:
+  colores_capacidad:
+    144: "#e53935"
+    96: "#fb8c00"
+    72: "#1e88e5"
+    48: "#8e24aa"
+    24: "#43a047"
+    12: "#00acc1"
+
+# Visio -> interactive mufas migration (docs/migracion_visio/PLAN.md, FASE0_DIAGNOSTICO.md). Read by
+# visor_rutas/redes/migrar_visio.py. It does NOT affect the budget. Values confirmed by Jan on 2026-10-12.
+migracion_visio:
+  # Buffer configuration by fibre count ("buffers x fibres per buffer"); editable per cable in the
+  # editor. What comes from this rule is marked configuracion_estimada.
+  configuracion_por_hilos:
+    2: "1x2"
+    4: "1x4"
+    6: "1x6"
+    8: "1x8"
+    12: "1x12"
+    24: "6x4"
+    48: "6x8"
+    72: "6x12"
+    96: "8x12"
+    144: "12x12"
+  alternativas:                 # extra choices in the editor's selector
+    12: ["6x2"]
+    24: ["12x2"]
+    48: ["12x4"]
+  tipo_fibra: "SM dispersión cero"
+  # Mufa model and trays
+  empalmes_por_bandeja: 24
+  capacidades_mufa: {48: 2, 96: 4}          # capacity: trays
+  entrada_splitter_ocupa_posicion: true     # a 1x8 tray admits 9 splices
+  # Cable class and route
+  palabras_troncal: ["TRONCAL", "BACKBONE"] # besides the rings of the Excel (anillo_tramos)
+  tolerancia_linea_kmz_m: 25
+  tolerancia_punto_kmz_m: 30
+  # Fibre count of cables without a label, after the Visio label (each one marked "estimado")
+  inferir_hilos:
+    continuidad_ambos_lados: true
+    continuidad_un_lado: true               # shown as "por confirmar"
+    texto_kmz: true                         # measured agreement 36-50 %: "por confirmar"
+  # Client positions: KMZ drops / points with the C##### code (Kayako: not used for now)
+  ubicacion_clientes: ["kmz"]
+  migrar_reservas: true
+  # Splices read from the Visio drawing: off until their precision is measured (phase 3)
+  fusiones_geometria:
+    usar: false
+    confianza_minima: 0.85
+    precision_minima: 0.85
+  # Base projects: the Visio folder (zone) decides the project; anything else goes to "defecto".
+  # A mufa of a folder without a region (a trunk route, "Mufa X hacia nodo Y") that lies within
+  # this many km of a region's centre (median of its mapped folders) goes to that region.
+  troncales_a_region_km: 5
+  proyectos_base:
+    defecto: "Red existente – Managua"
+    zonas:
+      "Red existente – León": ["Red Leon", "RED SAUCE"]
+      "Red existente – Chinandega": ["Red Chinandega", "RED CHICHIGALPA", "RED SOMOTILLO"]
+      "Red existente – Masaya": ["Red Masaya", "Red Nindirí"]
+      "Red existente – Granada": ["Red Granada"]
+      "Red existente – Carazo": ["RED Jinotepe", "Red Nodo Diriamba", "RED SAN MARCOS"]
+      "Red existente – Rivas": ["Red Rivas", "Red San Juan Del Sur"]
+      "Red existente – Estelí": ["Red Esteli"]
+      "Red existente – Segovias": ["Red Ocotal", "Red Somoto", "Red Jalapa"]
+      "Red existente – Matagalpa": ["Red Matagalpa", "Red Sebaco", "RED RIO BLANCO"]
+      # Macizo de Peñas Blancas (El Cuá, Jinotega), not the Peñas Blancas border post in Rivas
+      "Red existente – Jinotega": ["RED JINOTEGA", "RED NODO MACIZO PEÑAS BLANCAS"]
+      "Red existente – Boaco y Chontales": ["Red Boaco", "Red Juigalpa"]
+      "Red existente – Caribe Sur": ["Red Bluefields", "Red El Rama", "RED NUEVA GUINEA"]
+
+# Note printed on every page of every budget (API/n8n and viewer): written on each visible
+# sheet (Ruta proyectada and Presupuesto, one page each), `rows_below_last` rows under the
+# last cell with content (the signatures), in that sheet's wide left-aligned column (a
+# centred column would spill the text off the page). Remove this block to drop it.
+budget_note:
+  text: "Sujeto a disponibilidad de postes de concreto sobre la ruta"
+  columns:
+    "Ruta proyectada": "D"
+    "Presupuesto": "E"
+  rows_below_last: 2
+
+# Labels are searched in the route sheet; the value is written to the first
+# empty cell to the right of the matching label.
+route_sheet:
+  sheet: "Ruta proyectada"
+  fields:
+    # "Origen de trafico (MF)": the mufa the node's service is taken from (traffic_origin).
+    origin_node:
+      - "Origen de trafico (MF)"
+      - "Origen de tráfico (MF)"
+    connection_point:
+      - "Punto de conexión"
+      - "Punto de conexion"
+    ticket_id:
+      - "Ticket"
+      - "Número de ticket"
+      - "Numero de ticket"
+    client_coordinates:
+      - "Coordenada Cliente"
+      - "Coordenadas del cliente"
+      - "Coordenadas cliente"
+    traffic_node:
+      - "Origen de Tráfico (Nodo)"
+    prepared_by:
+      - "Elaborado por"
+    sales_exec:
+      - "Ejecutivo de ventas"
+    client_code:
+      - "Código cliente"
+      - "Codigo cliente"
+    contact_name:
+      - "Contactos"
+      - "Contacto"
+    contact_phone:
+      - "Teléfono contacto"
+      - "Telefono contacto"

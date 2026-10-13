@@ -1,0 +1,21 @@
+# Secretos y configuración local (usar .env.example como plantilla)
+.env
+
+# Entorno y archivos generados
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+output/
+logs/
+VisorRutas.zip
+
+# Datos de la empresa: no se publican (pueden contener clientes y la topología de la red)
+respaldos_redes/
+visioMapas/
+red_kmz/
+red_fibra/*.db
+red_fibra/cache_diagramas/
+red_fibra/cache_odg/
