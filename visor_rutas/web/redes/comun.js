@@ -39,11 +39,50 @@
       return false;
     },
 
+    /** "Entrar a la mufa" (popup, double click or Enter on a mufa of the KMZ): its editor; when the migration does not have it,
+     *  offers to create an empty mufa at that point (linked to it by name and position); declining shows its Visio diagram. */
+    async entrarMufa(nombre, lat, lon) {
+      if (this.disponible && window.EditorMufa) {
+        const r = await this.llamar("mufa_existente", { nombre, lat: lat ?? null, lon: lon ?? null });
+        if (r.ok && r.mufa) { window.EditorMufa.abrir(r.mufa.id, r.mufa.nombre); return true; }
+        const puede = this.estado && this.estado.puede && this.estado.puede.editar && lat != null;
+        if (puede && await this.confirmar(`«${nombre}» no está en la red del módulo de redes. ¿Crear una mufa vacía en este punto para armar sus bandejas y empalmes?`, "Crear mufa vacía")) {
+          const c = await this.llamar("crear_mufa_kmz", { nombre, lat, lon });
+          if (c.ok) { window.EditorMufa.abrir(c.mufa.id, c.mufa.nombre); return true; }
+          if (window.visor) window.visor.mensaje(c.error, "error");
+          return false;
+        }
+      }
+      if (window.visor) window.visor.abrirDiagramaPorNombre(nombre);
+      return false;
+    },
+
     /** Identifies the user (and applies the missing migrations) when the viewer opens. */
+    /** Runs `fn` once the module has answered (available or not): Mis lugares loads its data then. */
+    cuandoListo(fn) {
+      if (this.iniciado) fn(); else (this._espera = this._espera || []).push(fn);
+    },
+
     async iniciar(api) {
       this.api = api;
       const r = await this.llamar("estado");
       this.disponible = !!r.ok;
+      if (r.ok && window.Buscador) {          // search box: what was created in the tool (and the clients), not the migrated mufas
+        window.Buscador.registrarFuente({
+          id: "base", titulo: "Red base (módulo de redes)",
+          buscar: async (texto) => {
+            const x = await this.llamar("buscar_elementos", { texto });
+            if (!x.ok) throw new Error(x.error);
+            return x.elementos.map((e) => ({ titulo: e.nombre, sinCoord: e.lat === null, dato: e,
+              detalle: `${e.tipo}${e.subtipo ? " " + e.subtipo : ""}${e.proyecto ? " · " + e.proyecto : ""}` }));
+          },
+          elegir: (item) => {
+            const e = item.dato;
+            if (e.lat === null || !window.visor) { if (window.visor) window.visor.mensaje(`${e.nombre}: sin coordenadas, no se puede ubicar en el mapa`, "error"); return; }
+            window.visor.marcarBuscada(e.lat, e.lon, e.nombre, e.tipo);
+          },
+        });
+      }
       if (r.ok) {
         this.estado = r;
         const u = r.usuario;
@@ -56,6 +95,8 @@
         Menu.moduloRedes(false, r.error || "Base de redes no disponible");
         Menu.usuario("Redes no disponible", r.error || "");
       }
+      this.iniciado = true;
+      (this._espera || []).splice(0).forEach((f) => { try { f(); } catch (e) { console.error(e); } });
       return r;
     },
 
@@ -146,6 +187,29 @@
     },
 
     /** Saves base64 data with the Windows save dialog (api.guardar_archivo). */
+    /** Uploads a big file by parts (1.5 MB each; a whole KMZ weighs 20 MB) to the viewer's API, local or remote: {ok, id} to hand over to the method that
+     *  uses it (`subida_id`). `progreso(porcentaje)` is called after each part. */
+    async subirArchivo(archivo, progreso) {
+      if (!this.api || !this.api.subir_iniciar) return { ok: false, error: "No disponible" };
+      try {
+        const inicio = await this.api.subir_iniciar(archivo.name, archivo.size);
+        if (!inicio.ok) return inicio;
+        const PARTE = 1.5 * 1024 * 1024;
+        for (let i = 0, n = 0; i < archivo.size; i += PARTE, n++) {
+          const bytes = new Uint8Array(await archivo.slice(i, i + PARTE).arrayBuffer());
+          let texto = "";
+          for (let j = 0; j < bytes.length; j += 0x8000) texto += String.fromCharCode.apply(null, bytes.subarray(j, j + 0x8000));
+          const r = await this.api.subir_parte(inicio.id, n, btoa(texto));
+          if (!r.ok) return r;
+          if (progreso) progreso(Math.min(100, Math.round(((i + PARTE) * 100) / archivo.size)));
+        }
+        const fin = await this.api.subir_fin(inicio.id);
+        return fin.ok ? { ok: true, id: inicio.id } : fin;
+      } catch (e) {
+        return { ok: false, error: "Error al subir el archivo: " + e };
+      }
+    },
+
     async guardarArchivo(nombre, datos, tipo) {
       if (!this.api || !this.api.guardar_archivo) return { ok: false, error: "No disponible" };
       try {

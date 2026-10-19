@@ -28,7 +28,7 @@ import red_fibra_pg
 import routing
 from config import NI_LAT_MAX, NI_LAT_MIN, NI_LON_MAX, NI_LON_MIN
 from origen import _distance_m
-from visor_rutas import fusion
+from visor_rutas import fusion, ruta_fusion_plan
 
 log = logging.getLogger(__name__)
 
@@ -107,14 +107,14 @@ def _punto_en_ruta(puntos: list[LatLon], acumulada: list[float], fraccion: float
 
 
 def posiciones_postes_nuevos(distance_m: float, spacing_m: float, existing_positions_m: list[float],
-                             max_span_m: float | None = None) -> list[float]:
+                             max_span_m: float | None = None, max_span_between_existing_m: float | None = None) -> list[float]:
     """Metro de la ruta de cada poste nuevo por huecos.
 
     Es presupuesto.new_pole_positions_by_gaps, el mismo recorrido que cuenta los postes nuevos
     (sin los postes extra por esquina, que no tienen posición); el visor comprueba que la
     cantidad coincida. Esos metros identifican el poste que se marca como existente en el mapa.
     """
-    return presupuesto.new_pole_positions_by_gaps(distance_m, spacing_m, existing_positions_m, max_span_m)
+    return presupuesto.new_pole_positions_by_gaps(distance_m, spacing_m, existing_positions_m, max_span_m, max_span_between_existing_m)
 
 
 # --------------------------------------------------------------------------- consultas
@@ -174,6 +174,65 @@ def _tipo_conexion(seg: db.Segment, desde_visio: bool) -> str:
     return seg.tipo or "punto de red"
 
 
+# --------------------------------------------------------------------------- ruta editada a mano
+
+MAX_PUNTOS_RUTA = 3000
+
+
+def validar_ruta(puntos: Any) -> list[LatLon]:
+    """[[lat, lon], ...] of a route edited / drawn by hand -> [(lat, lon), ...] (2 or more points, inside the world)."""
+    if not isinstance(puntos, (list, tuple)) or len(puntos) < 2:
+        raise VisorError("Una ruta necesita al menos dos puntos")
+    if len(puntos) > MAX_PUNTOS_RUTA:
+        raise VisorError(f"Una ruta puede tener hasta {MAX_PUNTOS_RUTA} puntos")
+    salida: list[LatLon] = []
+    for p in puntos:
+        try:
+            lat, lon = float(p[0]), float(p[1])
+        except (TypeError, ValueError, IndexError, KeyError):
+            raise VisorError("Un punto de la ruta no es válido") from None
+        if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+            raise VisorError(f"Un punto de la ruta está fuera del mundo: {lat}, {lon}")
+        salida.append((lat, lon))
+    return salida
+
+
+class RutaFija:
+    """A `get_route` that answers with the user's polyline instead of asking Google (routing.get_route's signature).
+
+    The first call (the connection point -> the client) gets the polyline; any later one (other mufas the budget compares
+    when the nearest has no hilos) raises RouteNotFound, so the route the user drew is never replaced by another."""
+
+    def __init__(self, puntos: Any):
+        self.puntos = validar_ruta(puntos)
+        self.distancia_m = sum(_distance_m(a[0], a[1], b[0], b[1]) for a, b in zip(self.puntos, self.puntos[1:]))
+        self.usada = False
+
+    def __call__(self, origin: Any = None, destination: Any = None) -> routing.Route:
+        if self.usada:
+            raise routing.RouteNotFound("ruta editada a mano")
+        self.usada = True
+        return routing.Route(distance_m=self.distancia_m, duration_s=0.0, points=list(self.puntos))
+
+
+def calcular_con_ruta(lat: float | None, lon: float | None, puntos: Any, postes_extra: int = 0) -> dict[str, Any]:
+    """The same result as calcular_ruta, for a route the user edited or drew (no Google). (lat, lon) is the client; without it,
+    the last point of the route. Everything is recalculated from the polyline: distance, metraje, poles, mufas, quantities."""
+    ruta = RutaFija(puntos)
+    if lat is None or lon is None:
+        lat, lon = ruta.puntos[-1]
+    resultado = calcular_ruta(float(lat), float(lon), get_route=ruta, postes_extra=int(postes_extra or 0))
+    resultado["ruta"]["manual"] = True
+    resultado["ruta"]["aproximada"] = False
+    rules = main.load_rules(main.settings.rules_path)
+    c = resultado["conexion"]
+    desfase = _distance_m(ruta.puntos[0][0], ruta.puntos[0][1], c["lat"], c["lon"])
+    if desfase > float(rules.get("route_map", {}).get("same_point_m", 15)):
+        resultado["avisos"].append(f"La ruta editada empieza a {desfase:.0f} m del punto de conexión {c['nombre']}: "
+                                   "el presupuesto cuenta ese punto de conexión")
+    return resultado
+
+
 # --------------------------------------------------------------------------- cálculo
 
 # Route function for the current call only (the viewer's per-session cache); set with usando_rutas().
@@ -190,7 +249,7 @@ def usando_rutas(get_route: Any) -> Iterator[None]:
         _get_route_activo.reset(token)
 
 
-def calcular_ruta(lat: float, lon: float, get_route: Any = None) -> dict[str, Any]:
+def calcular_ruta(lat: float, lon: float, get_route: Any = None, postes_extra: int = 0) -> dict[str, Any]:
     """Punto de conexión, ruta, postes, mufas y origen de tráfico para el cliente (lat, lon).
 
     get_route: routing.get_route, o el caché de rutas del visor (presupuesto_visor.CacheRutas)
@@ -206,14 +265,14 @@ def calcular_ruta(lat: float, lon: float, get_route: Any = None) -> dict[str, An
         avisos.append("Base Visio no disponible: se usó solo el KMZ" if red_fibra_pg.enabled()
                       else "Base Visio desactivada (VISIO_DB_NAME vacío): se usó solo el KMZ")
     try:
-        return _calcular(lat, lon, rules, visio_con, avisos, get_route or routing.get_route)
+        return _calcular(lat, lon, rules, visio_con, avisos, get_route or routing.get_route, postes_extra)
     finally:
         if visio_con is not None:
             visio_con.close()
 
 
 def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
-              avisos: list[str], get_route: Any = None) -> dict[str, Any]:
+              avisos: list[str], get_route: Any = None, postes_extra: int = 0) -> dict[str, Any]:
     get_route = get_route or routing.get_route
     log.info("Visor: route for (%.6f, %.6f)", lat, lon)
 
@@ -310,6 +369,8 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         new_connections=1,
     )
     poles_rules = rules["poles"]
+    if postes_extra:                      # poles added by hand on the map count as new ones
+        quantities[poles_rules["new_pole_row_label"]] += postes_extra
     nuevos = quantities[poles_rules["new_pole_row_label"]]
     final_m = presupuesto.calcular_metraje_final(distancia_m, rules)
     materials = presupuesto.calcular_materiales(final_m, len(poles) + nuevos, rules)
@@ -318,17 +379,17 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
     turns = presupuesto.count_turns(puntos, poles_rules["corner_angle_deg"])
     extra_esquinas = turns * poles_rules["extra_poles_per_corner"]
     metros = posiciones_postes_nuevos(distancia_m, poles_rules["spacing_m"], pole_positions_m,
-                                      poles_rules.get("max_span_m"))
+                                      poles_rules.get("max_span_m"), poles_rules.get("max_span_between_existing_m"))
     posiciones: list[LatLon] = []
     metros_mapa: list[float] = []
-    if len(metros) + extra_esquinas == nuevos and distancia_m > 0:
+    if len(metros) + extra_esquinas == nuevos - postes_extra and distancia_m > 0:
         acumulada = _longitudes_acumuladas(puntos)
         if acumulada[-1] > 0:
             posiciones = [_punto_en_ruta(puntos, acumulada, m / distancia_m) for m in metros]
             metros_mapa = [round(m, 2) for m in metros]
         if extra_esquinas:
             avisos.append(f"{extra_esquinas} poste(s) nuevo(s) por esquina sin posición en el mapa")
-    elif nuevos:
+    elif nuevos - postes_extra:
         avisos.append("No se pudo ubicar los postes nuevos en el mapa; solo se muestra la cantidad")
 
     # 6) Bloque "origen" del presupuesto: revisión, notas y nodos Visio.
@@ -446,4 +507,10 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         log.warning("Visor: fusion route failed (%s: %s)", type(exc).__name__, exc)
         resultado["ruta_fusion"] = []
         avisos.append(f"No se pudo armar la ruta de fusión ({type(exc).__name__})")
+    # 8) Plan editable para el Excel de rutas de fusión (cliente -> potencia; aérea / corte no se tocan).
+    try:
+        resultado["plan_fusion"] = ruta_fusion_plan.armar(resultado)
+    except Exception as exc:
+        log.warning("Visor: fusion plan failed (%s: %s)", type(exc).__name__, exc)
+        resultado["plan_fusion"] = {"pasos": [], "potencia": None, "compartir_potencia": False, "avisos_rojos": [], "tocadas": 0, "lineas": []}
     return resultado

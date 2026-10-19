@@ -30,7 +30,7 @@ def entorno(tmp_path, monkeypatch):
            "GOOGLE_API_KEY": "x", "SERVICE_API_KEY": "secret",
            "TEMPLATE_PATH": str(template), "OUTPUT_DIR": str(tmp_path / "out"),
            "LOG_FILE": str(tmp_path / "log.txt"), "RED_FIBRA_DB": str(tmp_path / "missing.db"),
-           "VISIO_DB_NAME": "", "RULES_PATH": os.path.join(os.path.dirname(__file__), "..", "business_rules.yaml"),
+           "VISIO_DB_NAME": "", "RULES_PATH": os.path.join(os.path.dirname(__file__), "..", "business_rules.yaml"), "RUTA_FUSION_XLSX": str(tmp_path / "no_hay_libro_de_fusion.xlsx"),
            "VISOR_API_KEYS": CLAVES, "VISOR_RATE_LIMIT_PER_HOUR": "60"}
     for k, v in env.items():
         monkeypatch.setenv(k, v)
@@ -150,6 +150,76 @@ def test_estimate_without_metres_reuses_the_cached_route(entorno):
     assert estimacion["ok"] and estimacion["supuestos"]["bandwidth"] == "10 Mbps"
     assert estimacion["supuestos"]["service_type"] == "Empresarial"                 # 1850 m > 600 m
     assert llamadas["google"] == antes                                               # same coordinate: cached
+
+
+def test_measurement_endpoint_gives_metraje_and_total_without_google(entorno):
+    _, _, cliente, _, llamadas = entorno
+    puntos = [[12.1300, -86.2500], [12.1320, -86.2500], [12.1320, -86.2490]]
+    ligera = cliente.post("/visor/medicion", json={"puntos": puntos}, headers=JAN).json()
+    assert ligera.get("ok"), ligera
+    assert ligera["medicion"]["metraje_final_m"] > ligera["medicion"]["distancia_m"]
+    total = cliente.post("/visor/medicion", json={"puntos": puntos, "con_total": True}, headers=JAN).json()
+    assert total["ok"] and total["resultado"]["archivo"].startswith("remoto:Medicion_") and total["medicion"] == ligera["medicion"]
+    assert llamadas["google"] == 0                                                  # a measure never calls Google
+    assert cliente.post("/visor/medicion", json={"puntos": [[1, 2]]}, headers=JAN).status_code == 422
+    assert cliente.post("/visor/medicion", json={"puntos": puntos}).status_code in (401, 403)   # needs the key
+
+
+def test_edited_route_endpoints_use_the_users_route_and_never_google(entorno):
+    main, _, cliente, _, llamadas = entorno
+    puntos = [[12.13, -86.25], [12.135, -86.255], [12.14, -86.25], [LAT, LON]]
+    editada = cliente.post("/visor/ruta_editada", json={"lat": LAT, "lon": LON, "puntos": puntos, "postes_extra": 2}, headers=JAN).json()
+    assert editada["ok"] and editada["datos"]["ruta"]["manual"] is True and editada["datos"]["ruta"]["puntos"][1] == [12.135, -86.255]
+    assert editada["datos"]["postes_nuevos"]["cantidad"] >= 2
+    estimacion = cliente.post("/visor/estimacion", json={"lat": LAT, "lon": LON, "metraje_final_m": 900.0, "ruta": puntos, "postes_extra": 1}, headers=JAN).json()
+    assert estimacion["ok"] and any("agregado(s) a mano" in a for a in estimacion["resultado"]["avisos"])
+    assert llamadas["google"] == 0                                                  # the user's route replaces Google's
+    assert cliente.post("/visor/ruta_editada", json={"puntos": [[1, 2]]}, headers=JAN).status_code == 422
+    assert cliente.post("/visor/ruta_editada", json={"puntos": puntos}).status_code == 401
+
+
+def test_fusion_route_endpoints_write_the_text_and_report_errors(entorno):
+    _, _, cliente, _, _ = entorno
+    plan = {"pasos": [{"nombre": "MF UNO", "lat": 12.0, "lon": -86.0, "tocar": True, "hilo_cliente": "H2", "hilo_potencia": "H5"},
+                      {"nombre": "MF DOS", "lat": 12.1, "lon": -86.1, "tocar": False}], "potencia": "NODO X"}
+    r = cliente.post("/visor/fusion/redactar", json={"plan": plan}, headers=JAN).json()
+    assert r["ok"] and r["plan"]["tocadas"] == 1 and r["plan"]["lineas"][0].endswith("fusionarlo con H5 hacia NODO X")
+    assert cliente.post("/visor/fusion/redactar", json={"plan": {"pasos": "no"}}, headers=JAN).json()["ok"] is False
+    assert cliente.post("/visor/fusion/redactar", json={"plan": plan}).status_code == 401
+    # the workbook of the server: a missing file is an error as text, never a crash
+    malo = cliente.post("/visor/fusion/exportar", json={"plan": plan, "opciones": {"fecha": "2026-10-14"}}, headers=JAN).json()
+    assert malo["ok"] is False and "libro de rutas de fusión" in malo["error"]
+    est = cliente.post("/visor/estimacion", json={"lat": LAT, "lon": LON, "metraje_final_m": 900.0, "mufas_tocadas": 1}, headers=JAN).json()
+    assert est["ok"]
+
+
+def test_bulk_coordinates_endpoints_read_calculate_and_download(entorno):
+    import base64
+    import io as _io
+    import time
+    import zipfile
+    _, _, cliente, _, llamadas = entorno
+    texto = base64.b64encode(b"Uno 12.1364, -86.2514\nDos 12.1400, -86.2600\n").decode()
+    leidas = cliente.post("/visor/masivas/leer", json={"nombre": "a.txt", "datos": texto}, headers=JAN).json()
+    assert leidas["ok"] and [p["estado"] for p in leidas["puntos"]] == ["ok", "ok"]
+    assert cliente.post("/visor/masivas/leer", json={"nombre": "a.pdf", "datos": texto}, headers=JAN).json()["ok"] is False
+    inicio = cliente.post("/visor/masivas/iniciar", json={"nombre": "a.txt", "puntos": leidas["puntos"]}, headers=JAN).json()
+    assert inicio["ok"]
+    lote_id = inicio["lote"]["id"]
+    for _ in range(300):
+        estado = cliente.get(f"/visor/masivas/{lote_id}", params={"desde": 0}, headers=JAN).json()["lote"]
+        if estado["estado"] != "corriendo":
+            break
+        time.sleep(0.05)
+    assert estado["estado"] == "terminado" and [r["ok"] for r in estado["resultados"]] == [True, True]
+    z = cliente.post(f"/visor/masivas/{lote_id}/descargar", headers=JAN).json()
+    assert z["ok"] and "Resumen.xlsx" in zipfile.ZipFile(_io.BytesIO(base64.b64decode(z["datos"]))).namelist()
+    assert cliente.post(f"/visor/masivas/{lote_id}/cancelar", headers=JAN).json()["ok"] is True
+    assert cliente.get("/visor/masivas/20260101-000000", headers=JAN).json()["ok"] is False
+    assert cliente.get(f"/visor/masivas/{lote_id}").status_code == 401 and cliente.get("/visor/masivas/mal;id", headers=JAN).status_code == 422
+    # every valid point counts for the hourly limit of the person (it can ask Google): more than the limit is refused before starting
+    muchos = [{"n": i, "nombre": f"P{i}", "codigo": "", "texto": "12.1, -86.2", "lat": 12.1, "lon": -86.2, "estado": "ok", "incluir": True} for i in range(1, 80)]
+    assert cliente.post("/visor/masivas/iniciar", json={"nombre": "m", "puntos": muchos}, headers=JAN).status_code == 429
 
 
 # --------------------------------------------------------------------------- límite y archivos

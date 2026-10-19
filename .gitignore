@@ -19,3 +19,9 @@ red_kmz/
 red_fibra/*.db
 red_fibra/cache_diagramas/
 red_fibra/cache_odg/
+
+# Capas y fotos del KMZ ya convertidas (red de la empresa)
+visor_rutas/datos_kmz/
+
+# Libro de rutas de fusión de ejemplo (clientes reales)
+EjemploRutaFusiones/

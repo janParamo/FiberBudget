@@ -111,6 +111,20 @@ Las columnas comunes se describen una vez en la §3: `id`, `version`, `creado_en
 - **el dibujo del diagrama lógico:** se genera de las conexiones;
 - **el trazado de un hilo.**
 
+### 2.4 Mis lugares (migración 011, visor v2)
+
+Lo personal de cada usuario, aparte de proyectos y red: no se toca ninguna tabla anterior.
+
+| Tabla | Qué guarda |
+|---|---|
+| `lugares_carpetas` | Árbol por usuario (`padre_id`), `orden` manual, `visible`, `expandida` (hoy lo abierto se recuerda en el equipo, no aquí) |
+| `lugares_elementos` | `tipo` (marca, ruta, poligono y, para la fase 4, mufa, poste, cliente, nodo, odf, cable; la geometría debe ser de su clase), `geom`, `descripcion_html`, `estilo`, `vista` (centro y zoom), `propiedades` (en un cable: clase, hilos…), `orden`, `visible` |
+| `lugares_adjuntos` | Imágenes de la descripción (PNG / JPEG / WEBP / GIF, hasta 2 MB), en la base |
+| `lugares_compartidas` | Con quién se comparte una carpeta (y sus subcarpetas) y si puede editar |
+
+- **Dueño:** lo creado dentro de una carpeta compartida es del dueño de la carpeta (`usuario_id` de la carpeta). El acceso se calcula subiendo por las carpetas madre.
+- **Descripción:** HTML seguro (`texto.py`); sus imágenes se guardan aparte y la descripción las nombra `<img data-adj="id">`.
+
 ### 2.3 Reglas que cuidan triggers en la base
 
 | Trigger | Qué hace |
@@ -197,6 +211,11 @@ flowchart LR
 | `metraje.py` | Metraje de un cable (`business_rules.yaml` → `diseno_red`) | — |
 | `texto.py` | HTML seguro de las notas | — |
 | `mufa.py` | Editor de mufa: hilos, splitters, conectores, conexiones, posiciones | `mufa`, `guardar_mufa` |
+| `bandejas.py` | Modelo de la mufa (48 / 96) y bandejas de 24 posiciones, con su motivo cuando es estimado | `guardar_modelo_mufa`, `mover_empalme`, `bandeja_splitter` |
+| `mufas_existentes.py` | La red existente interactiva: encontrar la mufa migrada de lo que se abre en el mapa, validar, configuración del cable, red de mufas vecinas y **búsqueda por nombre o código** para el buscador del mapa (visor v2: lo creado en la herramienta y los clientes) | `mufa_existente`, `validar_mufa`, `configurar_cable`, `red_de_mufas`, `buscar_elementos` |
+| `migracion_tablero.py` | Tablero de avance y cola de corrección de la red migrada (solo lee), exportable a Excel | `tablero_migracion`, `correcciones_migracion`, `exportar_correcciones` || `lugares.py` | Mis lugares: árbol, carpetas, marcas / rutas / polígonos, orden y mover, casillas, compartir, imágenes de la descripción | `lugares`, `lugar`, `guardar_lugar`, `eliminar_lugar`, `adjunto_lugar`, `guardar_carpeta_lugares`, `eliminar_carpeta_lugares`, `mover_lugares`, `visibilidad_lugares`, `compartidos_lugares`, `compartir_lugares` |
+| `lugares_kmz.py` | Exportar una carpeta a KMZ e importar KMZ / KML (todo o nada; lee KML 2.0 / 2.1 / 2.2) | `exportar_lugares_kmz`, `importar_lugares_kmz` |
+| `lugares_iconos.py` | Catálogo de íconos propios y su dibujo en PNG para el KMZ | — |
 | `trazado.py` | Trazado de un hilo de punta a punta | `trazar_hilo` |
 | `diagrama.py` | Diagrama lógico | `diagramas`, `guardar_diagrama`, `eliminar_diagrama`, `generar_diagrama` |
 | `problemas.py` | Problemas con fotos; referencias de un proyecto | `problemas`, `problema`, `foto_problema`, `guardar_problema`, `eliminar_problema`, `historial_problema`, `referencias_proyecto` |
@@ -223,6 +242,8 @@ Además, `ventana_web.Api` guarda en la PC de quien usa el visor lo que el módu
 | `redes/trazado.js` | Panel de trazado de hilo |
 | `redes/diagrama.js` | Diagrama lógico (Konva), exportación |
 | `redes/problemas.js`, `redes/pendientes.js`, `redes/respaldos.js` | Vistas Problemas, Pendientes y Backup |
+| `lugares/iconos.js`, `lugares/dialogo.js`, `lugares/mis_lugares.js` | Mis lugares: íconos y su selector; ventana flotante de una marca / ruta / polígono (Quill); árbol, capas del mapa, menús, arrastrar y soltar, importar / exportar, compartir |
+| `mapa/coordenadas.js`, `mapa/buscador.js`, `mapa/pin.js`, `mapa/capas_visor.js`, `mapa/barra_herramientas.js` | Visor v2: lector de coordenadas, buscador con varias fuentes, pincho de una coordenada, capas del visor en el árbol de Lugares y barra de herramientas |
 
 **Librerías:** todas locales en `web/lib/`, sin CDN, cada una con su licencia al lado.
 

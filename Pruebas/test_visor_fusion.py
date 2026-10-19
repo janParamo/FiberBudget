@@ -1,4 +1,4 @@
-"""Ruta de fusión (visor_rutas/fusion.py), its key in calcular_ruta and the diagram images."""
+﻿"""Ruta de fusión (visor_rutas/fusion.py), its key in calcular_ruta and the diagram images."""
 import base64
 import importlib
 import os
@@ -258,10 +258,10 @@ def test_calcular_ruta_agrega_ruta_fusion_sin_cambiar_lo_demas(entorno, monkeypa
     monkeypatch.setattr(fusion, "ruta_fusion", falsa)
     r = calculo.calcular_ruta(12.1364, -86.2514)
     assert r["ruta_fusion"] == [{"orden": 1, "nombre": "MF PRUEBA"}]
-    # every key it returned before, plus ruta_fusion
+    # every key it returned before, plus ruta_fusion and its editable plan
     assert set(r) == {"cliente", "conexion", "ruta", "postes_existentes", "postes_nuevos", "mufas_en_ruta",
                       "mufas_intervenidas", "mufas_intervenidas_fuente", "distribution_reason",
-                      "nodos_visio_cercanos", "origen_trafico", "avisos", "ruta_fusion"}
+                      "nodos_visio_cercanos", "origen_trafico", "avisos", "ruta_fusion", "plan_fusion"}
     assert {"nombre", "tipo", "tipo_detalle", "id", "lat", "lon", "distancia_lineal_m", "fuente",
             "requiere_revision", "notas"} == set(r["conexion"])
     assert {"puntos", "distancia_m", "metraje_final_m", "reserva_m", "tipo_cable", "aproximada",

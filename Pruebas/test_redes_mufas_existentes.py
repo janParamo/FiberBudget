@@ -107,3 +107,26 @@ def test_editing_a_migrated_mufa_marks_it_and_its_splices(red_base):
     vista = mufas_existentes.validar(con, admin, mufa_id=ids["b"])
     r = mufa.guardar(con, admin, mufa_id=ids["b"], cambios={"conexiones": [{"id": "n2", "a": {"hilo": hilo("c1", 3)}, "b": {"hilo": hilo("c2", 3)}}]})
     assert r["mufa"]["estado_migracion"] == "validada"                                   # editing after validating keeps it validated
+
+
+def test_map_search_box_finds_new_elements_and_clients_but_not_migrated_mufas(red_base):
+    """Visor v2: the search box also looks in the network base. A mufa migrated from the Visio is found by the Visio
+    search, so here only what was created in the tool and the clients; by name or code, accents ignored, every word."""
+    con, admin, p, ids, _ = red_base
+    nueva = red.guardar(con, admin, proyecto_id=p["id"], cambios={"elementos": [
+        {"id": "n", "tipo": "mufa", "nombre": "MF Ñandú Nueva", "lat": 12.13, "lon": -86.3},
+        {"id": "k", "tipo": "cliente", "nombre": "Casa Pérez", "codigo": "C99001", "lat": 12.131, "lon": -86.301}]})["ids"]
+    buscar = lambda texto, **k: mufas_existentes.buscar_elementos(con, admin, texto=texto, **k)["elementos"]
+    assert [e["id"] for e in buscar("nandu")] == [nueva["n"]]                         # accents and case do not matter
+    assert [e["id"] for e in buscar("mf nueva nandu")] == [nueva["n"]]                # every word, any order
+    assert [e["id"] for e in buscar("c99001")] == [nueva["k"]]                        # a client by its code
+    assert [e["id"] for e in buscar("perez")] == [nueva["k"]]
+    assert buscar("centro") == []                                                      # migrated from the Visio: not here
+    assert buscar("n") == [] and buscar("") == []                                      # too short
+    hallado = buscar("nandu")[0]
+    assert (hallado["tipo"], hallado["proyecto"], round(hallado["lat"], 3), round(hallado["lon"], 3)) == ("mufa", "Red existente – Prueba", 12.13, -86.3)
+    # a project that is not a base one and not assigned is not searched for a reader
+    con.execute("UPDATE redes.proyectos SET es_red_base = false WHERE id = %s", (p["id"],))
+    lector = usuarios.guardar(con, admin, datos={"nombre": "Ana", "rol": "lector", "persona_visor": "ana"})["usuario"]
+    assert mufas_existentes.buscar_elementos(con, lector, texto="nandu")["elementos"] == []
+    assert len(mufas_existentes.buscar_elementos(con, admin, texto="nandu")["elementos"]) == 1

@@ -468,7 +468,9 @@ visor_rutas/
     ├── visor.css
     ├── visor.js     # mapa, capas, íconos, resumen, historial, medición
     ├── menu.js      # menú lateral: vistas con íconos, contraer a solo íconos
-    ├── lugares.js   # panel Lugares: árbol del KMZ, capas, buscador, troncales
+    ├── lugares.js   # panel Lugares: árbol del KMZ, capas, buscador, troncales, secciones propias
+    ├── mapa/        # módulos del mapa (visor v2): capas_visor.js = "Mapa base" y "Capas del visor"; coordenadas.js, buscador.js, pin.js = buscador de coordenadas con pincho
+    ├── lugares/     # Mis lugares (visor v2): iconos.js, dialogo.js, dibujar_red.js, mis_lugares.js (+ mis_lugares.css); barra_herramientas.js está en mapa/
     ├── redes/       # vistas del módulo de redes (comun.js, usuarios.js, redes.css)
     └── lib/         # copias LOCALES (sin CDN), con sus licencias MIT:
         ├── leaflet/            # Leaflet 1.9.4 (js, css, imágenes)
@@ -785,7 +787,7 @@ Dentro de cada mufa (fase 3): splitters con OLT, puerto OLT y potencia; la salid
   - `db.py`: conexión de lectura y escritura propia del módulo; la de `red_fibra_pg` sigue siendo de solo lectura.
   - `migrar.py`.
   - `repositorio.py`: versión e historial en la misma transacción.
-  - `usuarios.py`, `proyectos.py`, `elementos.py` (clientes del proyecto), `red.py` (red del editor), `mufa.py` (editor de mufa), `trazado.py` (trazado de hilo), `diagrama.py` (diagrama lógico), `problemas.py`, `pendientes.py`, `respaldo.py` (backup y exportación KMZ / GeoJSON), `verificar.py` (integridad), `metraje.py`, `texto.py` (HTML seguro).
+  - `usuarios.py`, `proyectos.py`, `elementos.py` (clientes del proyecto), `red.py` (red del editor), `mufa.py` (editor de mufa), `trazado.py` (trazado de hilo), `diagrama.py` (diagrama lógico), `problemas.py`, `pendientes.py`, `respaldo.py` (backup y exportación KMZ / GeoJSON), `verificar.py` (integridad), `metraje.py`, `texto.py` (HTML seguro), `lugares.py`, `lugares_kmz.py`, `lugares_iconos.py` y `lugares_red.py` (Mis lugares y su red).
   - `api.py`: `ServicioRedes.llamar(metodo, args)`, con una lista cerrada de métodos.
 - `web/lib/geoman/`: Leaflet-Geoman free 2.17.0 (MIT), copia local.
 - **Modo local:** `ventana_web.Api.redes(metodo, args)`.
@@ -819,10 +821,18 @@ derecho en el acceso directo → *Propiedades* → *Cambiar icono…*.
   calcula se muestra "Calculando…" y el botón queda desactivado. El botón ▾ (o la flecha ↓)
   muestra las últimas 10 coordenadas (solo mientras el visor está abierto). *Limpiar* borra la
   ruta y el resumen.
-- **Capas** (control de la esquina superior izquierda): *Satélite* = Esri World Imagery +
-  nombres de calles Esri World Transportation; *Calles* = Esri World Street Map. Casillas para
-  mostrar u ocultar: postes existentes, postes nuevos, mufas en ruta, mufas intervenidas,
-  nodos Visio y mis medidas.
+- **Capas** (un solo panel: las secciones *Mapa base* y *Capas del visor* arriba del árbol de
+  **Lugares**; ya no hay un recuadro flotante aparte): *Satélite* = Esri World Imagery +
+  nombres de calles Esri World Transportation; *Calles* = Esri World Street Map. Casillas
+  (con la casilla de tres estados del encabezado) para mostrar u ocultar: postes existentes,
+  postes nuevos, mufas en ruta, mufas intervenidas, nodos Visio cercanos, camino de la fibra,
+  mufa buscada, mis medidas y la red Visio completa. Las que se llenan con un cálculo quedan
+  **deshabilitadas, con un tooltip** ("se llena al generar una ruta / al buscar una mufa / al
+  medir en el mapa") hasta que haya algo que mostrar; las dos de *Red Visio* indican su zoom
+  mínimo (12). Los botones **＋ / −** del zoom están abajo a la derecha y se corren a la
+  izquierda cuando el panel derecho está abierto; la pestaña *Lugares ›* (panel plegado) ya
+  no queda tapada. Los `z-index` de todo lo que flota sobre el mapa están en una sola tabla
+  (variables `--z-*` al inicio de `visor.css`).
 - **Mapa:** ruta amarilla con borde oscuro y flechas de la conexión hacia el cliente (naranja
   punteada si es aproximada); acometida al cliente en verde punteado (desde 1 m, igual que
   el mapa del Excel). Punto de conexión = pin verde y cliente = pin rojo, con el nombre
@@ -841,7 +851,10 @@ derecho en el acceso directo → *Propiedades* → *Cambiar icono…*.
   con un poste nuevo de esa ruta (las demás se avisan y se cobran como nuevas). Los postes
   extra por esquina no tienen posición y no se pueden marcar. `POST /presupuesto` (n8n) no
   cambia.
-- **Panel de resumen** (derecha, se oculta con ❯): avisos en amarillo, punto de conexión
+- **Panel de resumen** (derecha, **oculto hasta que haya un resultado**: se abre solo al generar
+  una ruta, al buscar una mufa o al terminar una medida; 300 px de ancho, se redimensiona
+  arrastrando su borde y se contrae con ❯ a una pestaña lateral; *Limpiar* lo cierra si no queda
+  nada que mostrar): avisos en amarillo, punto de conexión
   (nombre, tipo, fuente, distancia lineal, "Validar en campo"), distancia por ruta, acometida,
   reserva y metraje final, tipo de cable, postes existentes y nuevos, mufas intervenidas (lista
   y fuente), origen de tráfico (nodo OLT, MF, confianza, camino), nodos Visio cercanos y mis
@@ -859,6 +872,16 @@ derecho en el acceso directo → *Propiedades* → *Cambiar icono…*.
   los puntos, la etiqueta y la lista *Mis medidas* del panel (con una muestra del color y la
   suma de todas). *Borrar medidas* las quita todas; *Limpiar* no las borra. La distancia es
   la geodésica (haversine, la misma fórmula que usa el servicio).
+  **Metraje final y total:** al terminar una medida el visor calcula, con las reglas de negocio
+  (`business_rules.yaml`, las mismas del presupuesto), el **metraje final** (distancia + 20 % por
+  bloque de 300 m + reservas de conexión y de puntas), el cable (Flat o ADSS según el umbral), los
+  postes existentes y nuevos y, unos segundos después, el **total** (llena la misma plantilla de
+  Excel y la recalcula con LibreOffice, así que es el que daría un presupuesto con esas
+  cantidades). Se ve en la etiqueta de la línea, en el clic sobre ella y en *Mis medidas*, con
+  *Descargar Excel* y *Ver detalle*. No usa Google. Supone una conexión de cliente al final y
+  ninguna mufa intervenida (sección `visor_medicion` de `business_rules.yaml`), servicio y equipo
+  de `visor_estimacion`; es un cálculo aproximado, no enviado. Código: `visor_rutas/medicion.py`,
+  `web/mapa/medicion_total.js`; en modo remoto `POST /visor/medicion`.
 
 **Menú ☰** (arriba a la izquierda; Esc o clic afuera lo cierra):
 - *Mapa y ruta*: la vista principal de siempre.
@@ -948,9 +971,13 @@ limpieza de la API no entra en esa carpeta y la del visor no toca `output/` ni
 - **Si algo falla.** Si no se puede armar la ruta de fusión, la ruta del cliente se calcula igual: `ruta_fusion` queda vacía y se agrega un aviso. Pasa lo mismo si el origen de tráfico no tiene camino en los diagramas o si no hay base de diagramas.
 - **Fusiones del piloto.** La casilla *Mostrar fusiones detectadas (piloto)* aparece **solo si existe la tabla `fusiones_piloto`** y viene **apagada**. Al marcarla, cada mufa muestra en un bloque aparte, con la insignia naranja **Piloto – validar**, las fusiones que detectó el piloto en sus diagramas. Se muestran ordenadas por confianza y nunca se mezclan con los hilos del Excel ni cambian la insignia de fuente. En un diagrama de red o subred solo se toman las fusiones cercanas a la etiqueta de esa mufa. Ver *Piloto de fusiones* más abajo.
 
-**Buscador de mufas y pestaña *Diagrama*:**
+**Buscador de mufas y coordenadas, y pestaña *Diagrama*:**
 
-- **Buscador:** está arriba, al centro del mapa. Escribe parte del nombre de la mufa: "puma", "MF loyola", "semaforos dorado"… No importan mayúsculas ni acentos, y MF/MC/MUFA cuentan igual, como en el importador.
+- **Coordenadas (visor v2):** el mismo buscador acepta coordenadas escritas a mano y **no calcula nada** (la barra inferior queda como está). Formatos: decimal (`13.094578, -86.002708`, con espacio o con `;`), grados-minutos-segundos como en Google Earth (`13°5'38.09"N 86°0'7.42"O`, también `W`, `º`, solo espacios `13 5 38.09 N 86 0 7.42 W`, o con la letra delante `N13 5 38.09 W86 0 7.42`) y grados con minutos decimales (`13 5.6348N 86 0.1237W`). Con letras el orden no importa; sin letras el primero es la latitud y la longitud va con signo menos. Debe caer en Nicaragua: si solo cabe con latitud y longitud al revés, avisa y ofrece la forma correcta; si no, dice que está fuera. Un nombre como "MF 12 NORTE" nunca se toma por coordenada (cualquier otra letra la descarta).
+- **Pincho:** Enter (o clic en "Ir a la coordenada …") vuela y pone un **pincho amarillo** con la etiqueta de la coordenada en decimal (casilla *Coordenada buscada*; hay uno solo, buscar otra lo mueve). Clic en el pincho: *Copiar decimal*, *Copiar grados*, *Guardar en Mis lugares* (deshabilitado hasta Mis lugares), *Usar para generar ruta* (llena la barra inferior sin calcular) y *Quitar*.
+- **Varias fuentes:** si no es una coordenada, el buscador pregunta a todas y las muestra juntas, cada una con su título: mufas y nodos Visio, el KMZ (por nombre; sin postes ni pozos), y la red base (lo creado en el módulo de redes y los clientes por nombre o código; una mufa migrada de Visio ya sale en la primera). Mis lugares se sumará en su fase. Una fuente que falla no oculta a las otras.
+- El lector de coordenadas está dos veces, en `visor_rutas/coordenadas.py` y en `web/mapa/coordenadas.js`; los dos se prueban con los mismos casos (`Pruebas/vectores_coordenadas.json`).
+- **Buscador:** está arriba, al centro del mapa (`web/mapa/buscador.js`). Escribe parte del nombre de la mufa: "puma", "MF loyola", "semaforos dorado"… No importan mayúsculas ni acentos, y MF/MC/MUFA cuentan igual, como en el importador.
 - **Resultados:** muestra hasta 20 nodos (mufas, nodos, ODF…) de la base de diagramas, primero el nombre exacto y luego los que aparecen en más diagramas. Se navega con ↑ ↓ y Enter, o con clic.
 - **Al elegir una mufa:**
   - el mapa la marca con un **pin rosado** y su nombre (casilla *Mufa buscada*) y la centra en la parte visible del mapa;
@@ -960,6 +987,66 @@ limpieza de la API no entra en esa carpeta y la del visor no toca `output/` ni
   - En los diagramas propios donde el importador no reconoció el título, se busca el texto que mejor coincide con el nombre: se ubican 289 de 337 mufas con diagrama propio y todas las de diagramas de red.
   - Si no se encuentra, el diagrama se muestra completo con un aviso.
 - **Ancho del panel:** se cambia arrastrando su borde izquierdo. Se recuerda un ancho para *Diagrama* y otro para las demás pestañas.
+
+**Mis lugares y la barra de herramientas (visor v2, fase 3):** carpetas y elementos propios de cada usuario, como en Google Earth (`visor_rutas/redes/lugares.py`, `lugares_kmz.py`, `lugares_iconos.py`; `web/lugares/*`, `web/mapa/barra_herramientas.js`). Migración `011_lugares.sql`.
+
+- **En el árbol:** la raíz **Mis lugares** está arriba de la red del KMZ, con sus carpetas y elementos, casillas de tres estados (se guardan), cuenta de elementos, y **Compartidas conmigo** cuando alguien te compartió algo. Doble clic: vuela al elemento o encuadra la carpeta. **Arrastrar y soltar** mueve a otra carpeta y ordena a mano (arriba / abajo de una fila = antes / después; en el centro de una carpeta = adentro). Qué carpetas están abiertas se recuerda en tu equipo.
+- **Barra de herramientas** (arriba del mapa, bajo el buscador): *Marca de posición* (un clic en el mapa), *Polígono* y *Ruta* (un clic por punto y doble clic para terminar; el doble clic ya no hace zoom), *Medir* (el mismo botón de la barra de abajo). Mufa, poste, cliente y cable (dibujar red en una carpeta, fase 4), Importar (fase 5) y Coordenadas masivas (fase 6) están deshabilitados con su tooltip.
+- **Ventana flotante** (sin fondo que bloquee el mapa; se mueve por su cabecera): nombre, carpeta, y las pestañas *Descripción* (texto con formato, *Agregar vínculo*, *Agregar imagen local*: PNG / JPEG / WEBP / GIF de hasta 2 MB, guardadas en la base), *Estilo, color* (ícono, color, escala y opacidad del ícono; nombre junto al pincho; color, grosor y opacidad de la línea; relleno del polígono), *Ver* (centro y zoom guardados, *Instantánea de vista actual*) y *Medidas* (longitud de una ruta; perímetro y área de un polígono, en vivo). La latitud y longitud de una marca se escriben en decimal o en grados, minutos y segundos, y el pincho se arrastra. Los vértices de una ruta o polígono se mueven, se agregan (el punto del medio de un tramo) y se quitan en el mapa.
+- **Íconos propios**, sin Google: pushpins de 10 colores, letras A–Z, números 1–10 y 8 figuras, con el selector de la imagen 06 de la especificación.
+- **Clic derecho en una carpeta:** *Nueva carpeta*, *Agregar marca de posición aquí* (al centro de la vista), *Agregar ruta*, *Agregar polígono*, *Encuadrar*, *Cambiar nombre*, *Compartir…*, *Exportar a KMZ*, *Importar KMZ aquí…*, *Guardar como proyecto* (deshabilitado hasta que las carpetas lleven elementos de red, fase 4) y *Eliminar* (con confirmación; se lleva sus subcarpetas y elementos, con borrado lógico). Clic en un elemento: popup con su descripción e imágenes y *Editar*, *Eliminar*, *Ir a la vista*, *Copiar coordenada*.
+- **Exportar a KMZ:** la carpeta con sus subcarpetas, íconos dibujados dentro del archivo (se ve sin internet), colores, grosor, relleno, descripciones con sus imágenes y la vista guardada. **Importar:** un `.kmz` / `.kml` (de aquí, de Google Earth o de otro programa; KML 2.0, 2.1 y 2.2) a una carpeta nueva, todo o nada; los pushpins de Google se reconocen por su nombre y lo que viene de aquí vuelve idéntico. Hasta 30 MB y 5 000 lugares por archivo.
+- **Compartir:** una carpeta (y sus subcarpetas) con otras personas, en solo lectura o con edición. Quien la recibe la ve en *Compartidas conmigo* (sus casillas valen solo en su ventana); lo que cree dentro de una carpeta compartida es del dueño; solo el dueño comparte, mueve o elimina la carpeta compartida.
+- **Búsqueda:** el buscador de arriba también encuentra lugares propios por nombre. El botón *Guardar en Mis lugares* del pincho de una coordenada abre la ventana de una marca con esa posición.
+- **Personal:** cualquier usuario activo del módulo tiene sus lugares (también un lector, no es la red) y nadie más los ve, ni un administrador, salvo lo compartido. Funciona igual en modo remoto (todo pasa por `redes`). No forman parte de los respaldos de proyectos; sí de los de la base entera (`pg_dump`).
+
+**Red dibujada en una carpeta (visor v2, fase 4):** mufas, postes, clientes, nodos/OLT, ODF y cables se dibujan **en el mapa principal y viven en una carpeta de Mis lugares**, sin abrir un proyecto (`redes/lugares_red.py`, `web/lugares/dibujar_red.js`; sin migración nueva: son lugares con `tipo` mufa / poste / cliente / nodo / odf / cable y sus datos en `propiedades`).
+
+- **Puntos:** botones de la barra (o clic derecho en la carpeta → *Agregar mufa / poste / cliente / nodo / ODF*), un clic en el mapa y la ventana flotante abre en **Datos de red**: tipo (mismos que el editor de proyectos), capacidad y bandejas de la mufa, código C##### e ID de servicio del cliente. El ícono sale del tipo (el servidor lo vuelve a poner); el pincho se arrastra mientras la ventana está abierta.
+- **Cable:** botón *Cable*: clic en el elemento de inicio, en el recorrido (los puntos se pegan a postes y mufas a 18 px, como en el editor) y **doble clic en el elemento final** (Enter termina, Retroceso quita el último punto, Esc cancela). Después se elige clase (troncal / distribución / acometida), ADSS o FLAT, hilos, hilos por buffer, cruces y color. Los extremos toman la posición de sus elementos y **el metraje** se calcula en el servidor con las reglas `diseno_red` (se ve en el popup del cable). Si se mueve un elemento, **el extremo de sus cables lo sigue**; para borrar uno con cables, el visor pregunta si se eliminan juntos.
+- **Guardar como proyecto:** clic derecho en la carpeta → copia a un proyecto nuevo (código `LUG-…`, tú como usuario asignado) los elementos de la carpeta y sus subcarpetas y los cables que unen dos de ellos (los vértices pegados a un poste quedan anclados), con las mismas validaciones del editor de proyectos. Las marcas, rutas y polígonos quedan solo en la carpeta; la carpeta no cambia. Pide permiso de editor. Exportar a KMZ ya lleva estos elementos (ícono y color del tipo, cables con su color y grosor por clase).
+**Entrar a cualquier mufa y editar lo que ya existe (visor v2, fase 4, segunda parte):** migración `012_kmz_cambios.sql`, `redes/kmz_cambios.py`, `web/lugares/kmz_cambios.js`.
+
+- **Entrar a la mufa:** el popup de una mufa del KMZ (carpetas «MUFA…») tiene **Entrar a la mufa** (también doble clic o Enter): abre su editor. Si la migración no la tiene, el visor pregunta si crea **una mufa vacía en ese punto** (queda en el proyecto base `BASE-VISOR`, ligada al KMZ por nombre y posición; entrar otra vez la encuentra, no se duplica) para armar sus bandejas y empalmes. Si no se acepta, abre el diagrama Visio como antes. Crear pide ser administrador o editor.
+- **Editar el KMZ sin tocar el archivo:** cualquier elemento del KMZ (puntos y líneas) se puede **Renombrar**, **Mover** (puntos: se arrastra un pin y se suelta) o **Eliminar** (quitar del mapa) desde su popup; **Deshacer cambios** lo deja como estaba. El cambio se guarda en `redes.kmz_cambios` (un elemento se identifica por carpeta + nombre original + coordenada redondeada), **es de todo el equipo**, solo administradores y editores lo hacen, queda en el historial y se ve igual en modo remoto. El árbol de Lugares muestra **Cambios al KMZ (n)** con la lista y su Deshacer.
+- **Lo que todavía no hace:** los cambios **no llegan** a `red_puntos` / `red_lineas`, así que el **presupuesto sigue usando la red como estaba** (queda `publicado = false`; publicar y re-publicar es un paso aparte, pendiente de tu OK). Tampoco se mueven los vértices de una línea del KMZ (solo renombrar o quitar), y la búsqueda del KMZ aún lista el nombre original. Los elementos de la red base (migrados del Visio o creados en el módulo) se editan abriendo su proyecto, como siempre.
+
+**Editar la ruta y presupuesto en vivo (visor v2, fase 4B, primera parte):** `visor_rutas/calculo.py` (`RutaFija`, `calcular_con_ruta`), `web/mapa/editar_ruta.js`. Regla de Jan: **todo cambio recalcula**.
+
+- **Editar la ruta:** en la tarjeta *Ruta* del panel, **✎ Editar ruta** deja la polilínea en blanco con sus puntos: se arrastran, clic en el punto medio de un tramo agrega uno, clic derecho en un punto lo quita. **＋ Poste a mano**: clic en el mapa agrega un poste nuevo (clic en uno suyo lo quita). Unos 0,6 s después del último cambio se recalcula todo **sin pedir nada a Google**: distancia, metraje final y reserva, tipo de cable, postes existentes (PostGIS cerca de la línea), postes nuevos, mufas en ruta y mufas intervenidas; y después el **presupuesto aproximado** con esa misma ruta (una respuesta vieja se descarta). Marcar un poste nuevo como existente sigue bajando el cobro, también sobre la ruta editada (al cambiar la ruta esas marcas se limpian, porque son de los postes anteriores).
+- **Ruta a mano:** botón **✎ Ruta a mano** (barra de abajo): clic para cada punto (se pega a postes, mufas y puntos cercanos), doble clic o Enter terminan, Retroceso quita el último, Esc termina. **El presupuesto se va generando mientras se dibuja**; al terminar queda en edición. El cliente es el último punto.
+- **Volver a la de Google** rehace la ruta de la coordenada; **Guardar en Mis lugares** guarda la ruta editada como ruta de una carpeta (y de ahí a KMZ).
+- **El presupuesto con datos** (☰ → Generar presupuesto) y el aproximado usan la ruta editada y los postes a mano **cuando la coordenada es la del cliente de esa ruta**. `POST /presupuesto` **no cambia** (los dos datos nuevos son opcionales, solo del visor); en modo remoto: `POST /visor/ruta_editada` y `ruta` / `postes_extra` en `/visor/estimacion`.
+- **Detalles:** el punto de conexión es el que corresponde a la coordenada del cliente; si la ruta editada empieza a más de 15 m de él, un aviso lo dice (el presupuesto cuenta ese punto de conexión). Un poste a mano se cobra como nuevo y se suma a los calculados.
+- **Ruta de fusión editable y su Excel (fase 4B, segunda parte):** `visor_rutas/ruta_fusion_plan.py`, `ruta_fusion_xlsx.py`, `exportar_fusion.py`, `web/mapa/editar_fusion.js`. En la pestaña **Ruta de fusión**, bajo las paradas de los diagramas, el bloque **Ruta para el Excel** trae una caja por mufa, **del cliente hacia la potencia**, con el texto como se escribe en el libro (`En MF X lat°, lon° H# hacia MF A fusionarlo con H# hacia MF B`; la primera: `ingresar la acometida del cliente. H1 del cliente…`). **Mufas aérea y de corte no se tocan** (se reconocen por el nombre en `business_rules.yaml` → `ruta_fusion.no_tocar`; «MF FUERZA AEREA» es un lugar y está en las excepciones; la mufa donde entra el cliente siempre se toca, con un aviso). Los hilos salen del Excel de anillos y donde no hay dato quedan **H__** («hilos por identificar»). Se puede: marcar / desmarcar, cambiar hilos, poner splitter (1x8…), escribir el texto a mano, subir / bajar / quitar, agregar una mufa o una mufa nueva («instalar MF FOSC»), «COMPARTIR POTENCIA DEL SP» y avisos en rojo. Cada cambio rehace los textos (Python), el camino punteado del mapa y el **presupuesto aproximado, que cuenta las mufas que se tocan** (si no editas nada, queda el conteo de siempre).
+- **Exportar al Excel:** agrega **una franja nueva al final** de la hoja **«2025 - 2026»** del libro `RUTA_FUSION_XLSX` (por defecto `EjemploRutaFusiones/RUTA DE FUSION - Copia.xlsx`; luego el de la nube): barra verde con la fecha de hoy (la cambias en el libro), **Cliente** (vacío si el presupuesto fue a mano; con ticket, su nombre — el campo del bloque), **Diagramas y Cuadrilla vacíos**, una caja por mufa, avisos en rojo, «COMPARTIR POTENCIA DEL SP» si aplica y **RUTA SUGERIDA** con el mapa de la ruta debajo (opcional). Se escribe **a nivel XML**: lo que ya existe no se toca (comentarios en hilo, dibujos, otras hojas), con los estilos del propio libro; antes se guarda un **respaldo** (`output/ruta_fusion_respaldos`, los últimos 10), se escribe en un archivo temporal que se **verifica** y se reemplaza de una vez. Si el libro está **abierto en Excel** no se escribe y se avisa. Siempre se agrega una franja nueva (no se reutiliza el bloque derecho de una fecha existente) y la franja de mufas en edición se pierde si cambias la ruta del mapa (el plan se rehace).
+
+**Importar un KMZ a la red (visor v2, fase 5):** migración `013_kmz_importaciones.sql`, `visor_rutas/redes/importar_kmz.py`, `web/lugares/importar_kmz.js`. El botón **Importar KMZ** de la barra abre una ventana (solo administradores y editores).
+
+- **Dos modos:** *una ruta o elementos nuevos* (lo que falta en el archivo no se toca) y *actualización de toda la red* (un KMZ completo como `RED DE IDEAY.kmz`; además detecta lo eliminado). El visor **sugiere** uno según cuánto del archivo ya está en la red; se puede cambiar antes de aplicar.
+- **Comparar:** cada elemento del archivo se compara con la red en vigor (el KMZ del servidor **con sus cambios** de «Cambios al KMZ» y lo que ya se importó) por carpeta + nombre + cercanía (300 m), y si no hay nombre igual, por el mismo lugar (2 m en puntos, extremos a 3 m en líneas): **nuevo**, **modificado** (nombre, posición, trazo o descripción), **sin cambios** (solo se cuenta) y **eliminado** (solo en actualización). Con la red real, el KMZ contra sí mismo da 35 526 sin cambios en unos 7 s.
+- **Revisar:** conteos con color (nuevo verde, modificado naranja, eliminado rojo), lista filtrable por clase, carpeta y nombre, el mapa con los mismos colores (clic en una fila vuela al elemento) y casilla para aceptar o rechazar cada cambio o grupos enteros («Aceptar / Rechazar los mostrados»). Lo **eliminado empieza rechazado**; si el archivo no trae más del 20 % de la red, un aviso lo dice. En el árbol de Lugares el archivo aparece como **Importados (pendientes)** con su nombre.
+- **Aplicar a la red:** el archivo KMZ no se modifica. Lo modificado o eliminado de un elemento del KMZ queda en **Cambios al KMZ** (migración 012; se ve en el mapa y se deshace igual) y lo nuevo en la capa **Importados (aplicados)**. Todo guarda lo que había antes: **Revertir** deshace la **última** importación aplicada (las demás, de la más nueva a la más vieja). Queda el historial (archivo, md5, quién, cuándo, conteos).
+- **Publicar en el presupuesto** (solo administradores, botón aparte después de aplicar): inserta lo nuevo en `red_puntos` / `red_lineas` con `tabla_origen = 'visor'`, actualiza lo modificado y borra lo eliminado, **en una transacción** y guardando las filas de antes; **Revertir la publicación** las deja exactamente como estaban (con sus ids). La categoría sale del nombre de la carpeta (igual a una que ya existe, en singular o plural; mufas, reservas y postes por sus palabras); lo que no tiene equivalente o no se encuentra en el presupuesto **no se toca** y el reporte lo lista. Hasta publicar, el presupuesto sigue usando la red como estaba.
+- **Límites:** el archivo viaja en base64 (hasta 30 MB); en modo remoto un KMZ completo pesa unos 27 MB y la subida por ngrok puede tardar (la fase 7 le da un endpoint de subida propio). Los polígonos se importan y se aplican, pero no se publican. No se comparan los elementos de la red base (proyectos de Visio).
+
+**Modo remoto para todo lo nuevo (visor v2, fase 7):** `VisorRutas.exe` (sin Python ni bases en esa PC) hace lo mismo que el visor local, todo por `/visor/*` con la X-Visor-Key y los permisos de la persona de la clave (un lector solo tiene sus propios lugares; importar KMZ, editar el KMZ, crear proyectos y la ruta de fusión piden ser editor; publicar en el presupuesto, administrador).
+
+- **Medir con total, ruta editada, ruta de fusión y coordenadas masivas** tienen su endpoint (`/visor/medicion`, `/visor/ruta_editada`, `/visor/estimacion` con `ruta`, `postes_extra` y `mufas_tocadas`, `/visor/fusion/*`, `/visor/masivas/*`); Mis lugares, editar el KMZ, importar KMZ, guardar como proyecto y lo de las coordenadas masivas van por `/visor/redes/{metodo}`. Los Excel de los presupuestos masivos y el libro de rutas de fusión **viven en el servidor**: el .exe baja los presupuestos en un .zip.
+- **Archivos grandes por partes** (`visor_rutas/subidas.py`, `POST /visor/subidas`, `/visor/subidas/{id}/{n}` con los bytes de la parte, `/visor/subidas/{id}/fin`): un KMZ completo pesa 20 MB; la página lo parte en pedazos de 1,5 MB (con «Subiendo… 40 %»), el servidor los junta en memoria (nada en disco, hasta 40 MB, 8 subidas a la vez, caducan a los 30 min) y «Importar KMZ» / «Coordenadas masivas» usan el id (`subida_id`), que se entrega una sola vez. En modo local la página hace lo mismo contra este mismo módulo.
+- **Tareas largas:** el lote de coordenadas masivas corre en segundo plano con seguimiento y cancelar (se consulta cada 1,5 s); comparar un KMZ completo es una sola llamada (unos 10-30 s, con tope de 180 s en el cliente).
+- **Para las otras PCs:** regenerar `VisorRutas.zip` (`build_visor.bat`) y reiniciar `start_service.bat` en el servidor cuando cambie algo.
+
+**Modo captura:** el botón **📷 Captura** de la barra de abajo esconde todo menos el mapa (menú, paneles, barras, buscador, controles, leyendas y ventanas) y lo deja a pantalla completa con lo que esté dibujado (ruta, postes, mufas, medidas) para tomar la imagen; **Esc** vuelve. Un aviso de 2,5 s recuerda cómo salir. Además, la lista de resultados del buscador ahora se abre por encima de la barra de herramientas.
+
+**Coordenadas masivas (visor v2, fase 6):** `visor_rutas/masivas.py`, `redes/masivas_red.py`, `web/lugares/masivas.js`. El botón **Coordenadas masivas** de la barra abre una ventana: un presupuesto aproximado por cada coordenada de un archivo.
+
+- **Leer:** Excel (.xlsx), CSV, Word (.docx), texto (.txt) o texto pegado. En Excel y CSV se buscan las columnas por su encabezado (latitud / longitud, o una de «coordenada», nombre o cliente, código; con coma decimal también) y, sin encabezado, las celdas de cada fila. En Word y texto se leen los formatos del buscador (decimal, grados-minutos-segundos y grados-minutos decimales) línea por línea y el resto de la línea es el nombre. Un `.xls` viejo se pide guardarlo como `.xlsx`.
+- **Vista previa:** cada punto sale *válida*, *al revés* (latitud y longitud invertidas: botón «Usar» con la sugerida), *fuera de Nicaragua*, *no válida* o *duplicada* (igual a una fila anterior). Se corrige el texto de cada coordenada, el nombre y el código, y se marca cuáles entran. Los puntos se ven en el mapa con su número. Solo las válidas marcadas se calculan.
+- **Calcular:** antes avisa cuántos presupuestos y consultas a Google son. Corre **en segundo plano**, un punto tras otro, con el mismo cálculo del presupuesto aproximado (`visor_estimacion`) y las mismas reglas; las rutas de Google se piden con un **límite por minuto** (`visor_masivo.google_por_minuto: 30` en `business_rules.yaml`; `max_puntos: 200` por lote). Barra de progreso, tiempo restante estimado con lo que ya se hizo, y **Cancelar** (termina el punto en curso). Un punto que falla no detiene a los demás. Solo un lote a la vez.
+- **Resultados:** tabla ordenable con punto de conexión, distancia por ruta, metraje, cable, postes, mufas, total y avisos; un clic en una fila dibuja su ruta en el mapa. Cada presupuesto queda como Excel en `output/visor/masivo_<fecha>_<archivo>/` junto a un `Resumen.xlsx` (el total sale vacío si LibreOffice no está: se ve al abrir el Excel).
+- **Al terminar:** *Abrir carpeta* (modo local) o *Descargar .zip* (modo servidor), **Guardar como proyecto** (un cliente por punto, la mufa de conexión de cada ruta y un cable de acometida FLAT de 2 hilos con el trazo de la ruta; código `MAS-…`) y **Guardar en Mis lugares** (una carpeta con las marcas numeradas y, si se quiere, una subcarpeta «Rutas»).
+- **Modo servidor:** `POST /visor/masivas/leer`, `/iniciar`, `GET /visor/masivas/{lote}`, `/cancelar`, `/descargar`: cada punto válido cuenta para el límite por hora de la persona (puede pedir ruta a Google) y se rechaza el lote entero si lo pasa. Un lote vive en la memoria del proceso (si el servicio se reinicia se pierde el seguimiento; los Excel quedan en la carpeta).
 
 **Panel "Lugares": la red del KMZ como en Google Earth** (`visor_rutas/kmz_capas.py`, `web/lugares.js`):
 
@@ -1009,7 +1096,7 @@ A la izquierda del mapa está el panel **Lugares**, armado desde el archivo KMZ 
 
   `--sin-descargar` usa los SVG en vez de descargar los íconos de Google. Si falta el KMZ, se sigue mostrando la última caché, con un aviso.
 
-**Capas Visio** (`visor_rutas/red.py`): en el control de capas, debajo de una línea separadora, siguen las dos casillas de Visio. Empiezan apagadas; al encenderlas se consulta **solo el área visible** del mapa y se vuelve a consultar al moverlo.
+**Capas Visio** (`visor_rutas/red.py`): en la sección *Capas del visor* del panel Lugares, al final, están las dos casillas de Visio. Empiezan apagadas; al encenderlas se consulta **solo el área visible** del mapa y se vuelve a consultar al moverlo.
 
 | Casilla | Qué muestra | Desde zoom |
 |---|---|---|
@@ -1044,6 +1131,9 @@ Errores: se muestran en la barra inferior; el detalle queda en `logs/visor.log`.
 Pruebas:
 - `Pruebas/test_visor_rutas.py`: cálculo, con base y Google simulados.
 - `Pruebas/test_visor_web.py`: Api de la ventana web y elección web/Tkinter; no necesita pywebview.
+- `Pruebas/test_redes_lugares.py` y `test_visor_pagina_fase3.py`: Mis lugares en el servidor (carpetas, geometría y estilo validados, orden manual y ciclos, permisos y compartir, descripciones con imágenes, íconos PNG, KMZ de ida y vuelta, KML de Google Earth, importación todo o nada) y en la página real (barra, menús, ventana flotante, arrastre de vértices con el ratón, casillas, arrastrar y soltar, exportar, importar, compartir, buscador, persistencia en una segunda ventana y la vista de quien recibe una carpeta en solo lectura), con una base de datos desechable.
+- `Pruebas/test_coordenadas.py` y `test_visor_pagina_fase2.py`: el intérprete de coordenadas (44 casos, Python y el mismo en JavaScript con los mismos mensajes), el pincho, sus botones, que no se calcule nada, el aviso de invertidas / fuera de Nicaragua y las fuentes del buscador; en Edge sin ventana a 1366×768 y 1920×1080.
+- `Pruebas/test_visor_pagina_fase1.py` (con `arnes_pagina.py`): la página real en **Edge sin ventana**, con una `Api` de prueba (sin bases de datos ni Google) a 1366×768 y 1920×1080: un solo panel de capas, capas deshabilitadas con su motivo, zoom abajo a la derecha, ningún control flotante pisa a otro y el panel derecho cerrado hasta tener resultado. Se omite si no hay Edge o la librería `websockets`.
 - `Pruebas/test_visor_fusion.py`: ruta de fusión con un SQLite de prueba, claves de `calcular_ruta` y `Api.diagrama`.
 - `Pruebas/test_visor_presupuesto.py`: presupuesto del visor = misma función y mismas cantidades que `POST /presupuesto`, archivos solo en `output/visor` (nunca `budget_index.json`), estimación (10 Mbps/GPON, Residencial ≤ 600 m / Empresarial > 600 m, valores de `visor_estimacion`, sin segunda llamada a Google), limpieza, Excel → HTML con valores y no fórmulas, formatos de moneda y resumen.
 - `Pruebas/test_seleccion_conexion.py`: punto de conexión elegido por metraje de ruta y descarte de mufas sin hilos (caso real simulado), en el presupuesto y en el visor.
@@ -1196,3 +1286,8 @@ Intenta leer automáticamente, de cada diagrama Visio ya convertido (`red_fibra/
 **Para verlas en el visor:** después de correr el piloto, abre el visor, genera la ruta, entra a la pestaña *Ruta de fusión* y marca *Mostrar fusiones detectadas (piloto)*. Si el visor está conectado a PostgreSQL, primero publica la base con `red_fibra\publicar_postgres.py`. Si no, lee `red_fibra.db`.
 
 **Ojo:** el importador reconstruye `red_fibra.db` completa, así que después de cada importación `fusiones_piloto` queda vacía y hay que volver a correr el piloto. Más detalle en `red_fibra/LEEME.md`. Pruebas: `Pruebas/test_fusiones_piloto.py`.
+
+
+## Actualizar la red desde el programa (fase 8, administradores)
+
+La ruta y el presupuesto usan `red_puntos` / `red_lineas` (PostGIS), **no** el KMZ del mapa. Al cambiar el KMZ hay que poner esas tablas al día: en el visor, botón **Importar KMZ** → sección **Actualizar la red**: *Subir KMZ nuevo* (reemplaza `KMZ_PATH`, guarda el anterior en `anteriores/`), *Comparar con el presupuesto* (solo lee) y *Poner el presupuesto al día* (inserta lo que falta, opcionalmente quita lo que ya no está; se puede revertir). Regla de postes: entre dos postes existentes se acepta un vano de hasta `poles.max_span_between_existing_m` (100 m) sin postes nuevos, y se buscan postes existentes hasta `existing_pole_search_buffer_m` (25 m) de la ruta.

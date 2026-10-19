@@ -232,6 +232,25 @@ def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None) -
     return solicitud
 
 
+def postes_a_mano(valor: Any) -> int:
+    """How many poles the user added by hand on the map (0 when the value is not a sensible number)."""
+    try:
+        n = int(valor)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(n, MAX_POSTES_MARCADOS))
+
+
+def mufas_tocadas(valor: Any) -> int | None:
+    """How many mufas the user's fusion route intervenes (None: nobody edited it, the budget keeps the computed count)."""
+    if valor is None or valor == "":
+        return None
+    try:
+        return max(0, min(int(valor), 100))
+    except (TypeError, ValueError):
+        return None
+
+
 def postes_marcados(valor: Any) -> list[float] | None:
     """Metros de ruta de los postes nuevos marcados como existentes en el mapa (None: ninguno).
 
@@ -253,7 +272,8 @@ def postes_marcados(valor: Any) -> list[float] | None:
 # --------------------------------------------------------------------------- generación
 
 def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: str | None = None,
-            ahora: datetime | None = None, postes_existentes_m: list[float] | None = None) -> dict[str, Any]:
+            ahora: datetime | None = None, postes_existentes_m: list[float] | None = None,
+            postes_extra: int = 0, mufas_tocadas: int | None = None) -> dict[str, Any]:
     """Genera el presupuesto con main._generar_presupuesto_con en output/visor.
 
     Devuelve la misma respuesta que POST /presupuesto, con excel_path apuntando al archivo
@@ -267,6 +287,10 @@ def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: s
     limpiar_archivos_viejos(carpeta)
     visio_con = red_fibra_pg.connect_or_none()
     opcionales = {"new_poles_marked_existing_m": postes_existentes_m} if postes_existentes_m else {}
+    if postes_extra:
+        opcionales["new_poles_extra"] = int(postes_extra)
+    if mufas_tocadas is not None:
+        opcionales["mufa_count_override"] = int(mufas_tocadas)
     try:
         respuesta = main._generar_presupuesto_con(solicitud, visio_con, output_dir=carpeta, get_route=get_route,
                                                   **opcionales)
@@ -316,7 +340,7 @@ def campos_estimacion(lat: float, lon: float, supuestos: dict[str, Any], ahora: 
 
 
 def estimar(lat: float, lon: float, metraje_final_m: float, get_route: Any = None,
-            postes_existentes_m: list[float] | None = None) -> dict[str, Any]:
+            postes_existentes_m: list[float] | None = None, postes_extra: int = 0, mufas_tocadas: int | None = None) -> dict[str, Any]:
     """Presupuesto aproximado de la vista principal: solo la coordenada, supuestos por defecto.
 
     metraje_final_m: el de la ruta que el visor acaba de dibujar (calculo.calcular_ruta), que
@@ -327,7 +351,7 @@ def estimar(lat: float, lon: float, metraje_final_m: float, get_route: Any = Non
     supuestos = supuestos_estimacion(metraje_final_m, rules)
     campos = campos_estimacion(lat, lon, supuestos)
     respuesta = generar(construir_solicitud(campos), get_route, nombre_base="Estimacion",
-                        postes_existentes_m=postes_existentes_m)
+                        postes_existentes_m=postes_existentes_m, postes_extra=postes_extra, mufas_tocadas=mufas_tocadas)
     supuestos["postes_marcados"] = len((respuesta.get("budget") or {}).get("new_poles_marked_existing_m") or [])
     supuestos["technology"] = respuesta["equipment"]["technology"]
     supuestos["cable"] = respuesta["budget"]["cable_type"]

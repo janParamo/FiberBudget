@@ -12,6 +12,18 @@
   --aviso-texto: #5a3e00;
   --ok: #0a7d3b;
   --sombra: 0 4px 16px rgba(0, 0, 0, .22);
+  /* Una sola tabla de capas (z-index) de todo lo que flota sobre el mapa. De menor a mayor. Los controles de
+     Leaflet (zoom, atribución) valen 1000 y el módulo de redes (redes.css) usa 965 para su barra del editor. */
+  --z-panel: 900;            /* panel derecho y su pestaña */
+  --z-ayuda: 950;            /* ayuda de "Medir" */
+  --z-buscador: 960;         /* buscador superior */
+  --z-lugares: 970;          /* panel Lugares y su pestaña */
+  /* la ventana flotante de una marca / ruta (lugares/mis_lugares.css) usa 980 y las de apoyo --z-modal + 100 */
+  --z-barra: 1000;           /* barra inferior (= controles de Leaflet) */
+  --z-vista: 2000;           /* vistas a pantalla completa y menú de clic derecho */
+  --z-menu-lateral: 2600;
+  --z-modal: 3000;           /* ventanas y menús de Lugares */
+  --z-modal-alto: 3500;      /* configuración y foto grande */
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
   color: var(--texto);
@@ -45,7 +57,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .barra {
   position: absolute; left: 0; right: 0; bottom: 0; height: var(--barra-alto);
   display: flex; align-items: center; gap: 8px; padding: 0 12px;
-  background: var(--fondo); border-top: 1px solid var(--borde); z-index: 1000;
+  background: var(--fondo); border-top: 1px solid var(--borde); z-index: var(--z-barra);
 }
 .barra-etiqueta { white-space: nowrap; color: var(--texto-suave); }
 .separador { width: 1px; height: 24px; background: var(--borde); margin: 0 4px; }
@@ -88,7 +100,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 /* ---------------------------------------------------------------- panel de resumen */
 .panel {
   position: absolute; top: 10px; right: 10px; bottom: calc(var(--barra-alto) + 10px);
-  width: var(--ancho-panel, 340px); display: flex; flex-direction: column; z-index: 900;
+  width: var(--ancho-panel, 300px); display: flex; flex-direction: column; z-index: var(--z-panel);
   background: rgba(255, 255, 255, .97); border-radius: 10px; box-shadow: var(--sombra);
 }
 .panel[hidden] { display: none; }
@@ -130,7 +142,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .medidas .quitar:hover { color: var(--error); }
 
 .abrir-panel {
-  position: absolute; top: 10px; right: 10px; z-index: 900; height: 32px; padding: 0 12px;
+  position: absolute; top: 10px; right: 10px; z-index: var(--z-panel); height: 32px; padding: 0 12px;
   border: 0; border-radius: 8px; background: var(--fondo); box-shadow: var(--sombra);
   font: inherit; font-weight: 600; cursor: pointer;
 }
@@ -138,7 +150,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 
 /* ---------------------------------------------------------------- menú contextual */
 .menu {
-  position: absolute; z-index: 2000; margin: 0; padding: 4px 0; list-style: none; min-width: 190px;
+  position: absolute; z-index: var(--z-vista); margin: 0; padding: 4px 0; list-style: none; min-width: 190px;
   background: var(--fondo); border: 1px solid var(--borde); border-radius: 6px; box-shadow: var(--sombra);
 }
 .menu[hidden], .historial[hidden], .medir-ayuda[hidden] { display: none; }
@@ -149,7 +161,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 
 /* ---------------------------------------------------------------- medición */
 .medir-ayuda {                  /* below the mufa search box */
-  position: absolute; top: 60px; transform: translateX(-50%); z-index: 950;
+  position: absolute; top: 60px; transform: translateX(-50%); z-index: var(--z-ayuda);
   left: calc(var(--ocupado-izquierda, 0px) + (100vw - var(--ocupado-izquierda, 0px) - var(--ocupado-derecha, 360px)) / 2);
   background: rgba(20, 20, 20, .85); color: #fff; padding: 8px 14px; border-radius: 8px;
   font-size: 13px; box-shadow: var(--sombra); max-width: min(980px, 80vw); text-align: center;
@@ -180,6 +192,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .etiqueta.conexion { color: #00e05a; }
 .etiqueta.cliente { color: #ff4a4a; }
 .etiqueta.buscada { color: #ff5cb0; }
+.etiqueta.coordenada { color: #ffffff; }
 .sin-coord { color: var(--error); }
 .leaflet-tooltip.hover { font-weight: 600; }
 .popup h3 { margin: 0 0 4px; font-size: 14px; }
@@ -188,6 +201,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .popup dt { color: var(--texto-suave); }
 .popup dd { margin: 0; font-variant-numeric: tabular-nums; }
 .popup .acciones { display: flex; gap: 6px; }
+.popup .pin-acciones { flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- íconos y leyenda */
 .icono { background: none; border: 0; }
@@ -206,9 +220,9 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .leyenda-plegada h4 { margin: 0; }
 .leyenda-plegada h4::after { content: " ▸"; }
 
-.leaflet-control-layers-expanded { font-size: 13px; }
-.leaflet-control-layers label { margin: 2px 0; }
 .leaflet-control-attribution a { pointer-events: none; color: inherit; }
+/* Zoom + / − abajo a la derecha: se corre a la izquierda lo que ocupe el panel derecho (--ocupado-derecha, visor.js) */
+.leaflet-bottom.leaflet-right .leaflet-control-zoom { margin-right: var(--ocupado-derecha, 0px); margin-bottom: 26px; }
 
 /* ---------------------------------------------------------------- pestañas del panel */
 .pestanas { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
@@ -273,7 +287,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .parada .acciones-parada { display: flex; gap: 6px; margin-top: 8px; }
 
 /* ---------------------------------------------------------------- modal del diagrama */
-.modal { position: fixed; inset: 0; z-index: 3000; background: rgba(0, 0, 0, .55); display: flex; padding: 24px; }
+.modal { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0, 0, 0, .55); display: flex; padding: 24px; }
 .modal[hidden] { display: none; }
 .modal-caja {
   flex: 1; display: flex; flex-direction: column; background: var(--fondo); border-radius: 10px;
@@ -300,7 +314,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 
 /* ---------------------------------------------------------------- buscador de mufas */
 .buscador {            /* centred in the part of the map the panels do not cover (--ocupado-izquierda/derecha) */
-  position: absolute; top: 10px; z-index: 960; transform: translateX(-50%);
+  position: absolute; top: 10px; z-index: var(--z-buscador); transform: translateX(-50%);
   left: calc(var(--ocupado-izquierda, 0px) + (100vw - var(--ocupado-izquierda, 0px) - var(--ocupado-derecha, 360px)) / 2);
   width: clamp(240px, calc(100vw - var(--ocupado-izquierda, 0px) - var(--ocupado-derecha, 360px) - 420px), 420px);
   display: flex; align-items: center;
@@ -320,6 +334,12 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .buscar-resultados li .det { display: block; font-size: 12px; color: var(--texto-suave); }
 .buscar-resultados li .sin-coord { color: var(--error); }
 .buscar-resultados .vacio { color: var(--texto-suave); cursor: default; }
+.buscar-resultados .vacio.error { color: var(--error); }
+.buscar-resultados .grupo {                 /* title of each source (Visio, KMZ, red base) */
+  padding: 6px 14px 2px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--texto-suave); cursor: default; pointer-events: none;
+}
+.buscar-resultados li.coordenada b::before { content: "📍 "; }
 .buscar-resultados .vacio:hover { background: none; }
 
 /* ---------------------------------------------------------------- panel ancho y diagrama en el panel */
@@ -352,8 +372,6 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 }
 
 /* Capas de la red completa */
-.leaflet-control-layers label.primera-red { border-top: 1px solid var(--borde); margin-top: 6px; padding-top: 6px; }
-.capa-red { color: #4a2a7a; }
 .estado-red {
   background: rgba(255, 255, 255, .95); padding: 6px 10px; border-radius: 8px; box-shadow: var(--sombra);
   font-size: 12px; line-height: 1.4; max-width: 340px;
@@ -387,14 +405,14 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .config-acciones { display: flex; gap: 8px; justify-content: flex-end; }
 .config-nota { margin: 0; font-size: 12px; color: var(--texto-suave); line-height: 1.4; }
 .vp-campo input:disabled { background: var(--fondo-suave); color: var(--texto-suave); }
-#modal-config { z-index: 3500; }
+#modal-config { z-index: var(--z-modal-alto); }
 
 /* ---------------------------------------------------------------- menú lateral (menu.js) */
 /* Always visible on the left: icons + text, or only icons (« ‹ »). The map, "Lugares" and the
    views start to its right (--ancho-menu, set by menu.js). */
 :root { --ancho-menu: 210px; --ocupado-izquierda: calc(var(--ancho-menu) + var(--ancho-lugares, 0px)); }
 .menu-lateral {
-  position: absolute; top: 0; left: 0; bottom: var(--barra-alto); width: var(--ancho-menu); z-index: 2600;
+  position: absolute; top: 0; left: 0; bottom: var(--barra-alto); width: var(--ancho-menu); z-index: var(--z-menu-lateral);
   display: flex; flex-direction: column; background: #232a35; color: #dfe4ec; overflow: hidden;
   box-shadow: 1px 0 6px rgba(0, 0, 0, .25);
 }
@@ -429,7 +447,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 /* ---------------------------------------------------------------- vistas a pantalla completa */
 .vista[hidden] { display: none; }
 .vista-presupuesto, .vista-modulo {
-  position: absolute; top: 0; right: 0; bottom: var(--barra-alto); left: var(--ancho-menu); z-index: 2000;
+  position: absolute; top: 0; right: 0; bottom: var(--barra-alto); left: var(--ancho-menu); z-index: var(--z-vista);
   display: flex; flex-direction: column; background: var(--fondo-suave);
 }
 .vp-cabecera {
@@ -552,7 +570,7 @@ table.xl td.sin-calculo { color: #9a9a9a; text-align: center; }
 
 /* ---------------------------------------------------------------- panel "Lugares" (lugares.js) */
 .lugares {
-  position: absolute; top: 0; left: var(--ancho-menu); bottom: var(--barra-alto); width: 300px; z-index: 970;
+  position: absolute; top: 0; left: var(--ancho-menu); bottom: var(--barra-alto); width: 300px; z-index: var(--z-lugares);
   display: flex; flex-direction: column; background: var(--fondo); border-right: 1px solid var(--borde);
   box-shadow: 2px 0 8px rgba(0, 0, 0, .12); font-size: 13px; color: var(--texto);
 }
@@ -579,6 +597,11 @@ table.xl td.sin-calculo { color: #9a9a9a; text-align: center; }
 .lg-fila.sel { background: #d6e6ff; }
 .lg-fila.vacia { color: #a3a8b2; }
 .lg-fila.aviso { color: var(--texto-suave); font-style: italic; }
+/* secciones propias del visor ("Mapa base", "Capas del visor"): mismo árbol, encabezado un poco más marcado */
+.lg-fila.seccion { background: var(--fondo-suave); border-top: 1px solid var(--borde); }
+.lg-fila.seccion:hover { background: #e9eef8; }
+.lg-fila.capa-visor.vacia .lg-casilla { cursor: not-allowed; }
+.lg-fila.capa-visor.vacia .lg-nombre { color: #9aa0ab; }
 .lg-flecha { flex: none; width: 14px; text-align: center; cursor: pointer; color: var(--texto-suave); }
 .lg-casilla { flex: none; margin: 0 2px 0 0; width: 14px; height: 14px; }
 .lg-nombre { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -595,18 +618,18 @@ table.xl td.sin-calculo { color: #9a9a9a; text-align: center; }
 .lg-tirador { position: absolute; top: 0; right: -5px; bottom: 0; width: 10px; cursor: ew-resize; z-index: 2; }
 .lg-tirador:hover, .lg-tirador.activo { background: linear-gradient(to right, transparent 3px, #9fbcf0 3px 6px, transparent 6px); }
 .abrir-lugares {
-  position: absolute; top: 56px; left: var(--ancho-menu); z-index: 970; padding: 8px 10px; border: 0; border-radius: 0 8px 8px 0;
+  position: absolute; top: 56px; left: var(--ancho-menu); z-index: var(--z-lugares); padding: 8px 10px; border: 0; border-radius: 0 8px 8px 0;
   background: var(--fondo); box-shadow: var(--sombra); font: inherit; font-size: 13px; cursor: pointer;
 }
 .abrir-lugares[hidden] { display: none; }
-.lg-menu { position: fixed; z-index: 3000; }
+.lg-menu { position: fixed; z-index: var(--z-modal); }
 .lg-opacidad {
-  position: fixed; z-index: 3000; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; width: 210px;
+  position: fixed; z-index: var(--z-modal); display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; width: 210px;
   background: var(--fondo); border: 1px solid var(--borde); border-radius: 6px; box-shadow: var(--sombra); font-size: 13px;
 }
 .lg-opacidad[hidden] { display: none; }
 .lg-foto-grande {
-  position: fixed; inset: 0; z-index: 3500; display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; z-index: var(--z-modal-alto); display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, .8); cursor: zoom-out;
 }
 .lg-foto-grande[hidden] { display: none; }
@@ -631,3 +654,37 @@ table.xl td.sin-calculo { color: #9a9a9a; text-align: center; }
 .leyenda.leyenda-plegada .cuerpo { display: none; }
 .aviso-postes { font-weight: 600; }
 .aviso-postes[hidden] { display: none; }
+
+/* Medir: metraje final y total con las reglas de negocio (mapa/medicion_total.js) */
+.medida-detalle { flex-basis: 100%; margin-top: 4px; }
+.medidas li { flex-wrap: wrap; }
+.medida-calc { margin: 4px 0; }
+.medida-total { font-size: 1.15em; color: var(--acento, #0a7d5a); }
+.medida-supuestos { margin: 4px 0; }
+
+/* Ruta de fusión editable (mapa/editar_fusion.js) */
+.ef-bloque { margin-top: 12px; }
+.ef-pasos { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ef-paso { border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; background: var(--fondo); }
+.ef-no-tocar { opacity: 0.7; background: var(--fondo-suave); }
+.ef-cabeza { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ef-botones { margin-left: auto; display: flex; gap: 4px; }
+.ef-hilos { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; font-size: 12px; }
+.ef-hilos label { display: flex; flex-direction: column; gap: 2px; }
+.ef-hilo { width: 64px; }
+.ef-texto { width: 100%; font-size: 12px; resize: vertical; box-sizing: border-box; }
+.ef-linea { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; font-size: 12px; }
+.ef-linea input[type="checkbox"] { align-self: flex-start; }
+.ef-exportar { border-top: 1px solid var(--borde); margin-top: 8px; padding-top: 6px; }
+.ef-estado.error { color: var(--error); }
+.ef-estado.ok { color: var(--ok, #0a7d5a); }
+
+/* Modo captura (botón «Captura»): solo queda el mapa, con lo dibujado en él. Esc vuelve. */
+.aviso-captura { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 4000; padding: 6px 14px; border-radius: 16px;
+  background: rgba(20, 24, 31, .85); color: #fff; font-size: 13px; pointer-events: none; }
+.aviso-captura[hidden] { display: none; }
+body.modo-captura #mapa { inset: 0; }
+body.modo-captura #barra, body.modo-captura .barra-herramientas, body.modo-captura .buscador, body.modo-captura #lugares, body.modo-captura #abrir-lugares,
+body.modo-captura #panel, body.modo-captura #abrir-panel, body.modo-captura .menu-lateral, body.modo-captura .vista, body.modo-captura .leaflet-control-container,
+body.modo-captura .leyenda, body.modo-captura .leyenda-troncales, body.modo-captura .estado-red, body.modo-captura .medir-ayuda, body.modo-captura .ml-ayuda,
+body.modo-captura .ik-ventana, body.modo-captura .ml-dialogo, body.modo-captura .menu, body.modo-captura .modal { display: none !important; }

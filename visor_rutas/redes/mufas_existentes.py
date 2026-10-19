@@ -13,7 +13,9 @@ import re
 import unicodedata
 from typing import Any
 
-from visor_rutas.redes import mufa, proyectos, red, repositorio
+from psycopg.types.json import Jsonb
+
+from visor_rutas.redes import mufa, proyectos, red, repositorio, usuarios
 from visor_rutas.redes.db import ConflictoVersion, DatosInvalidos, NoEncontrado, SinPermiso
 
 TIPOS_MUFA = ("mufa", "nodo", "odf")
@@ -62,6 +64,73 @@ def buscar(con: Any, actor: dict[str, Any], *, nombre: str | None = None, lat: f
             return {"mufa": publico(f)}
     return {"mufa": None}
 
+
+CODIGO_BASE_VISOR = "BASE-VISOR"
+
+
+def _proyecto_base_visor(con: Any, actor: dict[str, Any]) -> int:
+    """The base project (visible to everyone) that holds the mufas created from the map; made the first time."""
+    f = con.execute("SELECT id FROM redes.proyectos WHERE codigo = %s AND borrado_en IS NULL", (CODIGO_BASE_VISOR,)).fetchone()
+    if f:
+        return f["id"]
+    fila = repositorio.insertar(con, "proyectos", {"codigo": CODIGO_BASE_VISOR, "nombre": "Red existente – creada desde el mapa", "es_red_base": True,
+                                                   "descripcion": "Mufas del KMZ que no estaban en la red migrada y se crearon vacías desde el mapa (visor v2)."}, actor["id"])
+    repositorio.registrar(con, actor["id"], "proyecto", fila["id"], "crear", {"codigo": [None, CODIGO_BASE_VISOR]}, proyecto_id=fila["id"])
+    return fila["id"]
+
+
+def crear_vacia(con: Any, actor: dict[str, Any], *, nombre: str, lat: float, lon: float) -> dict[str, Any]:
+    """"Entrar a la mufa" of a point of the KMZ that the migration does not have: an empty mufa at that point (linked to it by
+    its KMZ name and position). If one is found by `buscar`, that one is returned and nothing is created."""
+    from visor_rutas.redes.elementos import punto
+    limpio = " ".join(str(nombre or "").split())[:160]
+    ubicacion = punto(lat, lon)
+    if not limpio or ubicacion is None:
+        raise DatosInvalidos({"mufa": "Falta el nombre o la posición de la mufa"})
+    if not usuarios.puede_editar(actor):
+        raise SinPermiso("Solo un administrador o un editor puede crear mufas")
+    previa = buscar(con, actor, nombre=limpio, lat=float(lat), lon=float(lon))["mufa"]
+    if previa:
+        return {"mufa": previa, "creada": False}
+    with con.transaction():
+        proyecto_id = _proyecto_base_visor(con, actor)
+        fila = repositorio.insertar(con, "elementos", {
+            "proyecto_id": proyecto_id, "tipo": "mufa", "subtipo": "empalme", "nombre": limpio, "ubicacion": ubicacion, "fuente": "kmz",
+            "confianza": "media", "estado_migracion": "editada", "ref_externa": Jsonb({"kmz": {"nombre": limpio, "lat": float(lat), "lon": float(lon)}})},
+            actor["id"])
+        repositorio.registrar(con, actor["id"], "elemento", fila["id"], "crear", {"nombre": [None, limpio], "origen": [None, "mufa del KMZ sin migrar"]},
+                              proyecto_id=proyecto_id)
+        proyecto = con.execute("SELECT nombre FROM redes.proyectos WHERE id = %s", (proyecto_id,)).fetchone()["nombre"]
+    return {"mufa": {"id": fila["id"], "nombre": limpio, "proyecto_id": proyecto_id, "proyecto": proyecto}, "creada": True}
+
+
+def buscar_elementos(con: Any, actor: dict[str, Any], *, texto: str, limite: int = 10) -> dict[str, Any]:
+    """Search box of the map (visor v2): elements of the network by name (or client code), accents and case ignored,
+    every typed word must appear. Only what the Visio search does not already find: elements created in the tool
+    and the clients (a mufa migrated from the Visio has its Visio node in that search). Among the projects the user sees."""
+    palabras = _comparable(texto).split()
+    if not palabras or sum(len(p) for p in palabras) < 2:
+        return {"elementos": []}
+    plano = "upper(translate(coalesce({}, ''), 'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun'))"
+    nombre, codigo = plano.format("e.nombre"), plano.format("e.codigo")
+    visibles = "(p.es_red_base OR %(admin)s OR EXISTS (SELECT 1 FROM redes.proyecto_usuarios pu WHERE pu.proyecto_id = p.id AND pu.usuario_id = %(u)s))"
+    args: dict[str, Any] = {"admin": bool(actor.get("rol") == "administrador"), "u": actor.get("id"),
+                            "limite": max(1, min(int(limite or 10), 30)), "primero": palabras[0] + "%"}
+    condiciones = []
+    for i, palabra in enumerate(palabras):
+        args[f"p{i}"] = f"%{palabra}%"
+        condiciones.append(f"({nombre} LIKE %(p{i})s OR {codigo} LIKE %(p{i})s)")
+    filas = con.execute(
+        "SELECT e.id, e.nombre, e.tipo, e.subtipo, e.codigo, e.proyecto_id, p.nombre AS proyecto, "
+        "ST_Y(e.ubicacion::geometry) AS lat, ST_X(e.ubicacion::geometry) AS lon FROM redes.elementos e "
+        "JOIN redes.proyectos p ON p.id = e.proyecto_id "
+        f"WHERE e.borrado_en IS NULL AND p.borrado_en IS NULL AND {visibles} "
+        "AND (e.ref_visio IS NULL OR NOT e.ref_visio ? 'clave' OR e.tipo = 'cliente') AND " + " AND ".join(condiciones) + " "
+        f"ORDER BY ({nombre} LIKE %(primero)s) DESC, e.nombre LIMIT %(limite)s", args).fetchall()
+    return {"elementos": [{"id": f["id"], "nombre": f["nombre"], "tipo": f["tipo"], "subtipo": f["subtipo"], "codigo": f["codigo"],
+                           "proyecto_id": f["proyecto_id"], "proyecto": f["proyecto"],
+                           "lat": None if f["lat"] is None else float(f["lat"]), "lon": None if f["lon"] is None else float(f["lon"])}
+                          for f in filas]}
 
 def _elemento_editable(con: Any, actor: dict[str, Any], mufa_id: int) -> dict[str, Any]:
     m = con.execute("SELECT id, proyecto_id, tipo, nombre, estado_migracion FROM redes.elementos WHERE id = %s AND borrado_en IS NULL",

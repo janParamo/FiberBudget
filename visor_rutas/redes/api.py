@@ -13,7 +13,8 @@ from typing import Any, Callable
 
 import psycopg
 
-from visor_rutas.redes import bandejas, db, diagrama, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, problemas, proyectos, red, respaldo, trazado, usuarios, verificar
+from visor_rutas.redes import (actualizar_red, bandejas, db, diagrama, lugares, importar_kmz, kmz_cambios, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, problemas,
+                               proyectos, red, respaldo, trazado, usuarios, verificar)
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "validar_mufa": mufas_existentes.validar,
     "configurar_cable": mufas_existentes.configurar_cable,
     "red_de_mufas": mufas_existentes.red_de_mufas,
+    "buscar_elementos": mufas_existentes.buscar_elementos,            # visor v2: buscador del mapa
     # migración Visio, fase 6: tablero y cola de corrección
     "tablero_migracion": migracion_tablero.tablero,
     "correcciones_migracion": migracion_tablero.correcciones,
@@ -84,6 +86,50 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "restaurar_respaldo": respaldo.restaurar,
     "descargar_respaldo": respaldo.descargar,
     "exportar_proyecto": respaldo.exportar,
+    # visor v2, fase 3: Mis lugares
+    "lugares": lugares.arbol,
+    "lugar": lugares.obtener,
+    "guardar_lugar": lugares.guardar_lugar,
+    "eliminar_lugar": lugares.eliminar_lugar,
+    "adjunto_lugar": lugares.adjunto,
+    "guardar_carpeta_lugares": lugares.guardar_carpeta,
+    "eliminar_carpeta_lugares": lugares.eliminar_carpeta,
+    "mover_lugares": lugares.mover,
+    "visibilidad_lugares": lugares.visibilidad,
+    "compartidos_lugares": lugares.compartidos,
+    "compartir_lugares": lugares.compartir,
+    "exportar_lugares_kmz": lugares_kmz.exportar,
+    "importar_lugares_kmz": lugares_kmz.importar,
+    # visor v2, fase 4: red dibujada en una carpeta
+    "lugares_a_proyecto": lugares_red.guardar_como_proyecto,
+    # visor v2, fase 4 (segunda parte): entrar a una mufa del KMZ y editar lo que ya existe
+    "crear_mufa_kmz": mufas_existentes.crear_vacia,
+    "cambios_kmz": kmz_cambios.listar,
+    "editar_kmz": kmz_cambios.editar,
+    "borrar_kmz": kmz_cambios.borrar,
+    "deshacer_cambio_kmz": kmz_cambios.deshacer,
+    # visor v2, fase 5: importar un KMZ a la red
+    "importar_kmz_red": importar_kmz.importar,
+    "importaciones_kmz": importar_kmz.listar,
+    "importacion_kmz": importar_kmz.detalle,
+    "mapa_importacion_kmz": importar_kmz.mapa,
+    "aceptar_importacion_kmz": importar_kmz.aceptar,
+    "modo_importacion_kmz": importar_kmz.cambiar_modo,
+    "descartar_importacion_kmz": importar_kmz.descartar,
+    "aplicar_importacion_kmz": importar_kmz.aplicar,
+    "revertir_importacion_kmz": importar_kmz.revertir,
+    "capa_importados_kmz": importar_kmz.capa,
+    # visor v2, fase 6: coordenadas masivas
+    "lugares_desde_masivas": masivas_red.a_lugares,
+    "proyecto_desde_masivas": masivas_red.a_proyecto,
+    "publicar_importacion_kmz": importar_kmz.publicar,
+    "revertir_publicacion_kmz": importar_kmz.revertir_publicacion,
+    # visor v2, fase 8: subir el KMZ nuevo y poner la base del presupuesto al día (administradores)
+    "estado_actualizar_red": actualizar_red.estado,
+    "subir_kmz_red": actualizar_red.subir_kmz,
+    "comparar_red_presupuesto": actualizar_red.comparar,
+    "sincronizar_red_presupuesto": actualizar_red.sincronizar,
+    "revertir_sincronizacion_red": actualizar_red.revertir_sincronizacion,
     # sección 8: integridad de los datos
     "verificar_base": verificar.verificar,
 }

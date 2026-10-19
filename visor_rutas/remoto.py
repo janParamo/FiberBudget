@@ -159,6 +159,44 @@ class ProveedorRemoto:
         return self._seguro(lambda: self._json("POST", "/visor/ruta", json={"texto": str(texto or "")},
                                                timeout=TIMEOUT_PRESUPUESTO_S))
 
+    def calcular_con_ruta(self, lat: float | None, lon: float | None, puntos: list[list[float]], postes_extra: int = 0) -> dict[str, Any]:
+        cuerpo = {"lat": lat, "lon": lon, "puntos": puntos, "postes_extra": int(postes_extra or 0)}
+        return self._seguro(lambda: self._json("POST", "/visor/ruta_editada", json=cuerpo, timeout=TIMEOUT_PRESUPUESTO_S))
+
+    def subir_iniciar(self, nombre: str, tamano: int) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/subidas", json={"nombre": str(nombre or ""), "tamano": int(tamano)}))
+
+    def subir_parte(self, id: str, numero: int, datos: str) -> dict[str, Any]:
+        crudo = base64.b64decode(str(datos or ""), validate=False)
+        return self._seguro(lambda: self._json("POST", f"/visor/subidas/{quote(str(id), safe='')}/{int(numero)}", data=crudo,
+                                               timeout=TIMEOUT_PRESUPUESTO_S))
+
+    def subir_fin(self, id: str) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", f"/visor/subidas/{quote(str(id), safe='')}/fin"))
+
+    def masivas_leer(self, nombre: str, datos: str = "", subida_id: str | None = None) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/masivas/leer", json={"nombre": str(nombre or ""), "datos": datos or "", "subida_id": subida_id},
+                                               timeout=TIMEOUT_PRESUPUESTO_S))
+
+    def masivas_iniciar(self, nombre: str, puntos: list[dict[str, Any]]) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/masivas/iniciar", json={"nombre": str(nombre or ""), "puntos": puntos}))
+
+    def masivas_estado(self, id: str, desde: int = 0) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", f"/visor/masivas/{quote(str(id), safe='')}", params={"desde": int(desde or 0)}))
+
+    def masivas_cancelar(self, id: str) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", f"/visor/masivas/{quote(str(id), safe='')}/cancelar"))
+
+    def masivas_descargar(self, id: str) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", f"/visor/masivas/{quote(str(id), safe='')}/descargar", timeout=TIMEOUT_PRESUPUESTO_S))
+
+    def redactar_fusion(self, plan: dict[str, Any]) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/fusion/redactar", json={"plan": plan}))
+
+    def exportar_fusion(self, plan: dict[str, Any], opciones: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/fusion/exportar", json={"plan": plan, "opciones": opciones or {}},
+                                               timeout=TIMEOUT_PRESUPUESTO_S))
+
     def red(self, capa: str, oeste: float, sur: float, este: float, norte: float, zoom: int) -> dict[str, Any]:
         params = {"oeste": oeste, "sur": sur, "este": este, "norte": norte, "zoom": zoom}
         return self._seguro(lambda: self._json("GET", f"/visor/red/{quote(str(capa), safe='')}", params=params))
@@ -296,12 +334,23 @@ class ProveedorRemoto:
                                                timeout=TIMEOUT_PRESUPUESTO_S))
 
     def estimar_presupuesto(self, lat: float, lon: float, metraje_final_m: float | None = None,
-                            postes_existentes_m: list[float] | None = None) -> dict[str, Any]:
+                            postes_existentes_m: list[float] | None = None, ruta: list[list[float]] | None = None,
+                            postes_extra: int = 0, mufas_tocadas: int | None = None) -> dict[str, Any]:
         cuerpo = {"lat": float(lat), "lon": float(lon), "metraje_final_m": metraje_final_m}
+        if ruta:
+            cuerpo["ruta"] = ruta
+        if postes_extra:
+            cuerpo["postes_extra"] = int(postes_extra)
+        if mufas_tocadas is not None:
+            cuerpo["mufas_tocadas"] = int(mufas_tocadas)
         if postes_existentes_m:
             cuerpo["postes_existentes_m"] = list(postes_existentes_m)
         return self._seguro(lambda: self._json("POST", "/visor/estimacion", json=cuerpo,
                                                timeout=TIMEOUT_PRESUPUESTO_S))
+
+    def medir_ruta(self, puntos: list[list[float]], con_total: bool = False) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/medicion", json={"puntos": puntos, "con_total": bool(con_total)},
+                                               timeout=TIMEOUT_PRESUPUESTO_S if con_total else TIMEOUT_CONSULTA_S))
 
     def historial_presupuestos(self) -> dict[str, Any]:
         return self._seguro(lambda: self._json("GET", "/visor/presupuestos"))

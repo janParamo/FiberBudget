@@ -23,7 +23,7 @@ def entorno(tmp_path, monkeypatch):
            "LOG_FILE": str(tmp_path / "log.txt"),
            "RED_FIBRA_DB": str(tmp_path / "missing_red_fibra.db"),
            "VISIO_DB_NAME": "",
-           "RULES_PATH": os.path.join(os.path.dirname(__file__), "..", "business_rules.yaml")}
+           "RULES_PATH": os.path.join(os.path.dirname(__file__), "..", "business_rules.yaml"), "RUTA_FUSION_XLSX": str(tmp_path / "no_hay_libro_de_fusion.xlsx")}
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     import config

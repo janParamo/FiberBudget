@@ -1,4 +1,4 @@
-/* Visor de rutas – Fiber Budget.
+﻿/* Visor de rutas – Fiber Budget.
  * Toda la lógica de negocio está en Python (visor_rutas/calculo.py), que se llama con
  * window.pywebview.api.calcular(texto). Este archivo solo dibuja y maneja la interfaz.
  */
@@ -105,8 +105,10 @@
 
   function crearMapa() {
     crearIconos();
-    mapa = L.map("mapa", { zoomControl: true, maxZoom: 20, worldCopyJump: false })
+    // Zoom +/- at the bottom right (shifted by the summary panel, see visor.css): nothing covers the Lugares tab.
+    mapa = L.map("mapa", { zoomControl: false, maxZoom: 20, worldCopyJump: false })
       .setView(cfg.inicio, cfg.zoom_inicial);
+    L.control.zoom({ position: "bottomright", zoomInTitle: "Acercar", zoomOutTitle: "Alejar" }).addTo(mapa);
     mapa.attributionControl.setPrefix(false);
 
     const opciones = { maxZoom: 20, maxNativeZoom: 19 };
@@ -131,22 +133,10 @@
     capas.extremos = L.layerGroup().addTo(mapa);         // connection point and client, always on top
     capas.medidas = L.layerGroup().addTo(mapa);
     capas.busqueda = L.layerGroup().addTo(mapa);       // mufa chosen in the search box
+    capas.coordenada = L.layerGroup().addTo(mapa);     // pin of a searched coordinate (mapa/pin.js)
 
-    L.control.layers({ "Satélite": satelite, "Calles": calles }, {
-      "Postes existentes": capas.postesExistentes,
-      "Postes nuevos": capas.postesNuevos,
-      "Mufas en ruta": capas.mufasRuta,
-      "Mufas intervenidas": capas.mufasIntervenidas,
-      "Nodos Visio": capas.nodosVisio,
-      "Camino de la fibra": capas.caminoFibra,
-      "Mufa buscada": capas.busqueda,
-      "Mis medidas": capas.medidas,
-      ...Object.fromEntries(Object.entries(CAPAS_RED).map(([nombre, c]) => [
-        `<span class="capa-red">${c.etiqueta}</span>`, capas[nombre]])),
-    }, { position: "topleft", collapsed: false }).addTo(mapa);
+    baseMapa = { satelite, calles };     // the layer switches live in the Lugares panel (mapa/capas_visor.js)
     crearEstadoRed();
-    mapa.on("overlayadd", (e) => { const n = nombreCapaRed(e.layer); if (n) cargarRed(n); });
-    mapa.on("overlayremove", (e) => { const n = nombreCapaRed(e.layer); if (n) quitarRed(n); });
     mapa.on("moveend", () => {
       clearTimeout(temporizadorRed);
       temporizadorRed = setTimeout(() => capasRedActivas().forEach(cargarRed), 350);
@@ -248,6 +238,8 @@
                                   riseOnHover: true });
     mk.bindTooltip(esc(textoPosteNuevo(d, i)), { direction: "top", className: "hover" });
     mk.on("click", () => {
+      if (window.EditarRuta && window.EditarRuta.modo === "dibujar") { window.EditarRuta.clic(latlng); return; }   // drawing a route: a point of it
+      if (window.EditarRuta && window.EditarRuta.activo) return;
       if (med.activo) { agregarPunto(latlng); return; }   // while measuring, a click adds a point instead
       alternarPoste(i, mk);
     });
@@ -291,12 +283,13 @@
   // again after every move; below each layer's minimum zoom nothing is loaded (see visor_rutas/red.py).
   // The KMZ network is in the "Lugares" panel (lugares.js), with the KMZ's own folders and styles.
   const CAPAS_RED = {
-    visio_nodos:   { etiqueta: "Red Visio · nodos", tipo: "punto", relleno: "#2878FF", radio: 5 },
-    visio_enlaces: { etiqueta: "Red Visio · enlaces", tipo: "linea" },
+    visio_nodos:   { etiqueta: "Red Visio · nodos", tipo: "punto", relleno: "#2878FF", radio: 5, zoomMin: 12 },
+    visio_enlaces: { etiqueta: "Red Visio · enlaces", tipo: "linea", zoomMin: 12 },     // zoomMin: as visor_rutas/red.py
   };
   const PALETA_LINEAS = ["#00C2FF", "#FF4FD8", "#7CFC00", "#FFB000", "#B388FF", "#00E6A8", "#FF6B6B", "#4DD0E1",
                          "#F4FF81", "#FF9E80"];
-  let lienzoRed = null, temporizadorRed = null, controlEstadoRed = null;
+  let lienzoRed = null, temporizadorRed = null, controlEstadoRed = null, baseMapa = null;
+  const refrescarCapas = () => { if (window.CapasVisor) window.CapasVisor.refrescar(); };   // a layer can be enabled / disabled
   const estadoRed = {};               // layer -> { pedido, texto, error, puntos }
 
   const colorTipo = (tipo) => {       // one stable colour per KMZ line type
@@ -397,9 +390,6 @@
       return div;
     };
     controlEstadoRed.addTo(mapa);
-    // a separator before the network layers in the layer control
-    const primera = document.querySelector(".leaflet-control-layers .capa-red");
-    if (primera) primera.closest("label").classList.add("primera-red");
   }
 
   function pintarEstadoRed() {
@@ -412,7 +402,7 @@
   }
 
   // ------------------------------------------------------------------ dibujo de la ruta
-  function dibujar(d) {
+  function dibujar(d, opciones = {}) {
     limpiarCapas();
     const r = d.ruta, c = d.conexion, cli = d.cliente;
     const pts = r.puntos.map((p) => L.latLng(p[0], p[1]));
@@ -503,11 +493,20 @@
     }, capas.extremos, { permanente: true, clase: "cliente", zIndex: 1100 });
     limites.extend([c.lat, c.lon]).extend([cli.lat, cli.lon]);
 
-    // Leave room for the layer control (left) and the summary panel (right) when they are open.
-    const control = document.querySelector(".leaflet-control-layers");
-    const izquierda = (control ? control.offsetWidth : 0) + 30;
+    // The map starts to the right of the Lugares panel; leave room only for the summary panel (right) when open.
     const derecha = $("panel").hidden ? 40 : $("panel").offsetWidth + 30;
-    mapa.fitBounds(limites, { paddingTopLeft: [izquierda, 50], paddingBottomRight: [derecha, 50], maxZoom: 19 });
+    if (!opciones.sinEncuadre) mapa.fitBounds(limites, { paddingTopLeft: [40, 50], paddingBottomRight: [derecha, 50], maxZoom: 19 });
+  }
+
+  /** A route recalculated by editar_ruta.js: it replaces the result without moving the map. */
+  function aplicarRutaEditada(nuevos, coordenada) {
+    datos = nuevos;
+    postesMarcados.clear();           // the marks are of the previous poles
+    if (coordenada) $("coord").value = coordenada;
+    mostrarPestana("resumen");
+    dibujar(datos, { sinEncuadre: true });
+    renderPanel();
+    iniciarEstimacion();
   }
 
   // ------------------------------------------------------------------ panel de resumen
@@ -539,7 +538,7 @@
         ["Reserva", metros(r.reserva_m)],
         ["Metraje final", `<b>${metros(r.metraje_final_m)}</b>`],
         ["Tipo de cable", esc(r.tipo_cable)],
-      ])));
+      ]) + (window.EditarRuta ? window.EditarRuta.htmlRuta() : "")));
       const marcados = postesMarcados.size;
       html.push(tarjeta("Postes", filas([
         ["Existentes", String(d.postes_existentes.length + marcados) +
@@ -572,12 +571,14 @@
       const total = medidas.reduce((s, m) => s + m.total, 0);
       html.push(tarjeta(`Mis medidas (${medidas.length})`, "<ul class=\"medidas\">" + medidas.map((m) =>
         `<li><span><span class="muestra-medida" style="background:${esc(m.color || COLORES.medida)}"></span>${esc(m.nombre)}: <b>${metros(m.total)}</b> <span class="nota">(${m.puntos.length - 1} tramo${m.puntos.length > 2 ? "s" : ""})</span></span>
-         <button type="button" class="quitar" data-quitar-medida="${m.id}" title="Borrar esta medida">✕</button></li>`).join("") +
+         <button type="button" class="quitar" data-quitar-medida="${m.id}" title="Borrar esta medida">✕</button>
+         <div class="medida-detalle">${MedicionTotal.htmlDetalle(m)}</div></li>`).join("") +
         "</ul>" + (medidas.length > 1 ? filas([["Suma", `<b>${metros(total)}</b>`]]) : "")));
     }
     $("tarjetas").innerHTML = html.join("");
     $("copiar-resumen").disabled = !datos && !medidas.length;
     renderFusion();
+    refrescarCapas();             // route / measures decide which layers can be switched on
   }
 
   function resumenTexto() {
@@ -617,7 +618,12 @@
     }
     if (medidas.length) {
       l.push("", "Mis medidas");
-      medidas.forEach((m) => l.push(`  - ${m.nombre}: ${metros(m.total)} (${m.puntos.length - 1} tramos)`));
+      medidas.forEach((m) => {
+        const t = MedicionTotal.totalDe(m);
+        l.push(`  - ${m.nombre}: ${metros(m.total)} (${m.puntos.length - 1} tramos)`
+          + (m.calc && m.calc.medicion ? ` · metraje final ${metros(m.calc.medicion.metraje_final_m)}` : "")
+          + (t !== null && t !== undefined ? ` · total ${dinero(t)}` : ""));
+      });
     }
     return l.join("\r\n");
   }
@@ -658,7 +664,8 @@
   const tieneCoord = (p) => p && p.lat !== null && p.lat !== undefined && p.lon !== null && p.lon !== undefined;
 
   function dibujarCaminoFibra(d) {
-    const paradas = (d.ruta_fusion || []).filter(tieneCoord);
+    const tocadas = window.EditarFusion ? window.EditarFusion.nombresTocados() : null;      // after editing the fusion route: only the mufas that are touched
+    const paradas = (d.ruta_fusion || []).filter((p) => tieneCoord(p) && (!tocadas || tocadas.has(p.nombre)));
     if (!paradas.length) return;
     const puntos = paradas.map((p) => L.latLng(p.lat, p.lon));
     puntos.push(L.latLng(d.conexion.lat, d.conexion.lon));       // last Visio mufa -> KMZ connection point
@@ -739,6 +746,7 @@
         ? `<p class="vacio">Sin ruta de fusión: la mufa de conexión no se pudo seguir en los diagramas Visio.</p>${htmlDiagnostico(o)}`
         : `<p class="vacio">Sin ruta de fusión: no se encontró la mufa de conexión en los diagramas Visio.` +
           (o.motivo ? `<br><span class="nota">${esc(o.motivo)}</span>` : "") + `</p>`;
+      if (window.EditarFusion) caja.insertAdjacentHTML("beforeend", window.EditarFusion.html());
       return;
     }
     const olt = `<li class="parada olt"><span class="punto"></span><div class="caja">
@@ -762,7 +770,7 @@
         Mostrar fusiones detectadas (piloto) <span class="nota">· ${totalPiloto} en estas mufas, sin validar</span></label>` : "";
     caja.innerHTML = `<p class="encabezado-fusion">Del OLT al punto de conexión, mufa por mufa, según los diagramas Visio y el Excel de anillos.
         Clic en una mufa para centrarla en el mapa.</p>${casilla}${porNombre(o) ? htmlDiagnostico(o) : ""}
-      <ol class="metro">${olt}${paradas.map(htmlParada).join("")}${cliente}</ol>`;
+      <ol class="metro">${olt}${paradas.map(htmlParada).join("")}${cliente}</ol>` + (window.EditarFusion ? window.EditarFusion.html() : "");
     if (paradaActiva) marcarParada(paradaActiva, false);
   }
 
@@ -1077,7 +1085,7 @@
     });
     tirador.addEventListener("pointermove", (e) => {
       if (!activo) return;
-      const ancho = Math.round(Math.min(Math.max(window.innerWidth - e.clientX - 10, 300), window.innerWidth * 0.85));
+      const ancho = Math.round(Math.min(Math.max(window.innerWidth - e.clientX - 10, 260), window.innerWidth * 0.85));
       const variable = $("panel").classList.contains("ancho") ? "--ancho-panel-diagrama" : "--ancho-panel";
       document.documentElement.style.setProperty(variable, `${ancho}px`);
       actualizarOcupado();
@@ -1088,37 +1096,8 @@
   }
 
   // ------------------------------------------------------------------ buscador de mufas
-  const busqueda = { temporizador: null, pedido: 0, resultados: [], marcado: -1 };
-
-  function ocultarResultados() { $("buscar-resultados").hidden = true; busqueda.marcado = -1; }
-  function mostrarResultados(html) { $("buscar-resultados").innerHTML = html; $("buscar-resultados").hidden = false; }
-
-  async function buscarMufa(texto) {
-    const pedido = ++busqueda.pedido;
-    if (texto.trim().length < 2) { $("buscar-spinner").hidden = true; ocultarResultados(); return; }
-    $("buscar-spinner").hidden = false;
-    let res;
-    try { res = await api.buscar_mufa(texto); } catch (e) { res = { ok: false, error: String(e) }; }
-    if (pedido !== busqueda.pedido) return;          // an older search answering late
-    $("buscar-spinner").hidden = true;
-    if (!res.ok) { mostrarResultados(`<li class="vacio">${esc(res.error)}</li>`); return; }
-    busqueda.resultados = res.resultados;
-    busqueda.marcado = -1;
-    mostrarResultados(res.resultados.length ? res.resultados.map((m, i) =>
-      `<li data-i="${i}" role="option"><b>${esc(m.nombre)}</b><span class="det">${esc(m.tipo)}` +
-      `${m.zona ? " · " + esc(m.zona) : ""} · ${m.diagramas} diagrama(s)` +
-      `${m.lat === null ? ' · <span class="sin-coord">sin coordenadas</span>' : ""}</span></li>`).join("")
-      : `<li class="vacio">Ninguna mufa con ese nombre</li>`);
-  }
-
-  function marcarResultado(i) {
-    const items = document.querySelectorAll("#buscar-resultados li[data-i]");
-    if (!items.length) return;
-    busqueda.marcado = (i + items.length) % items.length;
-    items.forEach((li) => li.classList.toggle("marcado", Number(li.dataset.i) === busqueda.marcado));
-    items[busqueda.marcado].scrollIntoView({ block: "nearest" });
-  }
-
+  /** The search box is mapa/buscador.js; the viewer only closes its list and registers its own source (conectarBuscador). */
+  const ocultarResultados = () => { if (window.Buscador) window.Buscador.ocultar(); };
   async function seleccionarMufa(m) {
     ocultarResultados();
     $("buscar-mufa").value = m.nombre;
@@ -1136,6 +1115,7 @@
         .bindPopup(() => popupHtml({ nombre: d.nombre, tipo: `Mufa buscada · ${d.tipo || ""}`,
                                      filas: [["Zona", d.zona], ["Propietario", d.propietario]] }, L.latLng(d.lat, d.lon)))
         .addTo(capas.busqueda);
+      refrescarCapas();
       // centre it in the part of the map the (now wider) panel does not cover
       mapa.setView([d.lat, d.lon], Math.max(mapa.getZoom(), 18), { animate: false });
       mapa.panBy([($("panel").offsetWidth + 20) / 2, 0], { animate: false });
@@ -1162,33 +1142,37 @@
   }
 
   function conectarBuscador() {
-    const campo = $("buscar-mufa");
-    campo.addEventListener("input", () => {
-      clearTimeout(busqueda.temporizador);
-      busqueda.temporizador = setTimeout(() => buscarMufa(campo.value), 250);
+    window.Pin.iniciar({ mapa, capa: capas.coordenada, copiar, mensaje, usarParaRuta, alCambiar: refrescarCapas });
+    window.Buscador.iniciar({ mapa, irACoordenada: (lat, lon) => window.Pin.poner(lat, lon) });
+    window.Buscador.registrarFuente({          // the other sources register themselves (lugares.js, redes/comun.js)
+      id: "visio", titulo: "Mufas y nodos (diagramas Visio)",
+      async buscar(texto) {
+        const res = await api.buscar_mufa(texto);
+        if (!res.ok) throw new Error(res.error);
+        return res.resultados.map((m) => ({ titulo: m.nombre, sinCoord: m.lat === null, dato: m,
+          detalle: `${m.tipo}${m.zona ? " · " + m.zona : ""} · ${m.diagramas} diagrama(s)` }));
+      },
+      elegir: (item) => seleccionarMufa(item.dato),
     });
-    campo.addEventListener("focus", () => { if (busqueda.resultados.length && campo.value.trim().length >= 2) $("buscar-resultados").hidden = false; });
-    campo.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        marcarResultado(busqueda.marcado + (e.key === "ArrowDown" ? 1 : -1));
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        const m = busqueda.resultados[busqueda.marcado >= 0 ? busqueda.marcado : 0];
-        if (m && !$("buscar-resultados").hidden) seleccionarMufa(m);
-      } else if (e.key === "Escape") {
-        ocultarResultados();
-        campo.blur();
-      }
-    });
-    $("buscar-resultados").addEventListener("mousedown", (e) => {
-      const li = e.target.closest("li[data-i]");
-      if (li) { e.preventDefault(); seleccionarMufa(busqueda.resultados[Number(li.dataset.i)]); }
-    });
-    L.DomEvent.disableClickPropagation($("buscador"));
-    L.DomEvent.disableScrollPropagation($("buscador"));
   }
 
+  /** "Usar para generar ruta" of the pin: fills the bottom bar and calculates nothing. */
+  function usarParaRuta(lat, lon) {
+    $("coord").value = coordTexto(lat, lon);
+    $("coord").focus();
+    mensaje("Coordenada lista: presione Enter o Generar ruta");
+  }
+
+  /** A searched element of the network base: fly there and mark it like a searched mufa. */
+  function marcarBuscada(lat, lon, nombre, tipo) {
+    capas.busqueda.clearLayers();
+    L.marker([lat, lon], { icon: ICONOS.buscada, zIndexOffset: 1200 })
+      .bindTooltip(esc(nombre), { permanent: true, direction: "top", className: "etiqueta buscada" })
+      .bindPopup(() => popupHtml({ nombre, tipo: `Buscado · ${tipo || ""}`, filas: [] }, L.latLng(lat, lon))).addTo(capas.busqueda);
+    refrescarCapas();
+    mapa.flyTo([lat, lon], Math.max(mapa.getZoom(), 18), { duration: 0.8 });
+    mensaje(`${nombre} · ${coordTexto(lat, lon)}`, "ok");
+  }
   // ------------------------------------------------------------------ cálculo
   async function generar() {
     if (calculando || !api) return;
@@ -1219,9 +1203,11 @@
       mensaje(res.error, "error");
       return;
     }
+    if (window.EditarRuta) window.EditarRuta.reiniciar();       // a new route: the edits and the poles by hand belong to the previous one
     datos = res.datos;
     postesMarcados.clear();       // marks belong to the previous route
     paradaActiva = null;
+    mostrarPestana("resumen");    // the panel opens with the result (before drawing: the map fits around it)
     try {
       dibujar(datos);
       renderPanel();
@@ -1236,6 +1222,7 @@
 
   function limpiar() {
     if (med.activo) cancelarMedicion();
+    if (window.EditarRuta) window.EditarRuta.reiniciar();
     limpiarCapas();
     datos = null;
     postesMarcados.clear();
@@ -1243,6 +1230,11 @@
     paradaActiva = null;
     $("coord").value = "";
     renderPanel();
+    if (!medidas.length) {        // nothing left to show: the panel closes (and its side tab too)
+      $("panel").hidden = true;
+      $("abrir-panel").hidden = true;
+      actualizarOcupado();
+    }
     mensaje("Pegue una coordenada y presione Enter");
     $("coord").focus();
   }
@@ -1451,9 +1443,8 @@
           .addTo(medida.capa);
       }
     }
-    L.marker(puntos[puntos.length - 1], { icon: iconoVacio(), interactive: false, keyboard: false })
-      .bindTooltip(`<span class="muestra-medida" style="background:${color}"></span>${esc(medida.nombre)}: ${metros(medida.total)}`,
-                   { permanent: true, direction: "right", offset: [8, 0], className: "tooltip-medida" })
+    medida.etiqueta = L.marker(puntos[puntos.length - 1], { icon: iconoVacio(), interactive: false, keyboard: false })
+      .bindTooltip(textoEtiqueta(medida), { permanent: true, direction: "right", offset: [8, 0], className: "tooltip-medida" })
       .addTo(medida.capa);
     linea.on("click", (e) => {
       if (med.activo) return;
@@ -1461,7 +1452,8 @@
       const tramos = puntos.slice(1).map((p, i) => `<dt>Tramo ${i + 1}</dt><dd>${metros(puntos[i].distanceTo(p))}</dd>`).join("");
       L.popup({ maxWidth: 300 }).setLatLng(e.latlng).setContent(
         `<div class="popup"><h3>${esc(medida.nombre)}</h3><div class="tipo">Medida propia</div>
-         <dl><dt>Total</dt><dd><b>${metros(medida.total)}</b></dd>${tramos}</dl>
+         <dl><dt>Distancia</dt><dd><b>${metros(medida.total)}</b></dd>${tramos}</dl>
+         <div class="medida-detalle">${MedicionTotal.htmlDetalle(medida)}</div>
          <div class="acciones">
            <button type="button" class="btn btn-chico" data-copiar-medida="${id}">Copiar medida</button>
            <button type="button" class="btn btn-chico" data-quitar-medida="${id}">Borrar</button>
@@ -1471,12 +1463,28 @@
     medidas.push(medida);
     $("borrar-medidas").disabled = false;
     renderPanel();
+    if ($("panel").hidden) mostrarPestana("resumen");     // "Mis medidas" lives in the summary
+    MedicionTotal.pedir(medida);                          // metraje final now, the total a few seconds later
     return medida;
+  }
+
+  const textoEtiqueta = (medida) => `<span class="muestra-medida" style="background:${medida.color}"></span>${esc(medida.nombre)}: ${metros(medida.total)}${esc(MedicionTotal.textoCorto(medida))}`;
+
+  /** The numbers of a measure changed (metraje final, total): card, end-of-line label and an open popup. */
+  function medidaCambio(medida) {
+    if (!medidas.includes(medida)) return;
+    if (medida.etiqueta) medida.etiqueta.setTooltipContent(textoEtiqueta(medida));
+    renderPanel();
+    const abierto = document.querySelector(".leaflet-popup .medida-detalle");
+    if (abierto && abierto.closest(".popup").querySelector(`[data-quitar-medida="${medida.id}"]`)) {
+      abierto.innerHTML = MedicionTotal.htmlDetalle(medida);
+    }
   }
 
   function quitarMedida(id) {
     const i = medidas.findIndex((m) => m.id === id);
     if (i < 0) return;
+    medidas[i].calc = null;                                 // an answer still on its way is dropped
     capas.medidas.removeLayer(medidas[i].capa);
     medidas.splice(i, 1);
     mapa.closePopup();
@@ -1485,6 +1493,7 @@
   }
 
   function borrarMedidas() {
+    medidas.forEach((m) => { m.calc = null; });
     capas.medidas.clearLayers();
     medidas.length = 0;
     siguienteMedida = 1;
@@ -1602,6 +1611,11 @@
     return igual(lat, datos.cliente.lat) && igual(lon, datos.cliente.lon) ? metrosMarcados() : [];
   }
 
+  function marcasParaCliente(coordenada) {         // is the budget form for the client of the route on the map?
+    const partes = String(coordenada || "").trim().replace(/^[([]|[)\]]$/g, "").split(/[,;\s]+/).filter(Boolean).map(Number);
+    return partes.length === 2 && Math.abs(partes[0] - datos.cliente.lat) < 5e-7 && Math.abs(partes[1] - datos.cliente.lon) < 5e-7;
+  }
+
   async function generarPresupuesto(ev) {
     if (ev) ev.preventDefault();
     if (pres.generando || !api) return;
@@ -1612,6 +1626,8 @@
     const campos = leerFormulario();
     const marcas = marcasParaFormulario(campos.coordenada);
     if (marcas.length) campos.postes_existentes_m = marcas;
+    if (window.EditarRuta) Object.assign(campos, window.EditarRuta.paramsFormulario(campos.coordenada));
+    if (window.EditarFusion && window.EditarFusion.mufasTocadas() !== null && datos && marcasParaCliente(campos.coordenada)) campos.mufas_tocadas = window.EditarFusion.mufasTocadas();      // the route edited on the map, if it is for this client
     vpEstado("Generando presupuesto… (ruta, mapa y LibreOffice: puede tardar 10–40 s)" +
              (marcas.length ? ` con ${marcas.length} poste(s) nuevo(s) marcados como existentes` : ""), "cargando");
     let r;
@@ -1821,8 +1837,10 @@
     let r;
     try {
       const marcas = metrosMarcados();
+      const [rutaEditada, postesExtra] = window.EditarRuta ? window.EditarRuta.paramsEstimacion() : [null, 0];
+      const mufas = window.EditarFusion ? window.EditarFusion.mufasTocadas() : null;      // null: the computed count
       r = await api.estimar_presupuesto(datos.cliente.lat, datos.cliente.lon, datos.ruta.metraje_final_m,
-                                        marcas.length ? marcas : null);
+                                        marcas.length ? marcas : null, rutaEditada, postesExtra, mufas);
     } catch (e) {
       r = { ok: false, error: "Error al comunicarse con Python: " + e };
     }
@@ -2046,6 +2064,7 @@
     $("medir").addEventListener("click", () => (med.activo ? terminarMedicion() : iniciarMedicion(null)));
     $("nueva-medida").addEventListener("click", nuevaMedida);
     $("borrar-medidas").addEventListener("click", borrarMedidas);
+    $("captura").addEventListener("click", () => modoCaptura(true));
     conectarPresupuesto();
     $("copiar-resumen").addEventListener("click", () => copiar(resumenTexto(), "Resumen copiado al portapapeles"));
     $("copiar-fusion").addEventListener("click", () => copiar(fusionTexto(), "Ruta de fusión copiada al portapapeles"));
@@ -2100,7 +2119,6 @@
     document.addEventListener("click", (e) => {
       if (!e.target.closest("#menu")) ocultarMenu();
       if (!e.target.closest("#campo")) ocultarHistorial();
-      if (!e.target.closest("#buscador")) ocultarResultados();
       const copiarBtn = e.target.closest("[data-copiar]");
       if (copiarBtn) copiar(copiarBtn.dataset.copiar, `Coordenada copiada: ${copiarBtn.dataset.copiar}`);
       const copiarMedida = e.target.closest("[data-copiar-medida]");
@@ -2143,6 +2161,30 @@
     if (iniciado || !window.pywebview || !window.pywebview.api) return;
     iniciado = true;
     api = window.pywebview.api;
+    if (window.EditarRuta) {
+      window.EditarRuta.iniciar({
+        get mapa() { return mapa; }, api: () => api, datos: () => datos, ICONOS, mensaje, imantar, ocupado: () => med.activo,
+        aplicar: aplicarRutaEditada, repintar: renderPanel, generarDeNuevo: generar,
+        guardarEnMisLugares: (pts) => (window.MisLugares ? window.MisLugares.nuevo("ruta", null, { latlngs: pts.map((p) => L.latLng(p[0], p[1])), nombre: "Ruta editada" }) : null),
+      });
+    }
+    if (window.EditarFusion) {
+      window.EditarFusion.iniciar({
+        datos: () => datos, api: () => api, mensaje, repintar: renderFusion,
+        alCambiar: () => { capas.caminoFibra.clearLayers(); if (datos) dibujarCaminoFibra(datos); if (datos && !datos.ruta.aproximada) programarEstimacion(); },
+      });
+    }
+    MedicionTotal.iniciar({
+      api: () => api, medidas: () => medidas, dinero, metros, cambio: medidaCambio, totalDe,
+      descargar: (archivo) => guardarComo(archivo, "xlsx"),
+      detalle: async (resultado) => {
+        mostrarVista("presupuesto");
+        mostrarPestanaVp("nuevo");
+        await cargarConfigPresupuesto();
+        mostrarResultado(resultado);
+        vpEstado("Total de una medida (aproximado, no enviado).");
+      },
+    });
     try {
       cfg = await api.configuracion();
       crearMapa();
@@ -2160,6 +2202,21 @@
           mapa, api, esc, copiar, coordTexto, mensaje,
           midiendo: () => med.activo, agregarPunto: (ll) => agregarPunto(imantar(ll)),
         }).catch((e) => console.error("Lugares", e));
+        if (window.CapasVisor) {       // "Mapa base" and "Capas del visor": sections of the same tree
+          window.CapasVisor.iniciar({ mapa, capas, base: baseMapa, redes: CAPAS_RED, cargarRed, quitarRed, hayRuta: () => !!datos });
+        }
+        if (window.MisLugares) {       // "Mis lugares": folders and places of the user (lugares/mis_lugares.js)
+          window.MisLugares.iniciar({ mapa, api, mensaje, copiar, midiendo: () => med.activo, agregarPunto: (ll) => agregarPunto(imantar(ll)) })
+            .catch((e) => console.error("MisLugares", e));
+        }
+        if (window.BarraHerramientas) {   // toolbar above the map (mapa/barra_herramientas.js)
+          window.BarraHerramientas.iniciar({ mensaje, accion: (id) => {
+            if (id === "medir") $("medir").click();
+            else if (id === "importar") { if (window.ImportarKmz) window.ImportarKmz.abrir(); }
+            else if (id === "masivas") { if (window.Masivas) window.Masivas.abrir(); }
+            else if (window.MisLugares) window.MisLugares.nuevo(id);
+          } });
+        }
       }
       mensaje("Pegue una coordenada y presione Enter");
       $("coord").focus();
@@ -2171,13 +2228,35 @@
     }
   }
 
+  // ------------------------------------------------------------------ modo captura
+  // «Captura»: se esconde todo menos el mapa (menús, paneles, barras, controles, leyendas, ventanas) para tomar la imagen de la ruta; Esc vuelve.
+  let avisoCaptura = null;
+  function modoCaptura(activar) {
+    if (activar && document.body.classList.contains("modo-captura")) return;
+    if (activar) {
+      if (med.activo) cancelarMedicion();
+      ocultarMenu();
+      mapa.closePopup();
+    }
+    document.body.classList.toggle("modo-captura", !!activar);
+    mapa.invalidateSize({ pan: false });                       // the map takes the whole window
+    clearTimeout(avisoCaptura);
+    const nota = $("aviso-captura");
+    nota.hidden = !activar;
+    if (activar) avisoCaptura = setTimeout(() => { nota.hidden = true; }, 2500);       // gone before the picture
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.body.classList.contains("modo-captura")) { e.preventDefault(); e.stopPropagation(); modoCaptura(false); }
+  }, true);
+
   // Read-only handle for automated checks (pywebview evaluate_js) and troubleshooting.
   window.visor = {
     get mapa() { return mapa; }, get datos() { return datos; }, get medidas() { return medidas.length; },
     get estimacion() { return estim.estado; }, mostrarVista: (nombre) => mostrarVista(nombre),
     get midiendo() { return med.activo; }, abrirDiagramaPorNombre: (nombre) => abrirDiagramaPorNombre(nombre),
-    verVisioAlLado: (nombre) => verVisioAlLado(nombre),
-    mensaje: (texto, tipo) => mensaje(texto, tipo),
+    verVisioAlLado: (nombre) => verVisioAlLado(nombre), marcarBuscada: (lat, lon, nombre, tipo) => marcarBuscada(lat, lon, nombre, tipo),
+    mensaje: (texto, tipo) => mensaje(texto, tipo), modoCaptura: (activar) => modoCaptura(activar),
     abrirDiagrama: (orden) => abrirDiagrama(orden), mostrarPestana: (nombre) => mostrarPestana(nombre),
   };
 

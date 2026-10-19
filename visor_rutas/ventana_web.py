@@ -42,8 +42,9 @@ try:   # local mode: the service code, its .env and databases (not in the remote
     import red_fibra_pg
     from config import get_settings
     from mapa_ruta import DROP_MIN_M, IMAGERY_URL, LABELS_URL
-    from visor_rutas import fusion, kmz_capas, presupuesto_visor, red
-    from visor_rutas.calculo import VisorError, calcular_ruta, parsear_coordenadas, usando_rutas
+    from visor_rutas import fusion, kmz_capas, masivas, medicion, presupuesto_visor, red, ruta_fusion_plan, subidas
+    from visor_rutas.exportar_fusion import exportar_fusion
+    from visor_rutas.calculo import RutaFija, VisorError, calcular_con_ruta, calcular_ruta, parsear_coordenadas, usando_rutas
     from visor_rutas.redes.api import ServicioRedes
     LOCAL_DISPONIBLE, MOTIVO_SIN_LOCAL = True, None
 except Exception as _exc:          # ImportError in the .exe; RuntimeError when the .env is incomplete
@@ -195,6 +196,8 @@ class Api:
         self._kmz = None                # KMZ PostGIS connection reused by the network layers
         self._rutas = presupuesto_visor.CacheRutas() if LOCAL_DISPONIBLE else None   # Google routes of this session
         self._lock_presupuesto = threading.Lock()      # one budget (LibreOffice) at a time
+        self._lock_fusion = threading.Lock()           # one write to the workbook of fusion routes at a time
+        self._lotes = masivas.GestorLotes() if LOCAL_DISPONIBLE else None      # bulk coordinates batches (this process)
         self._redes = None              # ServicioRedes (network design module), created on first use
         self._ventana = None            # pywebview window (save dialogs); set by abrir()
         self._forzar_remoto = forzar_remoto or not LOCAL_DISPONIBLE
@@ -505,6 +508,21 @@ class Api:
                     "error": f"Error inesperado ({type(exc).__name__}): {exc}. Detalle en logs/visor.log"}
         return {"ok": True, "datos": datos, "coordenada": coordenada}
 
+    def calcular_con_ruta(self, lat: float | None, lon: float | None, puntos: list[list[float]], postes_extra: int = 0) -> dict[str, Any]:
+        """The same as `calcular` for a route the user edited or drew on the map (no Google): distance, metraje final, poles, mufas
+        and quantities are recalculated from the polyline. (lat, lon): the client (None: the last point). postes_extra: poles added
+        by hand."""
+        if self._modo == "remoto":
+            return self._remota("calcular_con_ruta", lat, lon, puntos, postes_extra)
+        try:
+            datos = a_json(calcular_con_ruta(lat, lon, puntos, presupuesto_visor.postes_a_mano(postes_extra)))
+        except VisorError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            log.exception("Visor web: edited route calculation failed")
+            return {"ok": False, "error": f"Error inesperado ({type(exc).__name__}): {exc}. Detalle en logs/visor.log"}
+        return {"ok": True, "datos": datos, "coordenada": f"{datos['cliente']['lat']:.6f}, {datos['cliente']['lon']:.6f}"}
+
     def diagrama(self, md5: str, pagina: int = 0) -> dict[str, Any]:
         """Real Visio diagram as a data URL (the page must not read local files itself).
 
@@ -563,23 +581,160 @@ class Api:
             campos_form = dict(campos or {})
             solicitud = presupuesto_visor.construir_solicitud(campos_form)
             marcados = presupuesto_visor.postes_marcados(campos_form.get(presupuesto_visor.CAMPO_POSTES_MARCADOS))
-            respuesta = presupuesto_visor.generar(solicitud, self._rutas, postes_existentes_m=marcados)
+            ruta = self._ruta_editada(campos_form.get("ruta_editada"))
+            respuesta = presupuesto_visor.generar(solicitud, ruta or self._rutas, postes_existentes_m=marcados,
+                                                  postes_extra=presupuesto_visor.postes_a_mano(campos_form.get("postes_a_mano")),
+                                                  mufas_tocadas=presupuesto_visor.mufas_tocadas(campos_form.get("mufas_tocadas")))
             return {"resultado": presupuesto_visor.resultado_para_visor(respuesta)}
         return self._presupuesto(accion)
 
+    # ---- coordenadas masivas: leer el archivo, calcular un presupuesto por punto en segundo plano, seguirlo y bajar el resultado
+    # ---- archivos grandes por partes (un KMZ completo, un Excel grande): primero se suben, después se usa el id
+    def subir_iniciar(self, nombre: str, tamano: int) -> dict[str, Any]:
+        if self._modo == "remoto":
+            return self._remota("subir_iniciar", nombre, tamano)
+        try:
+            return {"ok": True, "id": subidas.almacen.iniciar(nombre, tamano)}
+        except subidas.ErrorSubida as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def subir_parte(self, id: str, numero: int, datos: str) -> dict[str, Any]:
+        """Part `numero` of the upload `id` (base64)."""
+        if self._modo == "remoto":
+            return self._remota("subir_parte", id, numero, datos)
+        try:
+            return {"ok": True, "recibido": subidas.almacen.parte(id, numero, base64.b64decode(str(datos or ""), validate=False))}
+        except subidas.ErrorSubida as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def subir_fin(self, id: str) -> dict[str, Any]:
+        if self._modo == "remoto":
+            return self._remota("subir_fin", id)
+        try:
+            return {"ok": True, **subidas.almacen.terminar(id)}
+        except subidas.ErrorSubida as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def masivas_leer(self, nombre: str, datos: str = "", subida_id: str | None = None) -> dict[str, Any]:
+        """The coordinates of an Excel / CSV / Word / text file (base64, or the id of a finished upload): {"puntos": [...], "formato", "avisos"}."""
+        if self._modo == "remoto":
+            return self._remota("masivas_leer", nombre, datos, subida_id)
+        try:
+            if subida_id:
+                nombre_subido, crudo = subidas.almacen.tomar(subida_id)
+                nombre = nombre or nombre_subido
+            else:
+                crudo = base64.b64decode(str(datos or ""), validate=False)
+            return {"ok": True, **masivas.extraer(str(nombre or ""), crudo)}
+        except (ValueError, subidas.ErrorSubida) as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            log.exception("Visor web: bulk file could not be read")
+            return {"ok": False, "error": f"No se pudo leer el archivo ({type(exc).__name__})"}
+
+    def masivas_iniciar(self, nombre: str, puntos: list[dict[str, Any]]) -> dict[str, Any]:
+        """Starts the batch (one approximate budget per valid point, in the background). Returns its state; ask for it with masivas_estado."""
+        if self._modo == "remoto":
+            return self._remota("masivas_iniciar", nombre, puntos)
+        try:
+            reglas = presupuesto_visor.main.load_rules(get_settings().rules_path).get("visor_masivo") or {}
+            lote = self._lotes.iniciar(str(nombre or "lote"), masivas.revisar(puntos), presupuesto_visor.carpeta_visor(), int(reglas.get("google_por_minuto", 30)),
+                                       int(reglas.get("max_puntos", 200)), self._lock_presupuesto, presupuesto_visor.CacheRutas)
+            return {"ok": True, "lote": lote.publico()}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def masivas_estado(self, id: str, desde: int = 0) -> dict[str, Any]:
+        """Progress of a batch and the results from the `desde`-th on."""
+        if self._modo == "remoto":
+            return self._remota("masivas_estado", id, desde)
+        try:
+            return {"ok": True, "lote": self._lotes.obtener(id).publico(desde)}
+        except KeyError as exc:
+            return {"ok": False, "error": str(exc.args[0])}
+
+    def masivas_cancelar(self, id: str) -> dict[str, Any]:
+        if self._modo == "remoto":
+            return self._remota("masivas_cancelar", id)
+        try:
+            self._lotes.obtener(id).cancelar.set()
+            return {"ok": True}
+        except KeyError as exc:
+            return {"ok": False, "error": str(exc.args[0])}
+
+    def masivas_descargar(self, id: str) -> dict[str, Any]:
+        """The Excel of every budget and the summary, as a .zip (base64)."""
+        if self._modo == "remoto":
+            return self._remota("masivas_descargar", id)
+        try:
+            nombre, datos = self._lotes.comprimir(id)
+            return {"ok": True, "nombre": nombre, "datos": base64.b64encode(datos).decode("ascii")}
+        except (KeyError, ValueError) as exc:
+            return {"ok": False, "error": str(exc.args[0])}
+
+    def masivas_abrir_carpeta(self, id: str) -> dict[str, Any]:
+        """Opens the folder of the batch in Explorer (local mode: the folder is on this PC)."""
+        if self._modo == "remoto":
+            return {"ok": False, "error": "La carpeta está en el servidor: use «Descargar .zip»"}
+        try:
+            _abrir_en_explorador(None, self._lotes.obtener(id).carpeta)
+            return {"ok": True}
+        except (KeyError, OSError) as exc:
+            return {"ok": False, "error": f"No se pudo abrir la carpeta: {exc}"}
+
+    # ---- ruta de fusión: texto de cada paso y franja en el libro de rutas de fusión
+    def redactar_fusion(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """The plan of the fusion route with the text of every step written again (after the user edited it)."""
+        if self._modo == "remoto":
+            return self._remota("redactar_fusion", plan)
+        try:
+            return {"ok": True, "plan": ruta_fusion_plan.redactar(plan)}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def exportar_fusion(self, plan: dict[str, Any], opciones: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Adds the fusion route as a new strip to the workbook of fusion routes (RUTA_FUSION_XLSX; remote mode: the server's)."""
+        if self._modo == "remoto":
+            return self._remota("exportar_fusion", plan, opciones)
+        with self._lock_fusion:
+            return exportar_fusion(plan, opciones or {})
+
+    @staticmethod
+    def _ruta_editada(puntos: Any) -> Any:
+        """RutaFija of a route edited on the map (None when there is none): the budget uses it instead of asking Google."""
+        return RutaFija(puntos) if puntos else None
+
     def estimar_presupuesto(self, lat: float, lon: float, metraje_final_m: float,
-                            postes_existentes_m: list[float] | None = None) -> dict[str, Any]:
+                            postes_existentes_m: list[float] | None = None, ruta: list[list[float]] | None = None,
+                            postes_extra: int = 0, mufas_tocadas: int | None = None) -> dict[str, Any]:
         """Approximate budget of the main view (coordinate only, defaults from visor_estimacion).
         postes_existentes_m: new poles marked as existing on the map (route metres)."""
         if self._modo == "remoto":
-            return self._remota("estimar_presupuesto", lat, lon, metraje_final_m, postes_existentes_m)
+            return self._remota("estimar_presupuesto", lat, lon, metraje_final_m, postes_existentes_m, ruta, postes_extra, mufas_tocadas)
 
         def accion() -> dict[str, Any]:
-            estimacion = presupuesto_visor.estimar(float(lat), float(lon), float(metraje_final_m), self._rutas,
-                                                   presupuesto_visor.postes_marcados(postes_existentes_m))
+            estimacion = presupuesto_visor.estimar(float(lat), float(lon), float(metraje_final_m), self._ruta_editada(ruta) or self._rutas,
+                                                   presupuesto_visor.postes_marcados(postes_existentes_m),
+                                                   presupuesto_visor.postes_a_mano(postes_extra),
+                                                   None if mufas_tocadas is None else max(0, min(int(mufas_tocadas), 100)))
             return {"supuestos": estimacion["supuestos"], "campos": estimacion["campos"],
                     "resultado": presupuesto_visor.resultado_para_visor(estimacion["respuesta"])}
         return self._presupuesto(accion)
+
+    def medir_ruta(self, puntos: list[list[float]], con_total: bool = False) -> dict[str, Any]:
+        """Metraje final (business rules) of a line measured on the map; con_total also fills the Excel template and
+        recalculates it (LibreOffice) to give the total. No Google involved."""
+        if self._modo == "remoto":
+            return self._remota("medir_ruta", puntos, con_total)
+        if not con_total:
+            try:
+                return {"ok": True, "medicion": medicion.calcular(puntos)}
+            except medicion.MedicionError as exc:
+                return {"ok": False, "error": str(exc)}
+            except Exception as exc:
+                log.exception("Visor web: measurement failed")
+                return {"ok": False, "error": f"Error inesperado ({type(exc).__name__}): {exc}. Detalle en logs/visor.log"}
+        return self._presupuesto(lambda: medicion.estimar(puntos))
 
     def historial_presupuestos(self) -> dict[str, Any]:
         """Budgets saved by the viewer (output/visor; remote mode: the server's), newest first."""
@@ -713,7 +868,7 @@ class Api:
             return {"ok": False, "error": f"No se pudo guardar ({type(exc).__name__}: {exc})"}
 
     TIPOS_ARCHIVO = {"kmz": "Google Earth (*.kmz)", "geojson": "GeoJSON (*.geojson)", "json": "Respaldo JSON (*.json)",
-                     "sql": "Respaldo SQL (*.sql)", "xlsx": "Excel (*.xlsx)"}
+                     "sql": "Respaldo SQL (*.sql)", "xlsx": "Excel (*.xlsx)", "zip": "Carpeta comprimida (*.zip)"}
 
     def guardar_archivo(self, nombre: str, datos: str, tipo: str) -> dict[str, Any]:
         """Phase 7: a file the network module produced on the server (base64: KMZ / GeoJSON export,

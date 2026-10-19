@@ -1,276 +1,270 @@
-# Módulo de Proyectos y Diagramación de Redes FTTH (Visor de rutas)
+# Visor de rutas – Nuevas funcionalidades (versión 2)
 
-> **Instrucciones para Claude Code:** lee este archivo completo y **abre cada imagen de `img/`
-> con la herramienta Read cuando se mencione**. Las imágenes son capturas de referencia de una
-> herramienta comercial (OZmap): úsalas solo como guía de comportamiento y distribución, **no
-> copies su marca, logo ni textos**. Trabaja **por fases** (sección 9): al terminar cada fase,
-> detente, muéstrame qué hiciste y cómo probarlo, y espera mi OK antes de seguir.
+> **Para Claude Code:** lee este archivo completo y **abre cada imagen de `img_v2/`** cuando se
+> mencione (son capturas del visor actual y de Google Earth, como referencia de comportamiento; no
+> copies marcas). Trabaja **por fases** (sección 10): al terminar cada una, detente, muéstrame qué
+> hiciste y cómo probarlo, y espera mi OK. Entrega **archivos completos** listos para reemplazar.
+> Interfaz en español.
+>
+> Este documento reemplaza la especificación anterior del módulo de proyectos, que **ya está
+> implementada**. Aquí solo va lo nuevo.
 
----
+## 1. Contexto y reglas
 
-## 1. Contexto del proyecto (lo que ya existe)
-
-- **API de presupuestos** (`main.py`, FastAPI): n8n la llama por el túnel de **ngrok** con los
-  datos de Kayako → genera Excel/PDF → n8n lo envía al vendedor. **Es la función principal y no
-  se toca**: mismos endpoints, mismo body, mismas respuestas, mismo `budget_index.json`.
-- **Visor de rutas de escritorio** (`visor_rutas/`, HTML + Leaflet dentro de pywebview, con
-  modo local y, si ya existe, modo remoto por `/visor/*`):
-  - Vista principal con mapa, cálculo de ruta, presupuesto aproximado, ruta de fusión y
-    diagramas Visio de cada mufa ("Ver diagrama").
-  - Menú hamburguesa (☰) con "Mapa y ruta" y "Generar presupuesto".
-  - Capas: KMZ de la red (panel "Lugares" estilo Google Earth, si ya se implementó) y red Visio.
-- **Bases de datos PostgreSQL**:
-  - KMZ en PostGIS (`DB_*`: `red_lineas`, `red_puntos`), usada por el presupuesto.
-  - Red Visio en `Presupuesto_visio` (`VISIO_DB_*`, esquema `red_fibra`).
-- Windows **sin permisos de administrador**, mismo `.venv`, LibreOffice Portable.
-- Preferencia del dueño: **entregar archivos COMPLETOS listos para reemplazar**, no fragmentos.
-
-**Objetivo del módulo:** que los usuarios diseñen y documenten sus propias redes de fibra
-(postes, mufas, clientes, cables, hilos, splitters) dentro del visor, guardándolo en PostgreSQL,
-para ir reemplazando poco a poco los diagramas Visio, **sin quitar** la consulta de las mufas
-existentes con sus diagramas Visio, que se seguirán usando.
+- **Función principal, no se toca:** la API de presupuestos (`main.py`) que n8n llama por ngrok.
+- **Visor de escritorio actual** (`visor_rutas/`, HTML + Leaflet en pywebview):
+  - mapa con el panel "Lugares" (árbol del KMZ estilo Google Earth, `kmz_capas.py` y `lugares.js`);
+  - buscador superior de mufas por nombre;
+  - barra inferior para generar ruta y presupuesto;
+  - panel derecho con Resumen, Ruta de fusión, Diagrama y Presupuesto;
+  - módulo `redes/` con proyectos, editor de mapa, editor de mufa, trazado, diagrama lógico,
+    problemas, pendientes, usuarios y respaldos;
+  - modo remoto/.exe.
+- **Plan en curso:** `docs/migracion_visio/PLAN.md` (las mufas existentes migradas desde Visio
+  al esquema `redes` como "red base"). Este documento se apoya en ese plan; donde haya cruce,
+  usar el mismo modelo de "red base" y no duplicarlo.
+- **Proyectos** quedan para **planes futuros** (red que todavía no existe). La red real se ve y se
+  edita **desde el mapa principal**, sin entrar a un proyecto.
+- Sin permisos de administrador; mismo `.venv`; todas las pruebas existentes deben seguir pasando;
+  `POST /presupuesto` sin cambios; README actualizado en cada fase.
 
 ---
 
-## 2. Menú hamburguesa ampliado
+## 2. Arreglos de la interfaz actual
 
-Referencia: `img/01_menu_hamburguesa.png`
+Referencias: `img_v2/09_panel_filtros_actual.png`, `img_v2/10_lugares_minimizado_tapado.png`,
+`img_v2/11_panel_derecho_ocupa_espacio.png`, `img_v2/01_mapa_actual_popup_mufa.png`.
 
-Opciones, cada una con un ícono representativo (SVG local, sin CDN):
+1. **Unir el panel de filtros con "Lugares".** El recuadro flotante de capas del visor (Satélite /
+   Calles, Postes existentes, Postes nuevos, Mufas en ruta, Mufas intervenidas, Nodos Visio,
+   Camino de la fibra, Mufa buscada, Mis medidas, Red Visio · nodos/enlaces) pasa a ser una sección
+   del árbol de Lugares ("Capas del visor" y "Mapa base"), con las mismas casillas de tres estados.
+   Así queda **un solo panel de capas**.
+2. **Verificar que esos filtros funcionan.** Hoy no se nota ningún cambio al marcarlos, sobre todo
+   con las capas del KMZ. Revisar cada casilla:
+   - qué capa controla, y si esa capa existe aunque no haya una ruta calculada;
+   - corregir las que no hagan nada;
+   - deshabilitar con un tooltip ("se llena al generar una ruta") las que dependen de un cálculo.
+3. **Botones de zoom (+ / −)** abajo a la derecha, donde no tapen nada.
+4. **Lugares minimizado:** cuando se contrae, su pestaña "Lugares ›" no debe quedar debajo de
+   ningún otro control. Revisar el orden (z-index) y las posiciones de todos los controles
+   flotantes.
+5. **Panel derecho** (Resumen, Ruta de fusión, Diagrama, Presupuesto):
+   - oculto por defecto mientras no haya un resultado;
+   - se abre solo al generar una ruta o al seleccionar una mufa;
+   - más angosto y redimensionable;
+   - se puede contraer a una pestaña lateral.
 
-| Opción | Ícono sugerido | Contenido |
-|---|---|---|
-| Mapa | mapa | Vista principal actual (ruta, capas, presupuesto aproximado) |
-| Presupuestos | calculadora / documento | La vista "Generar presupuesto" actual + historial de presupuestos del visor (`output/visor/`) |
-| Proyectos | casa / carpeta | Sección 3 |
-| Problemas | triángulo de alerta | Sección 7.1 |
-| Pendientes | portapapeles / camión | Sección 7.2 |
-| Usuarios | persona | Sección 7.3 |
-| Backup | base de datos | Sección 7.4 |
-
-- El menú se puede contraer a solo íconos (botón «‹» arriba, como en la imagen) y expandir con
-  texto. Recordar el estado.
-- Resaltar la opción activa. Las opciones de fases aún no hechas se muestran deshabilitadas con
-  el tooltip "Próximamente".
-
----
-
-## 3. Proyectos
-
-### 3.1 Lista de proyectos
-Referencia: `img/02_lista_proyectos.png`
-
-- Buscador "Filtrar proyectos" arriba.
-- Una tarjeta por proyecto: imagen/logo del proyecto, nombre, y acciones a la derecha:
-  **Información** (i), **Historial** (reloj: quién cambió qué y cuándo), **Editar datos**
-  (lápiz), **Duplicar** y **Eliminar** (con confirmación; borrado lógico).
-- Clic en la tarjeta → abre el proyecto en el editor de mapa (sección 4).
-- Botón fijo **abajo a la derecha: "+ Crear proyecto"**.
-
-### 3.2 Datos del proyecto (crear / editar)
-Referencia: `img/03_datos_proyecto.png`
-
-Ventana modal con:
-- **Imagen** del proyecto: "Seleccionar archivo" / "Eliminar la imagen" (guardar en la base o
-  en una carpeta de adjuntos con ruta en la base).
-- **Nombre** (obligatorio) e **Identificador** (código corto único, obligatorio).
-- **Usuarios** con acceso (selección múltiple de la tabla de usuarios).
-- **Proyectos principales**: proyecto padre opcional (jerarquía de proyectos).
-- **Buscar por dirección** + mapa pequeño con capas Mapa/Satélite para fijar la **ubicación**
-  (marcador arrastrable). La búsqueda de dirección puede usar Google Geocoding con la clave
-  existente; si no hay internet, permitir pegar coordenadas.
-- **Diseñar área**: dibujar en ese mapa el polígono del área del proyecto.
-- Botones **Cancelar** / **Guardar**.
+   Hoy ocupa casi un cuarto de la pantalla vacío.
+6. Revisar el diseño a 1366×768 y a 1920×1080: el mapa debe quedar con el mayor espacio posible.
 
 ---
 
-## 4. Editor de red en el mapa (dentro de un proyecto)
+## 3. Buscador superior: mufas y coordenadas
 
-Al abrir un proyecto, el mapa principal entra en **modo edición del proyecto**: se ven las capas
-actuales (KMZ, Visio, etc., configurables) y, encima, los elementos del proyecto.
+Referencia: `img_v2/08_pin_coordenada_buscada.png`
 
-### 4.1 Paleta de elementos de red (arrastrar y soltar)
-- **Poste** (tipos: IDEAY, concreto, madera, metal, cliente).
-- **Mufa** (capacidad en hilos / bandejas, tipo: empalme, distribución, terminal/FAT).
-- **Casa de cliente** (código de cliente C#####, nombre, ID de servicio).
-- **Cable de fibra**: troncal, distribución o acometida, con:
-  - **tipo ADSS o FLAT**,
-  - **cantidad de hilos** (12, 24, 48, 72, 96, 144) y **hilos por buffer** (8 o 12; ver 5.1),
-  - **color personalizado** para dibujarlo en el mapa,
-  - nombre y descripción.
-
-Comportamiento:
-- El usuario **arrastra un ícono** de la paleta y lo **suelta en el mapa**; al soltar se pide el
-  **nombre** (obligatorio) y los datos básicos del tipo.
-- El **cable se dibuja** haciendo clic desde un elemento a otro (con puntos intermedios),
-  **pegándose (snap)** a postes y mufas. Se puede editar la geometría después, moviendo vértices.
-- Mostrar la **longitud** del cable y el **detalle del metraje** al pasar el mouse
-  (referencia `img/06_detalle_metraje_cable.png`): distancia lineal, contingencia, salida de nodo,
-  reservas por mufa, por tendido y por cruce. Tomar los valores de reserva de
-  `business_rules.yaml` (sección nueva `diseno_red` con comentarios); no inventar reglas.
-- Seleccionar, mover, editar, duplicar y eliminar elementos (con confirmación si tiene conexiones).
-- **Notas en el mapa**: cuadros de texto con formato básico (negrita, cursiva, tipo y tamaño de
-  letra, listas, color), anclados a un elemento o a una posición.
-- Deshacer/rehacer (Ctrl+Z / Ctrl+Y) y guardado explícito, con aviso de cambios sin guardar.
-
-### 4.2 Tecla Enter sobre una mufa
-- **Mufa del proyecto** → abre el **editor de mufa** (sección 5).
-- **Mufa existente de la red** (KMZ o Visio) → abre su **diagrama Visio** correspondiente, con
-  el mismo visor que ya existe en "Ver diagrama". Si tiene varios diagramas, mostrar el selector.
-- Doble clic hace lo mismo que Enter.
+- El buscador de arriba acepta, además de nombres de mufa:
+  - decimal: `13.094578, -86.002708`, `13.094578 -86.002708` o `13.094578;-86.002708`;
+  - grados, minutos y segundos (como en Google Earth): `13°5'38.09"N 86°0'7.42"O`, también con
+    `W`, con espacios o con `º`;
+  - grados y minutos decimales: `13 5.6348N 86 0.1237W`.
+- Validar que caiga en Nicaragua y avisar si latitud y longitud parecen invertidas.
+- Al buscar una coordenada:
+  - volar a ella y poner un **pincho** (pin) con una **etiqueta con las coordenadas en decimal**
+    (como en la imagen);
+  - clic en el pin: copiar en decimal o en grados/minutos/segundos, "Guardar en Mis lugares",
+    "Usar para generar ruta" (llena la barra inferior sin calcular) y "Quitar".
+  - **No calcula presupuesto ni ruta.** La barra inferior queda exactamente como está.
+- Las sugerencias mezclan resultados: mufas del KMZ y de la red base, nodos Visio, elementos de
+  Mis lugares y "Ir a la coordenada …".
 
 ---
 
-## 5. Editor de mufa (diagramación de hilos)
+## 4. Mis lugares (funciones de Google Earth)
 
-Referencias: `img/04_concepto_cable_troncal_mufa.png`, `img/05_editor_mufa_hilos_y_splitter.png`,
-`img/08_mufa_con_splitters_hacia_fat.png`, `img/07_conector_salida_hacia_fat.png`
+Referencias: `img_v2/02_barra_herramientas_google_earth.png`, `img_v2/03_nueva_marca_posicion.png`,
+`img_v2/04_marca_pestana_ver.png`, `img_v2/05_marca_nombre_lat_lon.png`,
+`img_v2/06_selector_iconos.png`, `img_v2/07_nueva_ruta.png`
 
-La idea es reemplazar los diagramas Visio grandes y confusos por **una vista por mufa**: solo lo
-que entra y sale de esa mufa, y desde ahí navegar a la siguiente.
+### 4.1 Carpetas
+- En el árbol de Lugares, una raíz **"Mis lugares"** (por usuario) junto a "RED DE IDEAY".
+- Crear, renombrar, eliminar (con confirmación) y mover carpetas y subcarpetas; arrastrar y soltar
+  elementos entre carpetas; casilla de visibilidad de tres estados; orden manual.
+- Clic derecho en una carpeta: "Nueva carpeta", "Agregar marca de posición aquí", "Agregar ruta",
+  "Agregar polígono", "Encuadrar", "Exportar a KMZ", "Guardar como proyecto", "Eliminar".
 
-### 5.1 Representación
-- Ventana grande (maximizable) con lienzo de cuadrícula, zoom y desplazamiento.
-- Cada **cable** que llega o sale de la mufa aparece como una **barra vertical por buffer/tubo**,
-  con sus **hilos numerados** en círculos y coloreados con el **código TIA-598**:
-  1 azul, 2 naranja, 3 verde, 4 café, 5 gris, 6 blanco, 7 rojo, 8 negro, 9 amarillo,
-  10 violeta, 11 rosa, 12 aqua.
-  - El color del **buffer** también sigue TIA-598 (buffer 1 azul, 2 naranja…).
-  - Si el cable está configurado con **8 hilos por buffer**, los colores se repiten cada 8
-    (ejemplo del dueño: mufa de 16 hilos = hilos 1–8 y 9–16 con los colores 1–8). Si tiene 12,
-    se repiten cada 12. Debe ser un dato del cable, no fijo.
-- Encabezado del cable: "Cable | origen | destino | hilos" (como "C-Mufa | 21-Mufa | 25").
-- Tooltip al pasar sobre un cable o hilo: nombre, tipo, hilos, metraje con su detalle (ver
-  `img/06_detalle_metraje_cable.png`), estado y a qué está conectado en cada extremo.
+### 4.2 Barra de herramientas (como Google Earth)
+Una barra arriba del mapa (íconos, sin ventana aparte) con:
+- **Marca de posición**
+- **Polígono**
+- **Ruta**
+- **Medir** (distancia y área; integrar con "Mis medidas")
+- Elementos de red: **mufa, poste, cliente, cable** (ver sección 5)
+- **Importar** (sección 6) y **Coordenadas masivas** (sección 7)
 
-### 5.2 Operaciones
-Barra de herramientas arriba y abajo, como en las referencias:
-- **Conectar hilos**: arrastrar desde un hilo (por ejemplo, el 2 del cable troncal) hasta otro
-  hilo de otro cable (**fusión**) o hasta la **entrada de un splitter**. La conexión se dibuja
-  como línea ortogonal del color del hilo de origen.
-- **Splitters**: agregar 1x2, 1x4, 1x8, 1x16, 1x32, balanceados o desbalanceados (por ejemplo,
-  70/30), con nombre ("Splitter 1 (01x02 RC)"), entrada y salidas numeradas. Las salidas se
-  conectan a hilos de cables de salida o a conectores.
-- **Conectores / adaptadores** (conector de salida hacia FAT o cliente; ver
-  `img/07_conector_salida_hacia_fat.png`).
-- **Estado de cada hilo**: activo, **fibra oscura**, **cliente de baja**, reservado, dañado.
-  Se ve en el dibujo (por ejemplo, gris o punteado) y en el tooltip.
-- **Eliminar conexión**, eliminar splitter o conector, reordenar, alinear y distribuir elementos.
-- **Notas**: cuadros de texto con formato (negrita, tipo de letra, listas) dentro del lienzo.
-- Todo elemento soltado lleva **nombre** obligatorio.
-- Botones **Aplicar** (guardar sin cerrar) y **Guardar / Cerrar**. Opción futura: código QR de
-  la mufa (dejarlo preparado; no es obligatorio en la primera versión).
+### 4.3 Marca de posición
+Diálogo como en Google Earth:
+- Nombre, y latitud/longitud que se pueden escribir en decimal o en grados/minutos/segundos. Al
+  arrastrar el pin en el mapa se actualizan.
+- Pestañas:
+  - **Descripción:** texto con formato, agregar vínculo, agregar imagen local (se guarda en la
+    base o en una carpeta de adjuntos).
+  - **Estilo, color:** selector de ícono (pushpins de colores, letras, números, figuras; ver
+    `06_selector_iconos.png`), color, escala, opacidad, color y escala de la etiqueta. Usar SVG
+    locales equivalentes, sin depender de Google.
+  - **Ver:** centrar en la vista y "Instantánea de vista actual" (guarda el centro y el zoom para
+    volar ahí después).
+- Botones Aceptar / Cancelar.
 
-### 5.3 Navegación entre mufas
-- En el editor, cada destino conectado (otra mufa, FAT, cliente) se muestra como una **caja con
-  su nombre** al final del hilo o del splitter (ver `img/08_mufa_con_splitters_hacia_fat.png`).
-- **Enter o doble clic** sobre esa caja → abre el editor de **esa** mufa. Migas de pan arriba
-  para volver ("Proyecto > Mufa A > Mufa B").
-- **Seguir hilo**: seleccionar un hilo y "Trazar" → resalta el recorrido completo, mufa por
-  mufa, hasta el cliente o el extremo final, y lo lista en un panel (también se ve en el mapa).
-- Así, desde el cable troncal se puede ver a qué cliente o a qué otra mufa llega cada hilo.
+### 4.4 Ruta y polígono
+Diálogo similar (ver `07_nueva_ruta.png`): nombre, descripción, estilo (color, grosor,
+opacidad, relleno en polígonos), la pestaña **Medidas** (longitud de la ruta, perímetro y área
+del polígono) y dibujo punto por punto en el mapa, con edición de vértices.
 
----
-
-## 6. Diagrama lógico de red
-
-Referencias: `img/09_diagrama_logico_red.png`, `img/10_leyenda_ftth.png`
-
-- Ventana "Diagrama lógico de red" con una tabla de diagramas guardados (título, elemento de
-  inicio, caja, dirección izquierda/derecha, "incluir inmuebles/clientes") y, debajo, el
-  diagrama.
-- Se genera **automáticamente** a partir de las conexiones guardadas: desde el elemento elegido
-  (OLT, nodo, mufa o splitter) hacia adelante, de izquierda a derecha, mostrando cada caja
-  (mufa, FDT, FAT) con sus splitters dentro y los cables entre cajas con su etiqueta.
-- Leyenda FTTH: OLT (triángulo), SC (círculo rojo), FDT (cuadro amarillo), FAT (círculo
-  magenta), derivación (punto), y colores de cable por capacidad (por ejemplo, 144 hilos rojo y
-  48 hilos morado; configurable).
-- Zoom, desplazamiento, clic en una caja → abre su editor de mufa. Exportar a PNG y PDF.
+### 4.5 Guardado
+- Todo se guarda en PostgreSQL (tablas nuevas, por ejemplo `redes.lugares_carpetas` y
+  `redes.lugares_elementos` con geometría, estilo y vista), por usuario. Opción de compartir
+  una carpeta con otros usuarios.
+- **"Guardar como proyecto":** convierte una carpeta, con sus elementos de red, en un proyecto
+  del módulo Proyectos (plan futuro).
+- Exportar e importar una carpeta como KMZ.
 
 ---
 
-## 7. Otras opciones del menú
+## 5. Edición de la red real desde el mapa
 
-### 7.1 Problemas
-Registro de problemas ligados a un elemento del mapa (mufa, cable, poste, cliente): título,
-descripción, severidad, estado (abierto / en proceso / cerrado), fotos y usuario. Se ven como
-íconos de alerta en el mapa, con filtro.
+### 5.1 Entrar a cualquier mufa
+Referencia: `img_v2/01_mapa_actual_popup_mufa.png`
 
-### 7.2 Pendientes
-Tareas pendientes (por ejemplo, "validar existencia de mufa", "dar continuidad a hilos"),
-ligadas a un proyecto o elemento, con responsable, fecha límite y estado. Lista con filtros.
+- El popup de una mufa del KMZ (o de la red base) agrega, junto a "Ver diagrama Visio", un botón
+  **"Entrar a la mufa"**. También funciona con Enter o doble clic sobre la mufa seleccionada.
+- Abre el **editor de mufa** (el mismo de proyectos) con los datos de la **red base**:
+  - si la mufa ya se migró (plan de migración Visio), se ven sus cables, hilos, bandejas,
+    splitters y conexiones;
+  - si todavía no existe en la red base, se crea en ese momento, ligada al punto del KMZ
+    (`ref_externa`), vacía y lista para diagramar.
+- Desde el editor se navega a las mufas vecinas, igual que en proyectos.
 
-### 7.3 Usuarios
-Tabla de usuarios (nombre, correo, rol: administrador, editor, lector). Al abrir el visor, el
-usuario se identifica (en modo remoto, con su clave `X-Visor-Key`). Todo cambio queda registrado
-con su usuario (historial y auditoría). Los permisos se aplican por proyecto (sección 3.2).
+### 5.2 Herramientas de edición de red (sin entrar a un proyecto)
+- Un modo **"Editar red"** (botón en la barra de herramientas) que habilita:
+  - agregar mufa, poste, cliente, nodo y cable (troncal o distribución, ADSS/FLAT, hilos,
+    configuración de buffers, color) **sobre la red actual**, con snap a mufas y postes del KMZ y
+    de la red base;
+  - **editar y borrar elementos del KMZ y de la red base** (mover, renombrar, cambiar
+    propiedades, eliminar);
+  - unir lo nuevo con lo existente (por ejemplo, un cable nuevo desde una mufa del KMZ).
+- **No es una ventana aparte:** se trabaja en el mismo mapa, con una barra de estado que muestra
+  "N cambios sin guardar" y los botones **Guardar**, **Deshacer / Rehacer** y
+  **Descartar cambios**.
+- Los cambios se guardan en la **red base** (esquema `redes`) con historial y usuario. **El
+  archivo KMZ original no se modifica**: la capa del KMZ muestra el estado efectivo (KMZ + cambios
+  guardados). Lo editado o borrado del KMZ se registra como capa de cambios, para poder revertir y
+  para exportar un KMZ actualizado.
+- Permisos: solo usuarios con rol editor o administrador; los demás ven el botón deshabilitado.
+- Al guardar cambios que afecten mufas, postes o líneas usadas por el presupuesto, avisar que el
+  presupuesto usa PostGIS (`red_lineas` / `red_puntos`) y ofrecer "Publicar en la red del
+  presupuesto", con respaldo previo (ver 6.3).
 
-### 7.4 Backup
-- Botón "Crear respaldo": exporta el esquema del módulo (proyectos y todo su contenido) a un
-  archivo (`.sql` con `pg_dump` si está disponible en la instalación de PostgreSQL; si no,
-  exportación JSON completa por proyecto) en una carpeta configurable, con fecha y hora.
-- Lista de respaldos y "Restaurar" (con confirmación; restaurar como copia nueva de proyecto,
-  sin pisar el actual).
-- Exportar un proyecto a **KMZ** (para abrirlo en Google Earth) y a GeoJSON.
-
----
-
-## 8. Datos y arquitectura
-
-### 8.1 Base de datos
-- Esquema nuevo **`redes`** en la base `Presupuesto_visio` (`VISIO_DB_*`). Si no tiene PostGIS,
-  guardar la geometría como lat/lon y GeoJSON (`jsonb`). Proponer el modelo en el PASO 0.
-- Tablas mínimas sugeridas (ajústalas y justifícalas):
-  `usuarios`, `proyectos` (padre, área, ubicación, imagen), `proyecto_usuarios`, `elementos`
-  (poste, mufa, cliente, nodo/OLT, FAT/FDT; tipo, nombre, propiedades jsonb, geometría),
-  `cables` (tipo ADSS/FLAT, hilos, hilos por buffer, color, extremos, geometría, metraje),
-  `hilos` (cable, número, buffer, color TIA, estado), `splitters` (mufa, tipo, relación,
-  posición en el lienzo), `puertos` (entradas y salidas de splitters y conectores),
-  `conexiones` (de puerto/hilo a puerto/hilo, mufa donde ocurre), `notas` (texto con formato,
-  ancla), `problemas`, `pendientes`, `diagramas_logicos`, `historial` (auditoría: usuario,
-  fecha, entidad, cambio jsonb).
-- Toda escritura con **versión** por registro (bloqueo optimista) para que dos usuarios no se
-  pisen los cambios: si alguien guardó antes, avisar y ofrecer recargar.
-- Script de **migraciones** versionado (`redes/migraciones/NNN_*.sql`) que se aplica solo al
-  iniciar si falta.
-- **No modificar** las tablas existentes (`red_lineas`, `red_puntos`, esquema `red_fibra`).
-
-### 8.2 Código
-- Backend en Python en un paquete nuevo (por ejemplo, `visor_rutas/redes/`): repositorio de
-  datos, servicios (validaciones, trazado de hilos, generación del diagrama lógico, metraje) y
-  métodos expuestos al JS por `js_api` (modo local) y por endpoints `/visor/redes/*` con
-  `X-Visor-Key` (modo remoto, si existe).
-- Frontend: librerías **locales en `web/lib/`** (sin CDN), con licencia libre. Sugerencias
-  (elige y justifica): Leaflet-Geoman para dibujar y editar en el mapa; Konva.js o JointJS
-  (core) para el editor de mufa y el diagrama lógico; Quill para el texto con formato.
-- Separar el JS por módulos (mapa, proyectos, editor de mufa, diagrama lógico, menú) para no
-  crecer un solo archivo gigante.
+### 5.3 Capas
+Todo lo agregado o editado se ve en el árbol de Lugares como capas activables, igual que el KMZ:
+"Red base · mufas", "· postes", "· cables", "· clientes", "Cambios sin publicar", y Mis lugares.
 
 ---
 
-## 9. Fases (detenerse al final de cada una)
+## 6. Importar KMZ desde el programa
+
+### 6.1 Dos modos
+1. **Nueva ruta o elementos:** el archivo aparece primero como una capa nueva en
+   **"Importados (pendientes)"**, con el **nombre del archivo**, para revisarlo. Luego, con
+   **"Aplicar a la red"**, sus elementos pasan a la red base.
+2. **Actualización de toda la red:** un KMZ completo (como `RED_DE_IDEAY.kmz`) que reemplaza o
+   actualiza la red.
+
+### 6.2 Detectar qué cambió
+Al importar, comparar con la red actual (KMZ vigente + red base) y clasificar cada elemento:
+- **Nuevo:** no existe ninguno con nombre parecido cerca.
+- **Modificado:** mismo elemento (por nombre normalizado + cercanía, o por geometría casi igual)
+  con cambios de posición, trazo, descripción o estilo.
+- **Sin cambios.**
+- **Eliminado:** está en la red y no en el archivo; solo en el modo de actualización completa.
+
+Mostrar una **pantalla de revisión**:
+- conteos por tipo;
+- lista filtrable y vista en el mapa con colores (verde nuevo, naranja modificado, rojo eliminado);
+- casillas para aceptar o rechazar cada cambio o grupos enteros.
+- Detectar también si el archivo es una ruta nueva (todo nuevo, en una zona sin red) o un cambio a
+  la red existente, y sugerir el modo.
+
+### 6.3 Aplicar
+- Respaldo automático antes de aplicar.
+- Aplicar a la red base y regenerar la caché del árbol de Lugares (`kmz_capas.py`).
+- Opción de **publicar también en PostGIS** (`red_lineas` / `red_puntos`) para que el presupuesto
+  use la red nueva. Respaldo de esas tablas antes, y reporte de lo que cambió.
+- Guardar el historial de importaciones (archivo, md5, fecha, usuario, cambios aplicados) con la
+  opción de revertir la última.
+
+---
+
+## 7. Coordenadas masivas (varios presupuestos a la vez)
+
+- Herramienta "Coordenadas masivas" en la barra: subir un archivo **Excel (.xlsx/.xls), CSV,
+  Word (.docx), texto o notas (.txt)**.
+- Extraer todas las coordenadas:
+  - en Excel o CSV, detectar las columnas (latitud/longitud o una sola columna) y las columnas
+    opcionales de nombre o código de cliente;
+  - en Word o texto, buscar coordenadas con los mismos formatos del buscador (sección 3);
+  - mostrar una vista previa para confirmar, marcar las inválidas o duplicadas y permitir
+    corregirlas.
+- Ver todos los puntos en el mapa (capa temporal con número y nombre).
+- **Calcular el presupuesto de cada una** con la misma lógica del presupuesto aproximado del visor
+  (supuestos de `visor_estimacion`), en segundo plano, con una barra de progreso y la opción de
+  cancelar. Respetar un límite de llamadas a Google por minuto (configurable) y avisar el costo
+  estimado antes de empezar.
+- Tabla de resultados: punto de conexión, distancia por ruta, metraje, tipo de cable, postes,
+  total, avisos. Ordenable, con clic para ver la ruta en el mapa.
+- Opciones al terminar:
+  - **"Generar presupuestos":** guarda un Excel por coordenada más un Excel resumen en
+    `output/visor/masivo_<AAAAMMDD-HHMMSS>_<nombre del archivo>/`, con "Abrir carpeta";
+  - **"Guardar como proyecto":** crea un proyecto con esos puntos y sus rutas;
+  - **"Guardar en Mis lugares":** carpeta con los puntos.
+
+---
+
+## 8. Datos (proponer en la fase 0)
+
+- Mis lugares: carpetas (padre, nombre, orden, visible, usuario, compartida) y elementos (tipo
+  marca/ruta/polígono, geometría, nombre, descripción HTML, estilo jsonb, vista jsonb, adjuntos).
+- Edición de red: usar el modelo de "red base" del plan de migración Visio (`es_red_base`,
+  `fuente`, `estado_migracion`) más una tabla de cambios sobre el KMZ (elemento KMZ, acción
+  editar/borrar, valores anteriores y nuevos, usuario, fecha, publicado sí/no).
+- Importaciones KMZ: historial y detalle de cambios.
+- Lotes masivos: lote, archivo, usuario, puntos, resultados y carpeta de salida.
+- Migraciones SQL numeradas a continuación de las existentes, idempotentes, con respaldo previo.
+
+---
+
+## 9. Modo remoto (.exe)
+
+Todo lo nuevo debe funcionar también en modo remoto por `/visor/*` con `X-Visor-Key`:
+- Mis lugares y edición de red por la API, con los mismos permisos;
+- importación de KMZ y coordenadas masivas subiendo el archivo;
+- los presupuestos masivos se generan en el servidor y se descargan como .zip.
+
+---
+
+## 10. Fases (detenerse al final de cada una)
 
 | Fase | Alcance | Listo cuando |
 |---|---|---|
-| **0** | Leer el código actual (visor, modo remoto si existe, `main.py`, configuración). Proponer el modelo de datos, las librerías y la estructura de archivos. | Apruebo el plan. |
-| **1** | Menú ampliado con íconos y modo contraído. Usuarios básicos (tabla e identificación). Migraciones del esquema `redes`. | Menú funcional, base creada. |
-| **2** | Proyectos: lista, crear/editar/duplicar/eliminar, historial, imagen, ubicación, área, jerarquía y usuarios. | CRUD completo guardado en PostgreSQL. |
-| **3** | Editor de mapa: paleta (poste, mufa, cliente, cable ADSS/FLAT con color), arrastrar y soltar, snap, nombres, metraje con detalle, notas con formato, deshacer/rehacer. Enter en mufa existente → diagrama Visio. | Diseño un tramo con 2 mufas, postes y un cliente y queda guardado. |
-| **4** | Editor de mufa: cables con buffers e hilos TIA, conexiones arrastrando, splitters, conectores, estados de hilo, notas, Aplicar/Guardar, navegación con Enter y migas de pan. | Conecto un hilo troncal a un splitter 1x8 y una salida a otra mufa, y navego. |
-| **5** | Trazado de hilo de punta a punta (panel y mapa). | Desde un hilo del troncal veo a qué cliente llega. |
-| **6** | Diagrama lógico de red automático, con leyenda y exportación. | Se genera desde una mufa y se exporta a PDF. |
-| **7** | Problemas, Pendientes y Backup (respaldo, restauración y exportación a KMZ/GeoJSON). | Funcionan las tres opciones. |
+| **0** | Leer el código actual (`ventana_web.py`, `visor.js`, `lugares.js`, `menu.js`, `redes/`, `kmz_capas.py`, `calculo.py`, `presupuesto_visor.py`, `remoto.py`) y el plan de migración Visio. Proponer el modelo de datos, la estructura de archivos JS (sin crecer `visor.js`) y cómo se cruza con la red base. | Apruebo el plan. |
+| **1** | Arreglos de interfaz (sección 2). | Un solo panel de capas, filtros que funcionan, zoom abajo a la derecha, nada tapado, panel derecho oculto hasta tener resultado. |
+| **2** | Buscador de coordenadas con pin (sección 3). | Busco en decimal y en grados/minutos/segundos, aparece el pin con la etiqueta y no se calcula nada. |
+| **3** | Mis lugares: carpetas, marca de posición, ruta, polígono, estilos, íconos, vista, exportar e importar KMZ de una carpeta (sección 4). | Creo carpetas y elementos, se guardan y siguen ahí al reabrir. |
+| **4** | Entrar a cualquier mufa desde el mapa y modo "Editar red" con Guardar/Deshacer/Descartar (sección 5). | Entro a una mufa del KMZ, la diagramo, agrego un cable nuevo desde ella, edito una mufa del KMZ y guardo. |
+| **5** | Importar KMZ: dos modos, comparación, revisión, aplicar, publicar en PostGIS y revertir (sección 6). | Importo una ruta nueva y una actualización, reviso los cambios y los aplico. |
+| **6** | Coordenadas masivas (sección 7). | Subo un Excel con 20 coordenadas, veo los puntos, genero los presupuestos en su carpeta y lo guardo como proyecto. |
+| **7** | Modo remoto para todo lo anterior (sección 9). | Funciona igual desde el .exe. |
 
-En cada fase:
-- **Pruebas** en `Pruebas/` (repositorio con base de prueba, validaciones, trazado, diagrama
-  lógico y permisos), y que **todas las pruebas existentes sigan pasando**.
-- `POST /presupuesto` y n8n **sin cambios** (verificarlo).
-- Archivos **completos** listos para reemplazar.
-- Actualizar el `README.md` (sección del visor: módulo de Proyectos y Diagramación).
-
-## 10. Restricciones
-- Windows sin permisos de administrador; mismo `.venv`; nada que requiera instalar servicios.
-- Google Directions sigue en modo `driving`. No cambiar reglas de presupuesto existentes.
-- No quitar ni romper: diagramas Visio, ruta de fusión, capas KMZ y Visio, presupuesto aproximado,
-  modo remoto/.exe.
-- Todo en español en la interfaz.
+En cada fase: pruebas en `Pruebas/`, todas las existentes pasan, `POST /presupuesto` sin cambios,
+README actualizado.

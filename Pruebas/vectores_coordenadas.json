@@ -1,0 +1,220 @@
+[
+ {
+  "entrada": "13.094578, -86.002708",
+  "estado": "ok",
+  "lat": 13.094578,
+  "lon": -86.002708
+ },
+ {
+  "entrada": "13.094578 -86.002708",
+  "estado": "ok",
+  "lat": 13.094578,
+  "lon": -86.002708
+ },
+ {
+  "entrada": "13.094578;-86.002708",
+  "estado": "ok",
+  "lat": 13.094578,
+  "lon": -86.002708
+ },
+ {
+  "entrada": "13.094578,-86.002708",
+  "estado": "ok",
+  "lat": 13.094578,
+  "lon": -86.002708
+ },
+ {
+  "entrada": "  (13.094578, -86.002708)  ",
+  "estado": "ok",
+  "lat": 13.094578,
+  "lon": -86.002708
+ },
+ {
+  "entrada": "13°5'38.09\"N 86°0'7.42\"O",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "13º5'38.09\"N 86º0'7.42\"W",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "13°5′38.09″N 86°0′7.42″O",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "13 5 38.09 N 86 0 7.42 W",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "13 5 38.09 n 86 0 7.42 o",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "N13 5 38.09 W86 0 7.42",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "N 13° 5' 38.09\" O 86° 0' 7.42\"",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "86°0'7.42\"W 13°5'38.09\"N",
+  "estado": "ok",
+  "lat": 13.09391388888889,
+  "lon": -86.00206111111112
+ },
+ {
+  "entrada": "13 5 38.09 86 0 7.42",
+  "estado": "fuera",
+  "lat": 13.09391388888889,
+  "lon": 86.00206111111112
+ },
+ {
+  "entrada": "13 5.6348N 86 0.1237W",
+  "estado": "ok",
+  "lat": 13.093913333333333,
+  "lon": -86.00206166666666
+ },
+ {
+  "entrada": "13 5.6348 -86 0.1237",
+  "estado": "ok",
+  "lat": 13.093913333333333,
+  "lon": -86.00206166666666
+ },
+ {
+  "entrada": "13.094578N 86.002708W",
+  "estado": "ok",
+  "lat": 13.094578,
+  "lon": -86.002708
+ },
+ {
+  "entrada": "-86.002708W 13.094578N",
+  "estado": "ok",
+  "lat": 13.094578,
+  "lon": -86.002708
+ },
+ {
+  "entrada": "12.153328, -86.263438",
+  "estado": "ok",
+  "lat": 12.153328,
+  "lon": -86.263438
+ },
+ {
+  "entrada": "11°59'58.19\"N 86°7'17.29\"O",
+  "estado": "ok",
+  "lat": 11.999497222222221,
+  "lon": -86.12146944444444
+ },
+ {
+  "entrada": "-86.002708, 13.094578",
+  "estado": "invertida",
+  "lat": -86.002708,
+  "lon": 13.094578
+ },
+ {
+  "entrada": "-86.002708 13.094578",
+  "estado": "invertida",
+  "lat": -86.002708,
+  "lon": 13.094578
+ },
+ {
+  "entrada": "40.7128, -74.0060",
+  "estado": "fuera",
+  "lat": 40.7128,
+  "lon": -74.006
+ },
+ {
+  "entrada": "13.094578, 86.002708",
+  "estado": "fuera",
+  "lat": 13.094578,
+  "lon": 86.002708
+ },
+ {
+  "entrada": "13 75 38 N 86 0 7 O",
+  "estado": "error",
+  "mensaje": "minutos"
+ },
+ {
+  "entrada": "13 5 75 N 86 0 7 O",
+  "estado": "error",
+  "mensaje": "segundos"
+ },
+ {
+  "entrada": "13 N 86 N",
+  "estado": "error",
+  "mensaje": "latitud"
+ },
+ {
+  "entrada": "13.09 N, 86.00 O 5",
+  "estado": "error",
+  "mensaje": "Sobran"
+ },
+ {
+  "entrada": "95 5 5, 86 0 0",
+  "estado": "error",
+  "mensaje": "rango"
+ },
+ {
+  "entrada": "13.5 5 38, 86 0 7",
+  "estado": "error",
+  "mensaje": "decimales"
+ },
+ {
+  "entrada": "",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "   ",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "MF 12 NORTE",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "MUFA CORTE 3",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "2503",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "13.09",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "N 12",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "12 N",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "Ciudad Sandino",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "mufa 12.5 -86.1",
+  "estado": "no_coordenada"
+ },
+ {
+  "entrada": "13.09,86.0 abc",
+  "estado": "no_coordenada"
+ }
+]

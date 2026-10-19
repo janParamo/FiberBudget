@@ -30,7 +30,7 @@ def entorno(tmp_path, monkeypatch):
            "GOOGLE_API_KEY": "x", "SERVICE_API_KEY": "secret",
            "TEMPLATE_PATH": str(template), "OUTPUT_DIR": str(tmp_path / "out"),
            "LOG_FILE": str(tmp_path / "log.txt"), "RED_FIBRA_DB": str(tmp_path / "missing.db"),
-           "VISIO_DB_NAME": "", "RULES_PATH": os.path.join(os.path.dirname(__file__), "..", "business_rules.yaml")}
+           "VISIO_DB_NAME": "", "RULES_PATH": os.path.join(os.path.dirname(__file__), "..", "business_rules.yaml"), "RUTA_FUSION_XLSX": str(tmp_path / "no_hay_libro_de_fusion.xlsx")}
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     import config

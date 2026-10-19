@@ -205,6 +205,17 @@ def test_spans_up_to_max_span_need_no_new_pole():
     assert count_new_poles_by_gaps(200, 50, [0, 130], max_span_m=60) == 3   # gaps 130 and 70
 
 
+def test_poles_that_already_stand_are_used_even_if_far_apart():
+    """Between two existing poles the field's span is accepted (up to the longer limit): no new pole in between."""
+    existentes = [40.0, 130.0, 215.0]                                         # spans of 90 and 85 m
+    assert count_new_poles_by_gaps(250, 50, existentes, max_span_m=60) == 2   # old rule: a pole inside each gap
+    assert count_new_poles_by_gaps(215, 50, existentes, max_span_m=60, max_span_between_existing_m=100) == 0
+    # before the first / after the last existing pole the normal limit still applies
+    assert count_new_poles_by_gaps(400, 50, existentes, max_span_m=60, max_span_between_existing_m=100) == 3   # 215 -> 400
+    assert count_new_poles_by_gaps(130, 50, [130], max_span_m=60, max_span_between_existing_m=100) == 2        # 0 -> 130: 50, 100
+    assert count_new_poles_by_gaps(260, 50, [0, 130, 260], max_span_m=60, max_span_between_existing_m=100) == 4   # 130 m spans are too long
+
+
 def test_count_turns():
     assert count_turns(STRAIGHT, 35) == 0
     assert count_turns(L_SHAPE, 35) == 1

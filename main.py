@@ -507,7 +507,8 @@ def _generar_presupuesto(req: TicketRequest) -> dict[str, Any]:
 
 def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: Path | None = None,
                              get_route: Any = None,
-                             new_poles_marked_existing_m: list[float] | None = None) -> dict[str, Any]:
+                             new_poles_marked_existing_m: list[float] | None = None,
+                             new_poles_extra: int = 0, mufa_count_override: int | None = None) -> dict[str, Any]:
     """The whole budget for one request: connection point, route, quantities, map, Excel, recalc.
 
     POST /presupuesto calls it with the defaults (settings.output_dir, routing.get_route). The
@@ -515,6 +516,8 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     so it produces the very same budget without touching the API's files. It may also pass
     new_poles_marked_existing_m: route positions of new poles the user marked on the map as
     already standing; each one that matches a new pole of this route is charged as existing.
+    new_poles_extra: poles the user added by hand on the map (viewer only): charged as new poles on top of the computed ones.
+    mufa_count_override: mufas to intervene after the user edited the fusion route in the viewer (None: the computed count).
     """
     output_dir = output_dir or settings.output_dir
     get_route = get_route or routing.get_route
@@ -583,6 +586,8 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     for mufa in route_mufas:
         intervened.setdefault(mufa.id, mufa.nombre)
     mufa_count = len(intervened)
+    if mufa_count_override is not None:
+        mufa_count = max(0, int(mufa_count_override))
     log.info(
         "Mufa audit: intervened=%d source=%s ids=%s distribution_reason=%s route_ids=%s route_distances_m=%s buffer_m=%s",
         mufa_count,
@@ -623,12 +628,16 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     turns = count_turns(route.points, rules["poles"]["corner_angle_deg"])
     new_pole_label = rules["poles"]["new_pole_row_label"]
     marked_warnings: list[str] = []
+    if new_poles_extra:
+        quantities[new_pole_label] += int(new_poles_extra)
+        marked_warnings.append(f"{int(new_poles_extra)} poste(s) nuevo(s) agregado(s) a mano en el visor")
     if new_poles_marked_existing_m is not None:
         # Viewer only: new poles the user saw standing on the map count as existing poles.
         marked_m, unmatched_m = match_marked_poles(
             new_poles_marked_existing_m,
             new_pole_positions_by_gaps(route.distance_m, pole_spacing_m, existing_pole_positions_m,
-                                       rules["poles"].get("max_span_m")))
+                                       rules["poles"].get("max_span_m"),
+                                       rules["poles"].get("max_span_between_existing_m")))
         marked = min(len(marked_m), quantities[new_pole_label])
         quantities[new_pole_label] -= marked
         quantities[rules["poles"]["existing_pole_row_label"]] += marked

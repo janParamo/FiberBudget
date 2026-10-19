@@ -103,7 +103,9 @@ def test_schema_architecture_rules(base_redes, con_redes):
         columnas.setdefault(f["table_name"], set()).add(f["column_name"])
     # tables that are not edited record by record: the log, the migration list, links and derived ports
     sin_version = {"migraciones", "historial", "proyecto_usuarios", "puertos", "problema_fotos", "spatial_ref_sys",
-                   "migracion_visio_corridas", "migracion_visio_log"}        # logs: only inserted
+                   "migracion_visio_corridas", "migracion_visio_log",         # logs: only inserted
+                   "lugares_adjuntos", "lugares_compartidas",
+                   "kmz_importacion_detalle"}                # images / shares: replaced or logically deleted by their owner; the rows of an import go away with it
     for tabla, cols in columnas.items():
         if tabla in sin_version or tabla.startswith(("geography_", "geometry_")):
             continue

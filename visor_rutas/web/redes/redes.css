@@ -134,7 +134,7 @@
 /* ---------------------------------------------------------------- Editor de red en el mapa (fase 3) */
 body.editando-red #buscador { display: none; }
 /* A strip across the top of the map (between "Lugares" and the summary panel); the map's own
-   top controls (zoom, layers) move down while a project is open. */
+   top controls move down while a project is open, and so does the collapsed "Lugares" tab. */
 .editor-red {
   position: absolute; top: 0; z-index: 965; left: var(--ocupado-izquierda, 0px); right: var(--ocupado-derecha, 360px);
   min-height: 56px; display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap;
@@ -142,6 +142,7 @@ body.editando-red #buscador { display: none; }
   font-size: 13px;
 }
 body.editando-red .leaflet-top { margin-top: calc(var(--alto-editor, 56px) + 6px); }   /* height set by editor_mapa.js */
+body.editando-red .abrir-lugares { top: calc(var(--alto-editor, 56px) + 10px); }
 .editor-red[hidden] { display: none; }
 .er-titulo { display: flex; flex-direction: column; line-height: 1.2; max-width: 220px; flex: 0 1 auto; min-width: 90px; }
 .er-acciones { margin-left: auto; flex: none; }

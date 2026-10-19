@@ -48,7 +48,8 @@ _CONFIG_TEXTO = re.compile(r"(\d{1,2})\s*BUFFERS?\s*DE\s*(\d{1,2})\s*(?:H|HILOS)
 DEFECTO = {"configuracion_por_hilos": {2: "1x2", 4: "1x4", 6: "1x6", 8: "1x8", 12: "1x12", 24: "6x4", 48: "6x8", 72: "6x12",
                                        96: "8x12", 144: "12x12"},
            "tipo_fibra": "SM dispersión cero", "palabras_troncal": ["TRONCAL", "BACKBONE"], "tolerancia_linea_kmz_m": 25,
-           "tolerancia_punto_kmz_m": 30, "inferir_hilos": {"continuidad_ambos_lados": True, "continuidad_un_lado": True, "texto_kmz": True},
+           "tolerancia_punto_kmz_m": 30, "inferir_hilos": {"continuidad_ambos_lados": True, "continuidad_un_lado": True, "texto_kmz": True,
+                             "minimo_del_anillo": True},
            "migrar_reservas": True, "troncales_a_region_km": 5, "proyectos_base": {"defecto": "Red existente – Managua", "zonas": {}}}
 
 
@@ -458,7 +459,7 @@ def comparar(con: Any, plan: Plan) -> list[dict[str, Any]]:
                            "textos": textos, "cambios": cambios})
     ya_c = {f["clave"]: f for f in con.execute(
         "SELECT c.id, c.version, c.nombre, c.hilos, c.hilos_por_buffer, c.configuracion_estimada, c.clase, c.estado_migracion, "
-        "c.ref_visio ->> 'clave' AS clave, o.estado_migracion AS estado_origen, d.estado_migracion AS estado_destino FROM redes.cables c "
+        "c.ref_visio ->> 'clave' AS clave, c.ref_visio ->> 'hilos_origen' AS hilos_origen, o.estado_migracion AS estado_origen, d.estado_migracion AS estado_destino FROM redes.cables c "
         "LEFT JOIN redes.elementos o ON o.id = c.origen_id LEFT JOIN redes.elementos d ON d.id = c.destino_id "
         "WHERE c.borrado_en IS NULL AND c.ref_visio ? 'clave'").fetchall()}
     for c in plan.cables:
@@ -467,6 +468,9 @@ def comparar(con: Any, plan: Plan) -> list[dict[str, Any]]:
         if ya is None:
             continue
         cambios, textos = {}, []
+        if ya["hilos_origen"] == "minimo_del_anillo" and ya["hilos"] and (not c["hilos"] or c["hilos"] <= ya["hilos"]):
+            c = {**c, "hilos": None}                        # the rings Excel raised it: a smaller deduced count does not undo that
+            ya = {**ya, "hilos": None}
         if c["hilos"] and c["hilos"] != ya["hilos"]:
             cambios.update(hilos=c["hilos"], hilos_por_buffer=c["hilos_por_buffer"], color=c["color"], configuracion_estimada=c["configuracion_estimada"])
             textos.append(f"hilos: {ya['hilos'] or 'desconocidos'} → {c['hilos']} ({c['origen_hilos']})")

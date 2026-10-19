@@ -51,6 +51,14 @@ LEEME = """VISOR DE RUTAS – modo remoto
    clave personal (se las da quien administra el servidor), presione "Probar conexión" y "Guardar".
    La clave queda cifrada para su usuario de Windows. Para cambiarla: menú ☰ -> Configuración.
 
+SI AL ABRIR DICE "Failed to resolve Python.Runtime.Loader.Initialize" (o "RuntimeError ... Python.Runtime.dll"):
+Windows marca como "bloqueados" los archivos que se extraen de un .zip descargado. El visor intenta quitar esa marca
+solo al abrirse; si aun asi falla, haga una de estas dos cosas:
+  a) Borre la carpeta VisorRutas, clic derecho en VisorRutas.zip -> Propiedades -> marque "Desbloquear" -> Aceptar,
+     y extraiga el .zip de nuevo.
+  b) O abra PowerShell en la carpeta VisorRutas y escriba:   Get-ChildItem -Recurse | Unblock-File
+Si recibe el programa por el instalador (InstaladorVisorRutas.exe) no necesita nada de esto.
+
 Requisitos: Windows 10/11 con Microsoft Edge WebView2 (ya viene instalado; si falta, el visor
 muestra el enlace de descarga) y conexión a internet. Todos los cálculos se hacen en el servidor:
 si dice "No se pudo conectar con el servidor de presupuestos", el servicio está apagado en la PC
@@ -113,7 +121,8 @@ def verificar(carpeta: Path) -> None:
                 problemas.append(f"módulo {modulo}")
     for pagina in ("visor.html", "visor.js", "lugares.js", "menu.js", "redes/comun.js", "redes/usuarios.js", "redes/redes.css",
                    "redes/proyectos.js", "redes/editor_mapa.js", "redes/editor_mufa.js", "redes/trazado.js", "redes/diagrama.js",
-                   "redes/problemas.js", "redes/pendientes.js", "redes/respaldos.js", "lib/geoman/leaflet-geoman.js",
+                   "redes/problemas.js", "redes/pendientes.js", "redes/respaldos.js", "lugares/mis_lugares.js", "lugares/dibujar_red.js", "lugares/kmz_cambios.js", "lugares/importar_kmz.js", "lugares/masivas.js",
+                   "mapa/editar_ruta.js", "mapa/editar_fusion.js", "mapa/medicion_total.js", "mapa/barra_herramientas.js", "lib/geoman/leaflet-geoman.js",
                    "lib/geoman/leaflet-geoman.css", "lib/quill/quill.js", "lib/quill/quill.snow.css", "lib/konva/konva.min.js"):
         if not (carpeta / "_internal" / "visor_rutas" / "web" / pagina).is_file():
             problemas.append(f"falta visor_rutas/web/{pagina}")
@@ -133,6 +142,19 @@ def comprimir(carpeta: Path) -> None:
     print(f"{ZIP.name}: {ZIP.stat().st_size / 1e6:.1f} MB")
 
 
+def instalador() -> None:
+    """InstaladorVisorRutas.exe con Inno Setup (instalación por usuario, sin administrador), si ISCC está instalado."""
+    import os
+    candidatos = [shutil.which("iscc"), r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe", r"C:\Program Files\Inno Setup 6\ISCC.exe",
+                  os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe")]
+    iscc = next((c for c in candidatos if c and Path(c).is_file()), None)
+    if iscc is None:
+        print("Instalador: Inno Setup no está instalado; se omite (opcional). Con él: instalador_visor.iss -> InstaladorVisorRutas.exe")
+        return
+    subprocess.run([iscc, "/Q", str(RAIZ / "instalador_visor.iss")], cwd=RAIZ, check=True)
+    print(f"Instalador: {RAIZ / 'InstaladorVisorRutas.exe'}")
+
+
 def main() -> None:
     try:
         import PyInstaller  # noqa: F401
@@ -147,6 +169,7 @@ def main() -> None:
     carpeta = DIST / NOMBRE
     verificar(carpeta)
     comprimir(carpeta)
+    instalador()
     print(f"Listo: {carpeta / (NOMBRE + '.exe')}  y  {ZIP}")
 
 

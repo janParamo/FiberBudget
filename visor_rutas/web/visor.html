@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="lib/quill/quill.snow.css">
   <link rel="stylesheet" href="visor.css">
   <link rel="stylesheet" href="redes/redes.css">
+  <link rel="stylesheet" href="lugares/mis_lugares.css">
 </head>
 <body>
   <main id="mapa" aria-label="Mapa"></main>
@@ -931,13 +932,13 @@
   <div id="buscador" class="buscador" role="search">
     <span class="lupa" aria-hidden="true">&#x1F50D;</span>
     <input id="buscar-mufa" type="search" autocomplete="off" spellcheck="false"
-           placeholder="Buscar mufa por nombre…" aria-label="Buscar mufa por nombre">
+           placeholder="Buscar mufa, lugar o coordenada…" aria-label="Buscar mufa, lugar o coordenada" title="Una mufa o lugar por su nombre, o una coordenada: 13.094578, -86.002708 · 13°5'38.09&quot;N 86°0'7.42&quot;O · 13 5.6348N 86 0.1237W">
     <span id="buscar-spinner" class="spinner" hidden></span>
     <ul id="buscar-resultados" class="buscar-resultados" hidden role="listbox"></ul>
   </div>
 
-  <!-- Panel de resumen (flotante, colapsable) -->
-  <aside id="panel" class="panel">
+  <!-- Panel de resumen (flotante, colapsable): oculto hasta que haya un resultado (ruta o mufa buscada) -->
+  <aside id="panel" class="panel" hidden>
     <div id="panel-tirador" class="panel-tirador" title="Arrastrar para cambiar el ancho del panel"></div>
     <header class="panel-cabecera">
       <nav class="pestanas" role="tablist">
@@ -981,6 +982,7 @@
   <button id="abrir-panel" type="button" class="abrir-panel" hidden>&#x276E; Resumen</button>
 
   <!-- Indicaciones mientras se mide -->
+  <div id="aviso-captura" class="aviso-captura" hidden>Modo captura · Esc para volver</div>
   <div id="medir-ayuda" class="medir-ayuda" hidden>
     <b>Medir:</b> clic para agregar puntos · doble clic, Enter o clic derecho para terminar ·
     <b>N</b> o <b>＋ Nueva medida</b> guarda esta y empieza otra de otro color ·
@@ -1001,6 +1003,8 @@
     <button id="limpiar" type="button" class="btn">Limpiar</button>
     <span class="separador"></span>
     <button id="medir" type="button" class="btn" title="Medir distancias sobre el mapa">&#x1F4CF; Medir</button>
+    <button id="captura" type="button" class="btn" title="Captura: oculta todo menos el mapa para tomar una imagen (Esc para volver)">&#x1F4F7; Captura</button>
+    <button id="ruta-mano" type="button" class="btn" title="Dibujar la ruta a mano: el presupuesto se va calculando mientras se dibuja">&#x270E; Ruta a mano</button>
     <button id="nueva-medida" type="button" class="btn" hidden title="Guarda la medida actual y empieza otra de otro color (N)">&#xFF0B; Nueva medida</button>
     <button id="borrar-medidas" type="button" class="btn" disabled>Borrar medidas</button>
     <div id="mensaje" class="mensaje" role="status">
@@ -1044,9 +1048,25 @@
   <script src="lib/markercluster/leaflet.markercluster.js"></script>
   <script src="lib/polylinedecorator/leaflet.polylineDecorator.js"></script>
   <script src="lib/geoman/leaflet-geoman.js"></script>
+  <script src="mapa/modo_dibujo.js"></script>
   <script src="lib/quill/quill.js"></script>
   <script src="lib/konva/konva.min.js"></script>
   <script src="lugares.js"></script>
+  <script src="mapa/coordenadas.js"></script>
+  <script src="mapa/buscador.js"></script>
+  <script src="mapa/pin.js"></script>
+  <script src="mapa/medicion_total.js"></script>
+  <script src="mapa/editar_ruta.js"></script>
+  <script src="mapa/editar_fusion.js"></script>
+  <script src="mapa/capas_visor.js"></script>
+  <script src="lugares/iconos.js"></script>
+  <script src="lugares/dialogo.js"></script>
+  <script src="lugares/dibujar_red.js"></script>
+  <script src="lugares/kmz_cambios.js"></script>
+  <script src="lugares/importar_kmz.js"></script>
+  <script src="lugares/masivas.js"></script>
+  <script src="lugares/mis_lugares.js"></script>
+  <script src="mapa/barra_herramientas.js"></script>
   <script src="menu.js"></script>
   <script src="redes/comun.js"></script>
   <script src="redes/usuarios.js"></script>

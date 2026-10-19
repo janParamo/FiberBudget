@@ -38,6 +38,9 @@
     busqueda: "", enDescripcion: false, seleccion: null,
     filas: [],
     resaltada: null,
+    secciones: [],                  // own sections above the KMZ folders ("Mapa base", "Capas del visor"): see registrarSeccion
+    ext: {},                        // extra trees with their own rows ("Mis lugares"): see registrarFilas
+    seccionesCerradas: new Set(),   // ids of the sections the user collapsed
   };
 
   // ------------------------------------------------------------------ utilidades
@@ -79,7 +82,7 @@
       api.guardar_capas_estado({
         version: VERSION_ESTADO, md5: s.arbol.md5, marcadas: [...s.marcadas], expandidas: [...s.expandidas],
         opacidad: s.opacidad, etiquetas: s.etiquetas, ocultos, distintivos: s.distintivos,
-        ancho: s.ancho, plegado: s.plegado,
+        ancho: s.ancho, plegado: s.plegado, seccionesCerradas: [...s.seccionesCerradas],
       }).catch(() => {});
     }, 700);
   }
@@ -96,6 +99,7 @@
   function restaurar(guardado) {
     estadoInicial();
     if (!guardado || guardado.version !== VERSION_ESTADO) return;
+    s.seccionesCerradas = new Set(guardado.seccionesCerradas || []);
     const existe = (id) => !!s.carpetas[id];
     s.marcadas = new Set((guardado.marcadas || []).filter(existe));
     s.expandidas = new Set((guardado.expandidas || []).filter(existe));
@@ -168,11 +172,18 @@
       : L.featureGroup();
     const items = geo.features.map((f, i) => crearElemento(c, geo, f, i));
     const ocultos = s.ocultos.get(id);
-    items.forEach((it, i) => { if (it && !(ocultos && ocultos.has(i))) grupo.addLayer(it.capa); });
+    items.forEach((it, i) => { if (it && !it.borrado && !(ocultos && ocultos.has(i))) grupo.addLayer(it.capa); });
     return { geo, grupo, items, etiquetas: L.layerGroup(), enMapa: false };
   }
 
   function latlngs(coords) { return coords.map(([lon, lat]) => [lat, lon]); }
+
+  /** [lat, lon] of the first point of a geometry (what identifies an element of the KMZ for lugares/kmz_cambios.js). */
+  function primerPunto(g) {
+    let c = g.type === "GeometryCollection" ? ((g.geometries || [])[0] || {}).coordinates : g.coordinates;
+    while (Array.isArray(c) && Array.isArray(c[0])) c = c[0];
+    return Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null;
+  }
 
   function crearElemento(c, geo, f, i) {
     const est = geo.estilos[f.properties.e] || {};
@@ -209,18 +220,17 @@
                                     opacity: opacidadDe(c.id) });
       }
     }
-    const it = { capa, linea, borde, c, f, est, i };
+    const it = { capa, linea, borde, c, f, est, i, orig: { n: f.properties.n, ll: primerPunto(g) }, borrado: false };
     const nombre = f.properties.n || c.nombre;
     capa.bindTooltip(esc(nombre), { sticky: !!linea, direction: "top", className: "hover" });
     capa.on("click", (e) => alClic(it, e));
-    if (esMufa(it)) {                     // existing mufa: Enter or double click -> its migrated editor (else its Visio diagram)
+    if (esMufa(it)) {                     // existing mufa: Enter or double click -> its editor (an empty one is created if it was not migrated)
       capa.on("dblclick", (e) => {
         L.DomEvent.stop(e);
-        const p = capa.getLatLng ? capa.getLatLng() : e.latlng;
-        if (window.Redes) window.Redes.abrirMufaExistente(nombre, p.lat, p.lng);
-        else if (window.visor) window.visor.abrirDiagramaPorNombre(nombre);
+        entrarMufa(it);
       });
     }
+    if (window.KmzCambios) window.KmzCambios.aplicarAItem(it);          // renamed / moved / removed by someone
     if (linea && c.troncal) {
       capa.on("mouseover", () => resaltar(it, true));
       capa.on("mouseout", () => resaltar(it, false));
@@ -288,7 +298,7 @@
     const ocultos = s.ocultos.get(id);
     let n = 0;
     for (const it of capa.items) {
-      if (!it || (ocultos && ocultos.has(it.i)) || !it.f.properties.n) continue;
+      if (!it || it.borrado || (ocultos && ocultos.has(it.i)) || !it.f.properties.n) continue;
       const ll = puntoEtiqueta(it);
       if (!ll || !vista.contains(ll)) continue;
       L.marker(ll, { pane: "kmzEtiquetas", interactive: false, keyboard: false,
@@ -342,6 +352,7 @@
     controlTroncales.onAdd = () => {
       const div = L.DomUtil.create("div", "leyenda leyenda-troncales");
       div.hidden = true;
+      if (window.innerHeight < 820) div.classList.add("leyenda-plegada");   // 768 px high: it would cover a third of the map
       L.DomEvent.disableClickPropagation(div);
       L.DomEvent.disableScrollPropagation(div);
       div.addEventListener("click", (e) => {
@@ -375,6 +386,13 @@
   /** A point of a MUFA folder (MUFA, MUFAS DE CORTE, MUFA UFINET...): an existing mufa of the network. */
   const esMufa = (it) => !it.linea && !it.c.postes && /MUFA/i.test(it.c.ruta || "") && !!it.f.properties.n;
 
+  /** Enter (or double click) on a mufa of the KMZ: its editor; if the migration does not have it, offers an empty one. */
+  function entrarMufa(it) {
+    const [lat, lon] = it.orig.ll || [null, null];
+    if (window.Redes) window.Redes.entrarMufa(it.orig.n, lat, lon);
+    else if (window.visor) window.visor.abrirDiagramaPorNombre(it.orig.n);
+  }
+
   function htmlPopup(it, ll) {
     const p = it.f.properties, c = it.c;
     const filas = [];
@@ -398,12 +416,16 @@
       <dl>${filas.join("")}<dt>Coordenada</dt><dd>${coord}</dd></dl>
       ${fotos ? `<div class="lg-fotos">${fotos}</div>` : ""}
       <div class="acciones"><button type="button" class="btn btn-chico" data-copiar="${coord}">Copiar</button>
-        ${esMufa(it) ? `<button type="button" class="btn btn-chico" data-diagrama-mufa="${esc(p.n)}" title="También: doble clic o Enter">Ver diagrama Visio</button>` : ""}</div></div>`;
+        ${esMufa(it) ? `<button type="button" class="btn btn-chico btn-primario" data-entrar-mufa title="También: doble clic o Enter">Entrar a la mufa</button>
+          <button type="button" class="btn btn-chico" data-diagrama-mufa="${esc(it.orig.n)}">Ver diagrama Visio</button>` : ""}</div>
+      ${window.KmzCambios ? window.KmzCambios.botones(it) : ""}</div>`;
   }
 
   function abrirPopup(it, ll) {
     const punto = ll || (it.capa.getLatLng ? it.capa.getLatLng() : puntoEtiqueta(it));
     if (!punto) return;
+    if (window.KmzCambios) window.KmzCambios.actual = it;
+    window.__kmzItem = it;
     const popup = L.popup({ maxWidth: 380, maxHeight: 420, autoPanPaddingTopLeft: [20, 60] })
       .setLatLng(punto).setContent(htmlPopup(it, punto)).openOn(mapa);
     cargarFotos(popup.getElement());
@@ -426,7 +448,7 @@
     }
     if (e.originalEvent) L.DomEvent.stopPropagation(e);
     // Enter opens its migrated editor (else its Visio diagram)
-    window.__mufaExistente = esMufa(it) ? { nombre: it.f.properties.n, lat: e.latlng && e.latlng.lat, lon: e.latlng && e.latlng.lng } : null;
+    window.__mufaExistente = esMufa(it) ? { nombre: it.orig.n, lat: it.orig.ll && it.orig.ll[0], lon: it.orig.ll && it.orig.ll[1] } : null;
     abrirPopup(it, it.capa.getLatLng ? it.capa.getLatLng() : e.latlng);
   }
 
@@ -439,7 +461,20 @@
   // ------------------------------------------------------------------ árbol (lista virtual)
   function construirFilas() {
     const filas = [];
-    if (!s.arbol) { s.filas = filas; return; }
+    if (!s.busqueda) {                 // own sections first (hidden while searching the KMZ)
+      s.secciones.forEach((sec) => {
+        filas.push({ t: "seccion", sec: sec.id, nivel: 0 });
+        if (!s.seccionesCerradas.has(sec.id)) sec.items().forEach((it) => filas.push({ t: "capa", sec: sec.id, item: it.id, nivel: 1 }));
+      });
+    }
+    if (!s.busqueda) {                 // extra trees (Mis lugares) between the sections and the KMZ folders
+      Object.values(s.ext).forEach((x) => x.filas().forEach((f) => filas.push({ ...f, t: "ext", ext: x.id })));
+    }
+    if (!s.arbol) {
+      s.filas = filas;
+      $("lg-espaciador").style.height = `${filas.length * FILA_PX}px`;
+      return;
+    }
     if (s.busqueda) {
       buscar(filas);
     } else {
@@ -492,10 +527,56 @@
     return `${esc(texto.slice(0, k))}<mark>${esc(texto.slice(k, k + q.length))}</mark>${esc(texto.slice(k + q.length))}`;
   }
 
+  // ------------------------------------------------------------------ secciones propias (capas del visor)
+  /** A section = a header row (arrow, optional three-state box) and its item rows (radio or checkbox):
+   *  {id, titulo, tri, items() -> [{id, texto, tipo: "radio"|"check", marcado, deshabilitado, motivo, pista}],
+   *   alternar(itemId, valor), alternarTodas(valor)}. They live in the same tree as the KMZ folders. */
+  function registrarSeccion(sec) {
+    s.secciones = s.secciones.filter((x) => x.id !== sec.id).concat(sec);
+    if (esc) refrescar();                // before iniciar() there is nothing to paint yet
+  }
+
+  const seccion = (id) => s.secciones.find((x) => x.id === id);
+
+  /** An extra tree with its own rows: {id, filas() -> [{nivel, ...}], html(fila, k, estiloTop) -> string}. The one who registers it
+   *  also listens to the events of its rows (they carry data-ext="<id>"): this panel ignores them. */
+  function registrarFilas(ext) {
+    s.ext[ext.id] = ext;
+    if (esc) refrescar();
+  }
+
+  function estadoSeccion(sec) {
+    const activos = sec.items().filter((it) => !it.deshabilitado);
+    if (!activos.length) return "empty";
+    const encendidos = activos.filter((it) => it.marcado).length;
+    return encendidos === activos.length ? "on" : (encendidos ? "partial" : "off");
+  }
+
+  function htmlSeccion(f, k, top) {
+    const sec = seccion(f.sec);
+    if (!sec) return "";
+    if (f.t === "seccion") {
+      const e = sec.tri ? estadoSeccion(sec) : null;
+      return `<div class="lg-fila seccion" style="${top}" data-fila="${k}">
+        <span class="lg-flecha" data-sec-expandir="${esc(sec.id)}">${s.seccionesCerradas.has(sec.id) ? "▸" : "▾"}</span>
+        ${sec.tri ? `<input type="checkbox" class="lg-casilla" data-sec-casilla="${esc(sec.id)}" ${e === "on" ? "checked" : ""} ${e === "empty" ? "disabled" : ""} data-parcial="${e === "partial" ? 1 : 0}">` : ""}
+        <span class="lg-nombre"><b>${esc(sec.titulo)}</b></span></div>`;
+    }
+    const it = sec.items().find((x) => x.id === f.item);
+    if (!it) return "";
+    const aviso = it.deshabilitado ? it.motivo : (it.pista || "");
+    return `<div class="lg-fila elemento capa-visor${it.deshabilitado ? " vacia" : ""}" style="${top}" data-fila="${k}" title="${esc(aviso || it.texto)}">
+      <span class="lg-flecha"></span><input type="${it.tipo === "radio" ? "radio" : "checkbox"}" class="lg-casilla" name="lgcv-${esc(sec.id)}"
+        data-capa-visor="${esc(sec.id)}:${esc(it.id)}" ${it.marcado ? "checked" : ""} ${it.deshabilitado ? "disabled" : ""}>
+      <span class="lg-nombre">${esc(it.texto)}</span>${it.pista && !it.deshabilitado ? `<span class="lg-cuenta">${esc(it.pista)}</span>` : ""}</div>`;
+  }
+
   function htmlFila(f, k) {
     const sangria = 6 + f.nivel * 14;
     const sel = s.seleccion && s.seleccion.id === f.id && s.seleccion.i === f.i ? " sel" : "";
     const top = `top:${k * FILA_PX}px;padding-left:${sangria}px`;
+    if (f.t === "seccion" || f.t === "capa") return htmlSeccion(f, k, top);
+    if (f.t === "ext") return s.ext[f.ext] ? s.ext[f.ext].html(f, k, top) : "";
     if (f.t === "carpeta") {
       const c = carpeta(f.id), e = estado(f.id);
       const flecha = c.hijos.length || c.directos
@@ -541,7 +622,7 @@
       if (!c.directos) return;
       if (encender) { s.marcadas.add(d); s.ocultos.delete(d); } else s.marcadas.delete(d);
       const capa = s.capas.get(d);
-      if (capa && encender) capa.items.forEach((it) => { if (it && !capa.grupo.hasLayer(it.capa)) capa.grupo.addLayer(it.capa); });
+      if (capa && encender) capa.items.forEach((it) => { if (it && !it.borrado && !capa.grupo.hasLayer(it.capa)) capa.grupo.addLayer(it.capa); });
     });
     cambio();
   }
@@ -563,7 +644,7 @@
       capa.grupo.removeLayer(capa.items[i].capa);
     }
     s.ocultos.set(id, ocultos);
-    if (ocultos.size === capa.items.length) { s.marcadas.delete(id); s.ocultos.delete(id); capa.items.forEach((it) => it && capa.grupo.addLayer(it.capa)); }
+    if (ocultos.size === capa.items.length) { s.marcadas.delete(id); s.ocultos.delete(id); capa.items.forEach((it) => it && !it.borrado && capa.grupo.addLayer(it.capa)); }
     cambio();
   }
 
@@ -618,7 +699,7 @@
     if (accion === "solo") {
       s.marcadas = new Set(descendientes(id).filter((d) => carpeta(d).directos));
       s.ocultos = new Map();
-      s.capas.forEach((capa) => capa.items.forEach((it) => { if (it && !capa.grupo.hasLayer(it.capa)) capa.grupo.addLayer(it.capa); }));
+      s.capas.forEach((capa) => capa.items.forEach((it) => { if (it && !it.borrado && !capa.grupo.hasLayer(it.capa)) capa.grupo.addLayer(it.capa); }));
       cambio();
       encuadrar(id);
     } else if (accion === "encuadrar") {
@@ -679,6 +760,30 @@
     caja.addEventListener("scroll", pintar);
     new ResizeObserver(pintar).observe(caja);
     $("lg-filas").addEventListener("click", (e) => {
+      if (e.target.closest("[data-ext]")) return;
+      const secFlecha = e.target.closest("[data-sec-expandir]");
+      if (secFlecha) {
+        const id = secFlecha.dataset.secExpandir;
+        if (s.seccionesCerradas.has(id)) s.seccionesCerradas.delete(id); else s.seccionesCerradas.add(id);
+        refrescar();
+        guardarEstado();
+        return;
+      }
+      const secCasilla = e.target.closest("[data-sec-casilla]");
+      if (secCasilla) {
+        const sec = seccion(secCasilla.dataset.secCasilla);
+        if (sec) sec.alternarTodas(estadoSeccion(sec) !== "on");
+        refrescar();
+        return;
+      }
+      const capaVisor = e.target.closest("[data-capa-visor]");
+      if (capaVisor) {
+        const [secId, ...resto] = capaVisor.dataset.capaVisor.split(":");
+        const sec = seccion(secId);
+        if (sec) sec.alternar(resto.join(":"), capaVisor.checked);
+        refrescar();
+        return;
+      }
       const flecha = e.target.closest("[data-expandir]");
       if (flecha) { expandir(flecha.dataset.expandir); return; }
       const casilla = e.target.closest("[data-casilla]");
@@ -686,16 +791,22 @@
       const elem = e.target.closest("[data-elemento]");
       if (elem) { const [id, i] = elem.dataset.elemento.split(":"); marcarElemento(id, Number(i), elem.checked); return; }
       const fila = e.target.closest("[data-fila]");
-      if (fila) { const f = s.filas[Number(fila.dataset.fila)]; s.seleccion = f ? { id: f.id, i: f.i } : null; pintar(); }
+      if (fila) {
+        const f = s.filas[Number(fila.dataset.fila)];
+        if (f && (f.t === "seccion" || f.t === "capa" || f.t === "ext")) return;
+        s.seleccion = f ? { id: f.id, i: f.i } : null;
+        pintar();
+      }
     });
     $("lg-filas").addEventListener("dblclick", (e) => {
-      if (e.target.closest(".lg-casilla, [data-expandir]")) return;
+      if (e.target.closest("[data-ext], .lg-casilla, [data-expandir]")) return;
       const fila = e.target.closest("[data-fila]");
       const f = fila && s.filas[Number(fila.dataset.fila)];
       if (!f) return;
       if (f.t === "carpeta") encuadrar(f.id); else if (f.t === "elemento") volarA(f.id, f.i);
     });
     $("lg-filas").addEventListener("contextmenu", (e) => {
+      if (e.target.closest("[data-ext]")) return;           // the rows of another tree have their own menu
       const fila = e.target.closest(".lg-fila.carpeta");
       if (!fila) return;
       e.preventDefault();
@@ -735,7 +846,7 @@
     });
     $("lg-restablecer").addEventListener("click", () => {
       estadoInicial();
-      s.capas.forEach((capa) => capa.items.forEach((it) => { if (it && !capa.grupo.hasLayer(it.capa)) capa.grupo.addLayer(it.capa); }));
+      s.capas.forEach((capa) => capa.items.forEach((it) => { if (it && !it.borrado && !capa.grupo.hasLayer(it.capa)) capa.grupo.addLayer(it.capa); }));
       s.capas.forEach((_, id) => reestilar(id));
       $("lg-distintivos").checked = true;
       cambio();
@@ -767,6 +878,7 @@
     document.addEventListener("click", (e) => {
       const diagrama = e.target.closest("[data-diagrama-mufa]");
       if (diagrama && window.visor) window.visor.abrirDiagramaPorNombre(diagrama.dataset.diagramaMufa);
+      if (e.target.closest("[data-entrar-mufa]") && window.__kmzItem) { mapa.closePopup(); entrarMufa(window.__kmzItem); }
       const img = e.target.closest("img.lg-foto");
       if (img && img.src) verFotoGrande(img.src);
       if (e.target.closest("#lg-foto-grande")) $("lg-foto-grande").hidden = true;
@@ -776,6 +888,29 @@
       actualizarAvisoPostes();
     });
     mapa.on("moveend", () => { s.capas.forEach((capa, id) => { if (capa.enMapa) dibujarEtiquetas(id); }); });
+  }
+
+  // ------------------------------------------------------------------ fuente del buscador superior (mapa/buscador.js)
+  /** Elements of the KMZ whose name has every typed word (posts and wells left out: too many and no use by name). */
+  async function buscarElementos(texto, maximo = 8) {
+    if (!s.arbol) return [];
+    if (!s.indice) {
+      if (!s.cargaIndice) cargarIndice();
+      if (s.cargaIndice) await s.cargaIndice;
+    }
+    if (!s.indice) return [];
+    const palabras = normal(texto).split(/\s+/).filter(Boolean);
+    const salida = [];
+    for (const [id, lista] of Object.entries(s.indice)) {
+      const c = carpeta(id);
+      if (!c || c.postes) continue;
+      for (let i = 0; i < lista.length; i++) {
+        const nombre = normal(lista[i][0]);
+        if (palabras.every((p) => nombre.includes(p))) salida.push({ titulo: lista[i][0], detalle: rutaCorta(c.ruta), id, i, empieza: nombre.startsWith(palabras[0]) });
+      }
+    }
+    salida.sort((a, b) => (b.empieza - a.empieza) || a.titulo.localeCompare(b.titulo));
+    return salida.slice(0, maximo);
   }
 
   async function cargarIndice() {
@@ -809,6 +944,9 @@
     controlPostes.addTo(mapa);
     conectar();
     aplicarAncho();
+    if (window.Buscador) {
+      window.Buscador.registrarFuente({ id: "kmz", titulo: "Red KMZ (Lugares)", buscar: (t) => buscarElementos(t, 8), elegir: (it) => volarA(it.id, it.i) });
+    }
 
     // Import progress while kmz_arbol works (local mode: ~15 s the first time or with a new KMZ).
     let terminado = false;
@@ -833,6 +971,7 @@
       avisar(`Red KMZ no disponible: ${(r && r.error) || "sin respuesta"}`, true);
       if (guardado) restaurar(guardado);
       aplicarAncho();
+      refrescar();                       // the viewer's own sections show even without the KMZ
       return;
     }
     s.arbol = r.arbol;
@@ -850,7 +989,11 @@
   }
 
   window.Lugares = {
-    iniciar,
+    iniciar, registrarSeccion, registrarFilas, refrescar,
+    /** Every loaded element of the KMZ: fn({id, capa, it}); `redibujarEtiquetas` after changing names or removing some. */
+    porCadaItem: (fn) => s.capas.forEach((capa, id) => capa.items.forEach((it) => { if (it) fn({ id, capa, it }); })),
+    redibujarEtiquetas: () => s.capas.forEach((capa, id) => { if (capa.enMapa) dibujarEtiquetas(id); }),
+    get panel() { return $("lugares"); },
     // read-only handle for automated checks
     get estado() { return { carpetas: Object.keys(s.carpetas).length, marcadas: [...s.marcadas], cargadas: [...s.capas.keys()], filas: s.filas.length }; },
     _s: s, _marcarCarpeta: marcarCarpeta, _expandir: expandir, _volarA: volarA, _resaltar: resaltar,

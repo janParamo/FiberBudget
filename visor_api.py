@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path as PathParam, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Path as PathParam, Query, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
@@ -219,6 +219,22 @@ class EstimacionPedido(BaseModel):
     metraje_final_m: float | None = Field(default=None, ge=0)
     # new poles marked as existing on the map (route metres)
     postes_existentes_m: list[float] | None = Field(default=None, max_length=1000)
+    # route edited / drawn by hand ([[lat, lon], ...]) and poles added by hand: the budget uses them instead of Google's route
+    ruta: list[list[float]] | None = Field(default=None, max_length=3000)
+    postes_extra: int = Field(default=0, ge=0, le=1000)
+    mufas_tocadas: int | None = Field(default=None, ge=0, le=100)      # mufas of the edited fusion route
+
+
+class RutaEditadaPedido(BaseModel):
+    lat: float | None = None
+    lon: float | None = None
+    puntos: list[list[float]] = Field(min_length=2, max_length=3000)
+    postes_extra: int = Field(default=0, ge=0, le=1000)
+
+
+class MedicionPedido(BaseModel):
+    puntos: list[list[float]] = Field(min_length=2, max_length=500)
+    con_total: bool = False
 
 
 class PresupuestoPedido(BaseModel):
@@ -245,6 +261,119 @@ def ruta(pedido: RutaPedido, persona: str = Depends(persona_limitada)) -> dict[s
         return _resultado_ok(api_local().calcular(texto), estado)
 
 
+@router.post("/ruta_editada")
+def ruta_editada(pedido: RutaEditadaPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The route result for a route edited / drawn on the map. No Google: it does not count for the hourly limit."""
+    primero = pedido.puntos[0]
+    with _registro(persona, "ruta_editada", f"{primero[0]:.6f}, {primero[1]:.6f}") as estado:
+        return _resultado_ok(_para_remoto(api_local().calcular_con_ruta(pedido.lat, pedido.lon, pedido.puntos, pedido.postes_extra)), estado)
+
+
+class MasivasLeerPedido(BaseModel):
+    nombre: str = Field(max_length=200)
+    datos: str = Field(default="", max_length=25_000_000)          # the file in base64, or...
+    subida_id: str | None = Field(default=None, max_length=60)      # ...the id of a finished upload by parts
+
+
+class SubidaPedido(BaseModel):
+    nombre: str = Field(max_length=200)
+    tamano: int = Field(ge=1, le=100_000_000)
+
+
+@router.post("/subidas")
+def subida_iniciar(pedido: SubidaPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Starts the upload of a big file by parts (a whole KMZ): the id is then used by importing a KMZ or by the bulk coordinates. Nothing goes to disk."""
+    from visor_rutas import subidas
+    with _registro(persona, "subidas.iniciar"):
+        try:
+            return {"ok": True, "id": subidas.almacen.iniciar(pedido.nombre, pedido.tamano)}
+        except subidas.ErrorSubida as exc:
+            return {"ok": False, "error": str(exc)}
+
+
+@router.post("/subidas/{subida}/fin")
+def subida_fin(subida: str = PathParam(pattern=r"^[A-Za-z0-9_-]{8,40}$"), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    from visor_rutas import subidas
+    with _registro(persona, "subidas.fin"):
+        try:
+            return {"ok": True, **subidas.almacen.terminar(subida)}
+        except subidas.ErrorSubida as exc:
+            return {"ok": False, "error": str(exc)}
+
+
+@router.post("/subidas/{subida}/{numero}")
+async def subida_parte(request: Request, subida: str = PathParam(pattern=r"^[A-Za-z0-9_-]{8,40}$"), numero: int = PathParam(ge=0, le=100_000),
+                       persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Part `numero` of an upload: the bytes as the body of the request."""
+    from visor_rutas import subidas
+    datos = await request.body()
+    with _registro(persona, "subidas.parte"):
+        try:
+            return {"ok": True, "recibido": subidas.almacen.parte(subida, numero, datos)}
+        except subidas.ErrorSubida as exc:
+            return {"ok": False, "error": str(exc)}
+
+
+class MasivasIniciarPedido(BaseModel):
+    nombre: str = Field(max_length=200)
+    puntos: list[dict[str, Any]] = Field(min_length=1, max_length=2000)
+
+
+@router.post("/masivas/leer")
+def masivas_leer(pedido: MasivasLeerPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The coordinates of a file (Excel, CSV, Word, text), to review them before calculating. No Google."""
+    with _registro(persona, "masivas.leer") as estado:
+        return _resultado_ok(_para_remoto(api_local().masivas_leer(pedido.nombre, pedido.datos, pedido.subida_id)), estado)
+
+
+@router.post("/masivas/iniciar")
+def masivas_iniciar(pedido: MasivasIniciarPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Starts a batch on the server. Every point can ask Google for a route, so each valid point counts for the hourly limit of the person."""
+    validos = sum(1 for p in pedido.puntos if p.get("incluir") and p.get("estado") == "ok")
+    for _ in range(validos):
+        limitador.registrar(persona, limite_por_hora())
+    with _registro(persona, "masivas.iniciar") as estado:
+        return _resultado_ok(_para_remoto(api_local().masivas_iniciar(pedido.nombre, pedido.puntos)), estado)
+
+
+@router.get("/masivas/{lote}")
+def masivas_estado(lote: str = PathParam(pattern=r"^[0-9-]{1,30}$"), desde: int = Query(default=0, ge=0), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    with _registro(persona, "masivas.estado") as estado:
+        return _resultado_ok(_para_remoto(api_local().masivas_estado(lote, desde)), estado)
+
+
+@router.post("/masivas/{lote}/cancelar")
+def masivas_cancelar(lote: str = PathParam(pattern=r"^[0-9-]{1,30}$"), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    with _registro(persona, "masivas.cancelar") as estado:
+        return _resultado_ok(_para_remoto(api_local().masivas_cancelar(lote)), estado)
+
+
+@router.post("/masivas/{lote}/descargar")
+def masivas_descargar(lote: str = PathParam(pattern=r"^[0-9-]{1,30}$"), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The budgets of a finished batch as a .zip (base64)."""
+    with _registro(persona, "masivas.descargar") as estado:
+        return _resultado_ok(_para_remoto(api_local().masivas_descargar(lote)), estado)
+
+
+class FusionPedido(BaseModel):
+    plan: dict[str, Any]
+    opciones: dict[str, Any] | None = None
+
+
+@router.post("/fusion/redactar")
+def fusion_redactar(pedido: FusionPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The fusion route plan with the text of each step written again."""
+    with _registro(persona, "fusion_redactar") as estado:
+        return _resultado_ok(_para_remoto(api_local().redactar_fusion(pedido.plan)), estado)
+
+
+@router.post("/fusion/exportar")
+def fusion_exportar(pedido: FusionPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Adds the fusion route as a strip to the workbook of fusion routes of the server."""
+    with _registro(persona, "fusion_exportar") as estado:
+        return _resultado_ok(_para_remoto(api_local().exportar_fusion(pedido.plan, pedido.opciones)), estado)
+
+
 @router.post("/estimacion")
 def estimacion(pedido: EstimacionPedido, persona: str = Depends(persona_limitada)) -> dict[str, Any]:
     """Approximate budget (business_rules visor_estimacion). Without metraje_final_m the route is
@@ -261,7 +390,16 @@ def estimacion(pedido: EstimacionPedido, persona: str = Depends(persona_limitada
                 return _resultado_ok({"ok": False, "error": "Sin ruta de Google no hay presupuesto aproximado"}, estado)
             metraje = calculo["datos"]["ruta"]["metraje_final_m"]
         return _resultado_ok(_para_remoto(api.estimar_presupuesto(pedido.lat, pedido.lon, metraje,
-                                                                  pedido.postes_existentes_m)), estado)
+                                                                  pedido.postes_existentes_m, pedido.ruta, pedido.postes_extra,
+                                                                  pedido.mufas_tocadas)), estado)
+
+
+@router.post("/medicion")
+def medicion_ruta(pedido: MedicionPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Metraje final (and with con_total the Excel total) of a line measured on the map. No Google: not limited."""
+    primero = pedido.puntos[0]
+    with _registro(persona, "medicion", f"{primero[0]:.6f}, {primero[1]:.6f}") as estado:
+        return _resultado_ok(_para_remoto(api_local().medir_ruta(pedido.puntos, pedido.con_total)), estado)
 
 
 @router.post("/presupuesto")

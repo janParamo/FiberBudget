@@ -41,6 +41,13 @@ COLUMNAS = {
                   "cerrado_en", "borrado_en"},
     "pendientes": {"proyecto_id", "elemento_id", "cable_id", "titulo", "descripcion", "responsable_id", "fecha_limite", "estado",
                    "hecho_en", "borrado_en"},
+    # visor v2, fase 3: Mis lugares (lo personal de cada usuario)
+    "lugares_carpetas": {"usuario_id", "padre_id", "nombre", "orden", "visible", "expandida", "borrado_en"},
+    "kmz_cambios": {"clave", "carpeta", "nombre", "tipo", "accion", "antes", "despues", "publicado", "importacion_id", "borrado_en"},
+    "kmz_importaciones": {"archivo", "md5", "modo", "modo_sugerido", "estado", "conteos", "aplicada_en", "aplicada_por", "revertida_en", "publicada",
+                          "publicacion", "publicada_en", "borrado_en"},
+    "lugares_elementos": {"carpeta_id", "tipo", "nombre", "descripcion_html", "geom", "estilo", "vista", "propiedades", "orden", "visible",
+                          "borrado_en"},
 }
 NO_AUDITAR = {"version", "actualizado_en", "actualizado_por", "creado_en", "creado_por"}
 

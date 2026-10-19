@@ -52,6 +52,44 @@ def _ofrecer_webview2(motivo: str) -> None:
         os.startfile(WEBVIEW2_URL)                                     # type: ignore[attr-defined]
 
 
+def desbloquear_archivos() -> int:
+    """Quita la marca de la web (flujo alternativo `Zone.Identifier`, "Mark of the Web") a los archivos de la aplicación.
+
+    Un .zip descargado marca todo lo que se extrae de él y .NET se niega a cargar `Python.Runtime.dll` de pythonnet
+    ("Failed to resolve Python.Runtime.Loader.Initialize"). Se llama ANTES de importar webview / pythonnet / clr. Devuelve cuántos
+    archivos estaban marcados. Solo en el .exe empaquetado; ignora los archivos que no se dejan (permisos, en uso).
+    """
+    if not getattr(sys, "frozen", False):
+        return 0
+    raices = []
+    for r in (getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable)):
+        if r and os.path.isdir(r):
+            r = os.path.abspath(r)
+            if not any(r == x or r.startswith(x + os.sep) for x in raices):     # _internal lives inside the .exe folder
+                raices = [x for x in raices if not x.startswith(r + os.sep)] + [r]
+    desbloqueados = 0
+    for raiz in raices:
+        for carpeta, _, archivos in os.walk(raiz):
+            for nombre in archivos:
+                try:
+                    os.remove(os.path.join(carpeta, nombre) + ":Zone.Identifier")
+                    desbloqueados += 1
+                except OSError:                                                # no mark (FileNotFoundError), no permission, in use
+                    pass
+    return desbloqueados
+
+
+_PISTAS_PYTHONNET = ("python.runtime", "pythonnet", "clr_loader", "loader.initialize", "no module named 'clr'", "dotnet")
+PASOS_DESBLOQUEAR = (
+    "Windows bloqueó los archivos del programa porque vienen de un .zip descargado.\n\n"
+    "Para arreglarlo:\n"
+    "1. Borre la carpeta VisorRutas que extrajo.\n"
+    "2. Clic derecho en VisorRutas.zip > Propiedades > marque «Desbloquear» > Aceptar.\n"
+    "3. Vuelva a extraer el .zip y abra VisorRutas.exe.\n\n"
+    "O, sin volver a extraer, en PowerShell (en la carpeta de VisorRutas):\n"
+    "   Get-ChildItem -Recurse | Unblock-File")
+
+
 def _preparar_log() -> str:
     # Windowed .exe: no console, sys.stdout / sys.stderr are None.
     if sys.stdout is None:
@@ -76,6 +114,7 @@ def _preparar_log() -> str:
 def main() -> None:
     archivo_log = _preparar_log()
     log.info("Remote viewer started")
+    log.info("Unblocked %d files marked as downloaded from the web (Zone.Identifier)", desbloquear_archivos())
     if not webview2_instalado():
         log.warning("WebView2 Runtime not found")
         _ofrecer_webview2("No se encontró Microsoft Edge WebView2 en esta computadora.")
@@ -86,7 +125,10 @@ def main() -> None:
     except Exception as exc:
         log.exception("Remote viewer could not start")
         texto = f"No se pudo abrir el visor:\n\n{type(exc).__name__}: {exc}\n\nDetalle en {archivo_log}"
-        if "webview2" in str(exc).lower() or "edgechromium" in str(exc).lower():
+        if any(p in str(exc).lower() for p in _PISTAS_PYTHONNET):
+            # no Tkinter viewer in the .exe (the remote package leaves Tkinter and the local code out): the steps are the way out
+            _mensaje(f"No se pudo abrir el visor.\n\n{PASOS_DESBLOQUEAR}\n\nDetalle técnico en {archivo_log}", _MB_ICONERROR)
+        elif "webview2" in str(exc).lower() or "edgechromium" in str(exc).lower():
             _ofrecer_webview2(texto)
         else:
             _mensaje(texto, _MB_ICONERROR)

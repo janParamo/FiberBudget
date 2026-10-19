@@ -22,7 +22,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from visor_rutas.redes import metraje, mufa, repositorio
+from visor_rutas.redes import metraje, migrar_visio, mufa, red, repositorio
 from visor_rutas.redes.migrar_visio import Plan, _comparable
 
 SALIDAS = (2, 4, 8, 16, 32)
@@ -347,6 +347,8 @@ def aplicar_contenido(con: Any, cont: Contenido, usuario_id: int | None, corrida
                 "mufa_id": e["id"], "codigo_cliente": c["codigo_cliente"], "nombre": c["nombre"], "id_servicio": c["id_servicio"],
                 "elemento_id": clientes_id.get(c["codigo_cliente"] or ""), "fuente": "texto_diagrama", "confianza": "media"}, usuario_id)
             conteo["clientes_de_mufa"] += 1
+        # the fibre numbers of the rings Excel say how big the cables are at least
+        _hilos_minimos_del_anillo(con, cont, elems, usuario_id, logs, conteo)
         # splices of the rings
         for x in cont.empalmes:
             e = elems.get(x["elemento"])
@@ -362,6 +364,45 @@ def aplicar_contenido(con: Any, cont: Contenido, usuario_id: int | None, corrida
             cur.executemany("INSERT INTO redes.migracion_visio_log (corrida_id, entidad, clave, accion, resultado, avisos) "
                             "VALUES (%s, %s, %s, %s, %s, %s)", [(corrida_id, *x) for x in logs])
     return dict(conteo)
+
+
+def _hilos_minimos_del_anillo(con: Any, cont: Contenido, elems: dict[str, Any], usuario_id: int | None, logs: list[tuple],
+                              conteo: collections.Counter) -> None:
+    """A ring row that splices fibre 26 of a cable proves the cable has at least 26 fibres, so at least 48. The
+    cables of the ring without a fibre count (or whose count was only deduced and is smaller) get that minimum,
+    marked `estimado` / confianza baja / `configuracion_estimada`, so the splice can be created. A count that
+    the Visio label states, or that a person edited or validated, is never changed."""
+    regla = migrar_visio.reglas()
+    if not regla["inferir_hilos"].get("minimo_del_anillo"):
+        return
+    maximo: dict[int, int] = {}
+    for x in cont.empalmes:
+        e = elems.get(x["elemento"])
+        if e is None:
+            continue
+        entra, sale = _cable_hacia(con, e["id"], x["de"]), _cable_hacia(con, e["id"], x["hacia"])
+        if entra is None or sale is None or entra["id"] == sale["id"]:
+            continue
+        for c, n in ((entra, x["hilo_entra"]), (sale, x["hilo_sale"])):
+            maximo[c["id"]] = max(maximo.get(c["id"], 0), n)
+    for cable_id, n in sorted(maximo.items()):
+        c = con.execute("SELECT id, nombre, hilos, version, estado_migracion, proyecto_id, ref_visio FROM redes.cables WHERE id = %s", (cable_id,)).fetchone()
+        origen = (c["ref_visio"] or {}).get("hilos_origen")
+        nuevo = next((h for h in red.HILOS if h >= n), None)
+        if nuevo is None or c["estado_migracion"] in migrar_visio.PROTEGIDOS:
+            continue
+        if c["hilos"] is not None and (c["hilos"] >= n or origen in ("visio", None)):
+            continue                                            # it already fits, or the Visio label says its size
+        por_buffer, _ = migrar_visio.configuracion(nuevo, regla)
+        antes, despues = repositorio.actualizar(con, "cables", c["id"], c["version"], {
+            "hilos": nuevo, "hilos_por_buffer": por_buffer, "color": migrar_visio.COLORES.get(nuevo, migrar_visio.COLOR_DESCONOCIDO),
+            "configuracion_estimada": True, "fuente": "estimado", "confianza": "baja",
+            "ref_visio": Jsonb({**(c["ref_visio"] or {}), "hilos_origen": "minimo_del_anillo", "hilos_anterior": c["hilos"]})}, usuario_id)
+        mufa.sincronizar_hilos(con, c["id"], nuevo, usuario_id)
+        repositorio.registrar(con, usuario_id, "cable", c["id"], "editar", repositorio.diferencias(antes, despues), proyecto_id=c["proyecto_id"])
+        conteo["cables_hilos_minimo_del_anillo"] += 1
+        logs.append(("enlace", (c["ref_visio"] or {}).get("clave", str(c["id"])), "actualizar",
+                     f"{c['nombre']}: hilos {c['hilos'] or 'desconocidos'} → {nuevo} (el anillo usa el hilo {n}); estimado, por confirmar", None))
 
 
 def _cable_hacia(con: Any, mufa_id: int, otro: dict[str, Any]) -> dict[str, Any] | None:

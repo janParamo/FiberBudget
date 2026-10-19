@@ -72,10 +72,14 @@ poles:
   # Longest span accepted between two poles: a gap up to this length needs no new
   # pole; a longer gap gets new poles every spacing_m.
   max_span_m: 60
+  # Between two poles that ALREADY stand the span is what the field built: the existing poles
+  # are used up to this length (no new pole in between). Beyond it the gap is filled as usual.
+  max_span_between_existing_m: 100
   corner_angle_deg: 35
   extra_poles_per_corner: 0
   existing_pole_row_label: "Instalacion de herraje en poste existente"
-  existing_pole_search_buffer_m: 15
+  # Poles on the sidewalk are 15-25 m from the middle of the street the route follows.
+  existing_pole_search_buffer_m: 25
 
 cable:
   adss_threshold_m: 600
@@ -261,6 +265,29 @@ visor_estimacion:
   servicio_sobre_umbral: "Empresarial"
   cliente: "Estimación visor"
 
+# Ruta de fusión (visor_rutas/ruta_fusion_plan.py): qué mufas se intervienen. Una mufa aérea (suspendida en los cables) y una mufa
+# de corte NO se tocan; se reconocen por el nombre (palabras completas, sin acentos). Las excepciones son lugares, no mufas
+# ("MF FUERZA AEREA"). La mufa donde entra el cliente siempre se toca. El usuario puede marcar / desmarcar a mano en el visor.
+ruta_fusion:
+  no_tocar:
+    palabras: [AEREA, CORTE]
+    excepciones: ["FUERZA AEREA"]
+
+# Coordenadas masivas del visor (visor_rutas/masivas.py): un presupuesto aproximado por cada coordenada, en segundo plano.
+#   google_por_minuto: rutas de Google (Directions) que se piden por minuto; el lote espera si las alcanza
+#   max_puntos: coordenadas que puede tener un lote
+visor_masivo:
+  google_por_minuto: 30
+  max_puntos: 200
+
+# "Medir" of the viewer: the metraje final and the total of a line measured on the map (visor_rutas/medicion.py).
+# The same rules and the same Excel template as the budget; servicio / ancho de banda / equipo come from visor_estimacion.
+#   conexiones_nuevas: client connections at the end of the line (each: last-mile splice, ODF, label; OTDR once)
+#   mufas_intervenidas: existing mufas the line goes through (each: intervention + backbone splice + label)
+visor_medicion:
+  conexiones_nuevas: 1
+  mufas_intervenidas: 0
+
 # Network design module (viewer, map editor): metraje of each project cable, shown when the mouse
 # is over the cable ("detalle del metraje"). It does NOT affect the budget (route: above).
 # Decided by Jan on 2026-10-09: the same values as the budget's route rules.
@@ -322,10 +349,15 @@ migracion_visio:
     continuidad_ambos_lados: true
     continuidad_un_lado: true               # shown as "por confirmar"
     texto_kmz: true                         # measured agreement 36-50 %: "por confirmar"
+    # A rings-Excel row that splices fibre N proves the cable has >= N fibres: unknown (or smaller, deduced)
+    # counts become the smallest size that fits (fibre 26 -> 48). Estimated, low confidence. OK'd by Jan 2026-10-13.
+    minimo_del_anillo: true
   # Client positions: KMZ drops / points with the C##### code (Kayako: not used for now)
   ubicacion_clientes: ["kmz"]
   migrar_reservas: true
-  # Splices read from the Visio drawing: off until their precision is measured (phase 3)
+  # Splices read from the Visio drawing: OFF. Measured 2026-10-13 against the rings Excel (16 mufas with
+  # their own diagram, red_fibra/medir_fusiones_anillo.py): precision 3.9 % (0 % above 0.80), far under
+  # precision_minima, and the extractor cannot tell which cable a fibre belongs to. Do not turn on.
   fusiones_geometria:
     usar: false
     confianza_minima: 0.85

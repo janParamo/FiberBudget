@@ -33,6 +33,7 @@ def new_pole_positions_by_gaps(
     spacing_m: float,
     existing_positions_m: list[float],
     max_span_m: float | None = None,
+    max_span_between_existing_m: float | None = None,
 ) -> list[float]:
     """Route position (m from the origin) of each new pole that fills a gap.
 
@@ -40,21 +41,26 @@ def new_pole_positions_by_gaps(
     next gap, so it is never counted again as a new pole. A gap no longer than
     max_span_m (the longest span accepted in the field) needs no new pole;
     longer gaps get poles every spacing_m. max_span_m defaults to spacing_m.
+    Between two poles that already stand the span is what the field built, so the
+    longer max_span_between_existing_m applies there (the existing poles are used).
     """
     if spacing_m <= 0:
         raise ValueError("spacing_m must be > 0")
     tolerance = 1e-6
     max_span = max(spacing_m, max_span_m or spacing_m)
+    max_span_existing = max(max_span, max_span_between_existing_m or 0.0)
     positions = sorted({min(distance_m, max(0.0, float(position)))
                         for position in existing_positions_m})
     last_installed = 0.0
+    last_is_existing = False
     new_positions: list[float] = []
     for position in positions:
-        if position - last_installed > max_span + tolerance:
+        if position - last_installed > (max_span_existing if last_is_existing else max_span) + tolerance:
             while last_installed + spacing_m < position - tolerance:
                 last_installed += spacing_m
                 new_positions.append(last_installed)
         last_installed = max(last_installed, position)
+        last_is_existing = True
     if distance_m - last_installed > max_span + tolerance:
         while last_installed + spacing_m <= distance_m + tolerance:
             last_installed += spacing_m
@@ -68,12 +74,14 @@ def count_new_poles_by_gaps(
     existing_positions_m: list[float],
     extra_poles: int = 0,
     max_span_m: float | None = None,
+    max_span_between_existing_m: float | None = None,
 ) -> int:
     """Fill route gaps from each installed pole, placing new poles every spacing.
 
     Existing positions are measured from the route origin (see new_pole_positions_by_gaps).
     """
-    positions = new_pole_positions_by_gaps(distance_m, spacing_m, existing_positions_m, max_span_m)
+    positions = new_pole_positions_by_gaps(distance_m, spacing_m, existing_positions_m, max_span_m,
+                                           max_span_between_existing_m)
     return len(positions) + max(0, int(extra_poles))
 
 
@@ -173,6 +181,7 @@ def calcular_presupuesto(
             existing_pole_positions_m,
             turns * poles_rules["extra_poles_per_corner"],
             poles_rules.get("max_span_m"),
+            poles_rules.get("max_span_between_existing_m"),
         )
     quantities[poles_rules["existing_pole_row_label"]] = existing_poles
     quantities[poles_rules["new_pole_row_label"]] = new_poles

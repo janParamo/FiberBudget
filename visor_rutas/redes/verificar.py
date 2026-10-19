@@ -54,7 +54,7 @@ REGLAS: list[tuple[str, str, str]] = [
      """SELECT x.proyecto_id, format('Mufa %s: el hilo %s de %s tiene %s conexiones', m.nombre, h.numero, c.nombre, count(*)) AS texto
         FROM redes.conexiones x JOIN redes.elementos m ON m.id = x.mufa_id
         JOIN redes.hilos h ON h.id IN (x.a_hilo_id, x.b_hilo_id) JOIN redes.cables c ON c.id = h.cable_id
-        WHERE x.borrado_en IS NULL GROUP BY x.proyecto_id, m.nombre, h.id, h.numero, c.nombre HAVING count(*) > 1"""),
+        WHERE x.borrado_en IS NULL GROUP BY x.proyecto_id, x.mufa_id, m.nombre, h.id, h.numero, c.nombre HAVING count(*) > 1"""),     # by mufa id: two mufas can share a name
     ("error", "Salida de splitter fuera de rango",
      """SELECT x.proyecto_id, format('Mufa %s: %s (1x%s) tiene conectada la salida %s', m.nombre, s.nombre, s.salidas, p.numero) AS texto
         FROM redes.conexiones x JOIN redes.elementos m ON m.id = x.mufa_id

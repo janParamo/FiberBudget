@@ -274,7 +274,13 @@ def test_phase3_splitters_ports_clients_and_ring_splices(visio_con_contenido, tm
     con, admin = visio_con_contenido
     plan, cont, conteo = _migrar_todo(con)
     assert (conteo["splitters_creados"], conteo["puertos_con_cliente"], conteo["clientes_de_mufa"], conteo["clientes_en_mapa"]) == (1, 2, 1, 2)
-    assert (conteo["empalmes_creados"], conteo["empalmes_fuera_de_rango"]) == (4, 2)
+    # Mufa C – Reserva 1 was deduced as 12 fibres (KMZ text), but the ring splices fibres 30 and 31: it becomes 48
+    assert (conteo["empalmes_creados"], conteo.get("empalmes_fuera_de_rango", 0), conteo["cables_hilos_minimo_del_anillo"]) == (6, 0, 1)
+    cr = con.execute("SELECT hilos, configuracion, configuracion_estimada, fuente, confianza, ref_visio ->> 'hilos_origen' AS o, "
+                     "(SELECT count(*) FROM redes.hilos h WHERE h.cable_id = c.id AND h.borrado_en IS NULL) AS nh "
+                     "FROM redes.cables c WHERE nombre = 'Mufa C – Reserva 1'").fetchone()
+    assert (cr["hilos"], cr["configuracion"], cr["configuracion_estimada"], cr["fuente"], cr["confianza"], cr["o"], cr["nh"]) == (
+        48, "6x8", True, "estimado", "baja", "minimo_del_anillo", 48)
     motivos = " | ".join(o["motivo"] for o in cont.omitidos)
     assert "no dice el tamaño" in motivos and "1x6 no existe" in motivos and "sin un splitter con tamaño" in motivos
     mufa_b = con.execute("SELECT id FROM redes.elementos WHERE nombre = 'Mufa B'").fetchone()["id"]
@@ -298,12 +304,34 @@ def test_phase3_splitters_ports_clients_and_ring_splices(visio_con_contenido, tm
     assert numeros(mufa_b) == {3, 4, 5, 6}
     # a second run repeats nothing
     _, _, conteo = _migrar_todo(con)
-    assert conteo["splitters_ya_estaban"] == 1 and conteo["empalmes_ya_conectados"] == 4
-    assert not any(conteo.get(k) for k in ("splitters_creados", "puertos_con_cliente", "clientes_de_mufa", "clientes_en_mapa", "empalmes_creados"))
-    assert con.execute("SELECT count(*) AS n FROM redes.conexiones").fetchone()["n"] == 4
+    assert conteo["splitters_ya_estaban"] == 1 and conteo["empalmes_ya_conectados"] == 6
+    assert not any(conteo.get(k) for k in ("splitters_creados", "puertos_con_cliente", "clientes_de_mufa", "clientes_en_mapa", "empalmes_creados",
+                                           "cables_hilos_minimo_del_anillo"))
+    assert con.execute("SELECT count(*) AS n FROM redes.conexiones").fetchone()["n"] == 6
+    # phase 7: a re-import does not undo the minimum (the plan deduces 12 for that cable, the base has 48)
+    assert not [d for d in migrar_visio.comparar(con, migrar_visio.planificar(con, con, REGLAS)) if d["nombre"] == "Mufa C – Reserva 1"]
     # the report has the phase 3 sheets
     wb = load_workbook(migrar_visio.reporte(plan, tmp_path / "r.xlsx", contenido=cont))
     assert {"Splitters", "Clientes", "Empalmes"} <= set(wb.sheetnames) and wb["Empalmes"].max_row == 1 + 6
+
+
+def test_ring_fibre_numbers_set_the_size_of_cables_without_a_count(visio_con_contenido):
+    con, _ = visio_con_contenido
+    plan = migrar_visio.planificar(con, con, REGLAS)
+    migrar_visio.aplicar(con, plan, None, _corrida(con))
+    # Mufa B – Mufa C: forget its count (the Visio never gave it); the ring splices its fibres 5 and 6 -> at least 6
+    con.execute("UPDATE redes.cables SET hilos = NULL WHERE nombre = 'Mufa B – Mufa C'")
+    cont = migrar_visio_contenido.planificar_contenido(con, con, plan)
+    conteo = migrar_visio_contenido.aplicar_contenido(con, cont, None, _corrida(con))
+    bc = con.execute("SELECT hilos, configuracion, configuracion_estimada FROM redes.cables WHERE nombre = 'Mufa B – Mufa C'").fetchone()
+    assert (bc["hilos"], bc["configuracion"], bc["configuracion_estimada"]) == (6, "1x6", True)
+    assert conteo["cables_hilos_minimo_del_anillo"] == 2 and conteo["empalmes_creados"] == 6      # B–C and C–Reserva 1
+    # a person validated a cable's mufa: its size is not touched (a cable of Mufa C, size 12 -> would need 48)
+    con.execute("UPDATE redes.cables SET hilos = 12, estado_migracion = 'editada' WHERE nombre = 'Mufa C – Reserva 1'")
+    con.execute("DELETE FROM redes.conexiones WHERE mufa_id = (SELECT id FROM redes.elementos WHERE nombre = 'Mufa C')")
+    conteo = migrar_visio_contenido.aplicar_contenido(con, cont, None, _corrida(con))
+    assert con.execute("SELECT hilos FROM redes.cables WHERE nombre = 'Mufa C – Reserva 1'").fetchone()["hilos"] == 12
+    assert conteo.get("empalmes_fuera_de_rango", 0) == 2
 
 
 def test_splitter_text_parsing():

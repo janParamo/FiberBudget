@@ -29,5 +29,8 @@ if errorlevel 1 (
     exit /b 1
 )
 echo.
-echo Comparta VisorRutas.zip (en esta carpeta). Instrucciones en dist\VisorRutas\LEEME.txt
+echo Comparta VisorRutas.zip (en esta carpeta; lleva LEEME.txt con los pasos si Windows bloquea los archivos descargados).
+echo Opcional: si Inno Setup esta instalado tambien se genero InstaladorVisorRutas.exe (sin administrador y sin la marca de descarga).
 pause
+
+
