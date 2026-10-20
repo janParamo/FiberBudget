@@ -1069,6 +1069,19 @@
     $("modal-mufa").hidden = true;
     ocultarMenu();
     tooltip(null);
+    if (window.visor && window.visor.aparte === "mufa") window.visor.cerrarVentana();      // in its own window, closing the editor closes the window
+  }
+
+  /** «Ventana aparte»: the mufa being edited moves to a window of its own (it can go out of the program, beside the Visio diagram).
+   *  Unsaved changes are asked about first; the in-program editor closes. */
+  async function abrirAparte() {
+    if (!window.visor || !window.visor.abrirVentana) return;
+    if (!(await confirmarSalida("abrirla en una ventana aparte"))) return;
+    const r = await window.visor.abrirVentana("mufa", { id: st.mufaId, nombre: st.datos.mufa.nombre });
+    if (!r.ok) return;
+    $("modal-mufa").hidden = true;
+    ocultarMenu();
+    tooltip(null);
   }
 
   // ------------------------------------------------------------------ eventos
@@ -1105,6 +1118,7 @@
     $("mu-cerrar").addEventListener("click", () => cerrar(false));
     $("mu-guardar").addEventListener("click", () => cerrar(true));
     $("mu-aplicar").addEventListener("click", aplicar);
+    $("mu-aparte").addEventListener("click", abrirAparte);
     $("mu-max").addEventListener("click", () => { st.maximizado = !st.maximizado; $("modal-mufa").classList.toggle("maximizado", st.maximizado); });
     $("mu-splitter").addEventListener("click", () => abrirObjeto("splitter", null));
     $("mu-conector").addEventListener("click", () => abrirObjeto("conector", null));
@@ -1168,7 +1182,7 @@
   document.addEventListener("DOMContentLoaded", conectar);
   if (document.readyState !== "loading") conectar();
 
-  window.EditorMufa = { abrir, cerrar, aplicar, trazarHilo, _st: st, _seleccionar: seleccionar,
+  window.EditorMufa = { abrir, cerrar, aplicar, abrirAparte, trazarHilo, _st: st, _seleccionar: seleccionar,
     /** automated checks: connect two port keys as if dragged with the mouse */
     _conectar(desde, hasta) {
       const a = st.puertos.get(desde), b = st.puertos.get(hasta);

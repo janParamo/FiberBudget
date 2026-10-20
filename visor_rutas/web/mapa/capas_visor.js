@@ -61,7 +61,9 @@
       id: n, texto: ctx.redes[n].etiqueta, tipo: "check", marcado: enMapa(n),
       pista: `zoom ${ctx.redes[n].zoomMin}+`,
     }));
-    return propias.concat(red);
+    // «Íconos del visor…»: a row that opens the window to change the icons of the poles, mufas, nodes… (for everyone; mapa/iconos_visor.js)
+    const acciones = window.IconosVisor && window.Redes && window.Redes.disponible ? [{ id: "_iconos", texto: "Íconos del visor…", tipo: "accion", pista: "cambiar el ícono de postes, mufas, nodos…" }] : [];
+    return propias.concat(red, acciones);
   }
 
   const base = {
@@ -81,8 +83,8 @@
   const visor = {
     id: "visor", titulo: "Capas del visor", tri: true,
     items: itemsVisor,
-    alternar(id, valor) { poner(id, valor); },
-    alternarTodas(valor) { itemsVisor().filter((it) => !it.deshabilitado).forEach((it) => poner(it.id, valor)); },
+    alternar(id, valor) { if (id === "_iconos") { if (window.IconosVisor) window.IconosVisor.abrir(); return; } poner(id, valor); },
+    alternarTodas(valor) { itemsVisor().filter((it) => !it.deshabilitado && it.tipo === "check").forEach((it) => poner(it.id, valor)); },
   };
 
   function iniciar(contexto) {

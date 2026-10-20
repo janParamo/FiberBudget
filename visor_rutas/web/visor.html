@@ -43,6 +43,8 @@
     <li data-lg-accion="encuadrar">Encuadrar</li>
     <li data-lg-accion="opacidad">Opacidad…</li>
     <li data-lg-accion="etiquetas" id="lg-menu-etiquetas">Etiquetas de nombre</li>
+    <li data-lg-accion="estilo" data-lg-editor title="Ícono para los puntos, color y grosor para las líneas (todos lo ven)">Ícono / estilo…</li>
+    <li data-lg-accion="estilo_quitar" data-lg-editor>Quitar estilo</li>
   </ul>
   <div id="lg-opacidad" class="lg-opacidad" hidden>
     <label for="lg-opacidad-valor">Opacidad <span id="lg-opacidad-texto">100%</span></label>
@@ -241,6 +243,7 @@
         <nav id="mu-migas" class="mu-migas" aria-label="Ruta de navegación"></nav>
         <span id="mu-cambios" class="er-cambios"></span>
         <label class="mu-nombre">Nombre <input id="mu-nombre" readonly></label>
+        <button id="mu-aparte" type="button" class="btn btn-chico" title="Abrir la mufa en una ventana aparte (se puede mover fuera del programa)">&#x29C9; Ventana aparte</button>
         <button id="mu-max" type="button" class="btn-icono" title="Maximizar / restaurar" aria-label="Maximizar">⛶</button>
         <button id="mu-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
       </header>
@@ -971,7 +974,9 @@
         <button id="pd-ubicar" type="button" class="btn btn-chico" title="Ir a la mufa en el diagrama">Ubicar mufa</button>
         <button id="pd-ajustar" type="button" class="btn btn-chico" title="Ver el diagrama completo">Completo</button>
         <button id="pd-pantalla" type="button" class="btn btn-chico" title="Abrir en pantalla completa">&#x26F6;</button>
+        <button id="pd-aparte" type="button" class="btn btn-chico" title="Abrir en una ventana aparte (se puede mover fuera del programa)">&#x29C9;</button>
       </div>
+      <div id="pd-busqueda" class="dg-busqueda"></div>
       <div id="pd-lienzo" class="diagrama-lienzo pd-lienzo">
         <img id="pd-img" alt="" draggable="false" hidden>
         <div id="pd-anillo" class="anillo-mufa" hidden></div>
@@ -1007,12 +1012,13 @@
     <button id="ruta-mano" type="button" class="btn" title="Dibujar la ruta a mano: el presupuesto se va calculando mientras se dibuja">&#x270E; Ruta a mano</button>
     <button id="nueva-medida" type="button" class="btn" hidden title="Guarda la medida actual y empieza otra de otro color (N)">&#xFF0B; Nueva medida</button>
     <button id="borrar-medidas" type="button" class="btn" disabled>Borrar medidas</button>
-    <div id="mensaje" class="mensaje" role="status">
-      <span id="spinner" class="spinner" hidden></span>
-      <span id="mensaje-texto">Cargando…</span>
-    </div>
     <button id="estado-modo" type="button" class="estado-modo" title="Modo y servidor (clic: configuración)"></button>
   </footer>
+  <!-- Aviso flotante sobre la barra: con la ventana angosta la barra no deja espacio para el texto y el mensaje quedaba tapado -->
+  <div id="mensaje" class="mensaje" role="status">
+    <span id="spinner" class="spinner" hidden></span>
+    <span id="mensaje-texto">Cargando…</span>
+  </div>
 
   <!-- Visor del diagrama Visio real de una mufa -->
   <div id="modal-diagrama" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="diagrama-titulo">
@@ -1025,9 +1031,11 @@
           <button id="diagrama-mas" type="button" class="btn btn-chico" title="Acercar">+</button>
           <button id="diagrama-ubicar" type="button" class="btn btn-chico" title="Ir a la mufa en el diagrama">Ubicar mufa</button>
           <button id="diagrama-ajustar" type="button" class="btn btn-chico" title="Ver completo">Ajustar</button>
+          <button id="diagrama-aparte" type="button" class="btn btn-chico" title="Abrir en una ventana aparte (se puede mover fuera del programa)">&#x29C9; Ventana aparte</button>
           <button id="diagrama-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
         </div>
       </header>
+      <div id="diagrama-busqueda" class="dg-busqueda"></div>
       <div id="diagrama-lienzo" class="diagrama-lienzo">
         <img id="diagrama-img" alt="" draggable="false" hidden>
         <div id="diagrama-anillo" class="anillo-mufa" hidden></div>
@@ -1059,6 +1067,8 @@
   <script src="mapa/editar_ruta.js"></script>
   <script src="mapa/editar_fusion.js"></script>
   <script src="mapa/capas_visor.js"></script>
+  <script src="mapa/busqueda_diagrama.js"></script>
+  <script src="mapa/iconos_visor.js"></script>
   <script src="lugares/iconos.js"></script>
   <script src="lugares/dialogo.js"></script>
   <script src="lugares/dibujar_red.js"></script>

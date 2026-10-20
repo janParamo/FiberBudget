@@ -1291,3 +1291,13 @@ Intenta leer automáticamente, de cada diagrama Visio ya convertido (`red_fibra/
 ## Actualizar la red desde el programa (fase 8, administradores)
 
 La ruta y el presupuesto usan `red_puntos` / `red_lineas` (PostGIS), **no** el KMZ del mapa. Al cambiar el KMZ hay que poner esas tablas al día: en el visor, botón **Importar KMZ** → sección **Actualizar la red**: *Subir KMZ nuevo* (reemplaza `KMZ_PATH`, guarda el anterior en `anteriores/`), *Comparar con el presupuesto* (solo lee) y *Poner el presupuesto al día* (inserta lo que falta, opcionalmente quita lo que ya no está; se puede revertir). Regla de postes: entre dos postes existentes se acepta un vano de hasta `poles.max_span_between_existing_m` (100 m) sin postes nuevos, y se buscan postes existentes hasta `existing_pole_search_buffer_m` (25 m) de la ruta.
+
+
+## Ventana aparte (diagrama Visio y editor de mufa)
+En la pestaña *Diagrama*, en el visor a pantalla completa y en el editor de la mufa hay un botón **⧉ Ventana aparte**: abre esa pantalla como ventana propia de Windows, que se puede mover fuera del programa o poner al lado de la otra para llenar la mufa a mano con los datos del Visio. En la ventana de la mufa, *Ver Visio original* abre el diagrama en otra ventana. Cerrar el editor cierra su ventana; cerrar el programa las cierra todas.
+
+
+
+## Íconos propios del KMZ (fase 9)
+En la ficha de cada elemento del mapa: **Cambiar ícono…** (puntos) o **Cambiar estilo…** (líneas). Para toda una carpeta: clic derecho en el árbol de Lugares → **Ícono / estilo…**. El del elemento gana al de la carpeta; **Quitar estilo** vuelve al del KMZ. Lo ven todos (se guarda en la base, tabla edes.kmz_estilos); no cambia el archivo KMZ ni el presupuesto. Si hay varios elementos en el mismo punto, el clic lista cuáles hay.
+

@@ -13,7 +13,10 @@ from typing import Any
 FIGURAS = ("circulo", "cuadrado", "rombo", "estrella", "triangulo", "cruz", "hexagono", "anillo")
 LETRAS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 NUMEROS = tuple(str(n) for n in range(1, 11))
-TIPOS_ICONO = ("pushpin", "letra", "numero", "figura", "ninguno")
+TIPOS_ICONO = ("pushpin", "letra", "numero", "figura", "ninguno", "imagen", "texto")
+MAX_IMAGEN = 80_000                      # characters of the data URL: the page shrinks the picture to 96 px before sending it
+_IMAGEN = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$")
+_TEXTO_PROHIBIDO = set('<>&"\'\\')
 COLOR_POR_DEFECTO = "#f7d117"
 ICONO_POR_DEFECTO = {"tipo": "pushpin", "id": "pushpin", "color": COLOR_POR_DEFECTO, "escala": 1.1, "opacidad": 1.0}
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -34,14 +37,27 @@ def limpiar_icono(valor: Any) -> dict[str, Any] | None:
     tipo, ident = valor["tipo"], str(valor.get("id") or "")
     if tipo == "letra" and ident not in LETRAS or tipo == "numero" and ident not in NUMEROS or tipo == "figura" and ident not in FIGURAS:
         return None
+    datos = None
+    if tipo == "imagen":                                       # a picture of the user's own, as a small data URL
+        datos = valor.get("datos")
+        if not isinstance(datos, str) or len(datos) > MAX_IMAGEN or not _IMAGEN.match(datos):
+            return None
+        ident = "imagen"
+    elif tipo == "texto":                                      # up to three characters (an emoji, "OLT", "5G")
+        ident = ident.strip()[:3]
+        if not ident or any(c in _TEXTO_PROHIBIDO or ord(c) < 32 for c in ident):
+            return None
     color = str(valor.get("color") or COLOR_POR_DEFECTO)
     try:
         escala = min(4.0, max(0.3, float(valor.get("escala", 1.1))))
         opacidad = min(1.0, max(0.0, float(valor.get("opacidad", 1.0))))
     except (TypeError, ValueError):
         return None
-    return {"tipo": tipo, "id": ident if tipo != "pushpin" else "pushpin", "color": color if _COLOR.match(color) else COLOR_POR_DEFECTO,
-            "escala": round(escala, 2), "opacidad": round(opacidad, 2)}
+    salida = {"tipo": tipo, "id": ident if tipo != "pushpin" else "pushpin", "color": color if _COLOR.match(color) else COLOR_POR_DEFECTO,
+              "escala": round(escala, 2), "opacidad": round(opacidad, 2)}
+    if datos is not None:
+        salida["datos"] = datos
+    return salida
 
 
 def _rgb(color: str) -> tuple[int, int, int]:
@@ -77,7 +93,9 @@ def icono_png(icono: dict[str, Any], lado: int = 40) -> bytes:
     ic = limpiar_icono(icono) or ICONO_POR_DEFECTO
     rgb = _rgb(ic["color"])
     relleno, borde = rgb + (255,), _oscuro(rgb)
-    if es_gota(ic):
+    if ic["tipo"] == "imagen":
+        salida = _imagen_png(ic, lado)
+    elif es_gota(ic):
         ancho, alto = round(lado * 30 / 42), lado
         k = alto * s / 42
         img = Image.new("RGBA", (int(30 * k), int(42 * k)), (0, 0, 0, 0))
@@ -98,7 +116,10 @@ def icono_png(icono: dict[str, Any], lado: int = 40) -> bytes:
         d = ImageDraw.Draw(img)
         c, r, g = lado * s / 2, lado * s * 0.42, max(2, lado * s // 12)
         f = ic["id"]
-        if f == "circulo":
+        if ic["tipo"] == "texto":
+            d.ellipse((c - r, c - r, c + r, c + r), fill=relleno, outline=borde, width=g)
+            _texto_en(img, ic["id"], c, int(r * (1.25 if len(ic["id"]) == 1 else 1.0)), rgb)
+        elif f == "circulo":
             d.ellipse((c - r, c - r, c + r, c + r), fill=relleno, outline=borde, width=g)
         elif f == "anillo":
             d.ellipse((c - r, c - r, c + r, c + r), outline=relleno, width=g * 2)
@@ -125,10 +146,43 @@ def icono_png(icono: dict[str, Any], lado: int = 40) -> bytes:
     return datos.getvalue()
 
 
+def _imagen_png(ic: dict[str, Any], lado: int) -> Any:
+    """The user's picture fitted in a square of `lado` px (transparent around it); a broken picture gives the default pushpin."""
+    import base64
+    from PIL import Image
+    try:
+        crudo = base64.b64decode(ic["datos"].split(",", 1)[1], validate=True)
+        img = Image.open(io.BytesIO(crudo)).convert("RGBA")
+        img.thumbnail((lado, lado), Image.LANCZOS)
+    except Exception:                                          # noqa: BLE001 - a bad picture must not stop the export
+        return Image.open(io.BytesIO(icono_png(ICONO_POR_DEFECTO, lado))).convert("RGBA")
+    lienzo = Image.new("RGBA", (lado, lado), (0, 0, 0, 0))
+    lienzo.paste(img, ((lado - img.width) // 2, (lado - img.height) // 2), img)
+    return lienzo
+
+
+def _texto_en(img: Any, texto: str, centro: float, tam: int, rgb: tuple[int, int, int]) -> None:
+    """`texto` (letters or an emoji) in the middle of the circle; emoji use Windows' colour emoji font when it is there."""
+    from PIL import ImageDraw, ImageFont
+    d = ImageDraw.Draw(img)
+    tam = max(8, tam)
+    color = (255, 255, 255, 255) if sum(rgb) < 560 else (30, 30, 30, 255)
+    for ruta, a_color in ((r"C:\Windows\Fonts\seguiemj.ttf", True), (r"C:\Windows\Fonts\arialbd.ttf", False)):
+        try:
+            fuente = ImageFont.truetype(ruta, tam)
+            d.text((centro, centro), texto, font=fuente, fill=color, anchor="mm", embedded_color=a_color)
+            return
+        except (OSError, ValueError):
+            continue
+    d.text((centro, centro), texto, font=ImageFont.load_default(size=tam), fill=color, anchor="mm")
+
+
 def clave(icono: dict[str, Any]) -> str:
-    """Stable name of an icon (for files and styles): tipo-id-rrggbb."""
+    """Stable name of an icon (for files and styles): tipo-id-rrggbb (a picture: the start of its hash; a text: its characters in hex)."""
+    import hashlib
     ic = limpiar_icono(icono) or ICONO_POR_DEFECTO
-    return f"{ic['tipo']}-{ic['id']}-{ic['color'].lstrip('#').lower()}"
+    ident = hashlib.sha1(ic["datos"].encode()).hexdigest()[:12] if ic["tipo"] == "imagen" else ic["id"].encode().hex() if ic["tipo"] == "texto" else ic["id"]
+    return f"{ic['tipo']}-{ident}-{ic['color'].lstrip('#').lower()}"
 
 
 def desde_href(href: str | None) -> dict[str, Any] | None:

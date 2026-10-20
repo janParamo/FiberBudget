@@ -220,9 +220,17 @@
                                     opacity: opacidadDe(c.id) });
       }
     }
-    const it = { capa, linea, borde, c, f, est, i, orig: { n: f.properties.n, ll: primerPunto(g) }, borrado: false };
-    const nombre = f.properties.n || c.nombre;
-    capa.bindTooltip(esc(nombre), { sticky: !!linea, direction: "top", className: "hover" });
+    const it = { capa, capaBase: capa, linea, borde, c, f, est, i, orig: { n: f.properties.n, ll: primerPunto(g) }, borrado: false };
+    capa._ligada = true;
+    ligar(it);
+    if (window.KmzCambios) window.KmzCambios.aplicarAItem(it);          // renamed / moved / removed / styled by someone
+    return it;
+  }
+
+  /** Tooltip and click handlers of the layer the element shows now (also after its icon was replaced by one of its own). */
+  function ligar(it) {
+    const { capa, linea, c } = it;
+    capa.bindTooltip(esc(it.f.properties.n || c.nombre), { sticky: !!linea, direction: "top", className: "hover" });
     capa.on("click", (e) => alClic(it, e));
     if (esMufa(it)) {                     // existing mufa: Enter or double click -> its editor (an empty one is created if it was not migrated)
       capa.on("dblclick", (e) => {
@@ -230,12 +238,21 @@
         entrarMufa(it);
       });
     }
-    if (window.KmzCambios) window.KmzCambios.aplicarAItem(it);          // renamed / moved / removed by someone
     if (linea && c.troncal) {
       capa.on("mouseover", () => resaltar(it, true));
       capa.on("mouseout", () => resaltar(it, false));
     }
-    return it;
+  }
+
+  /** The point of `it` is drawn with `nueva` from now on (an icon of its own, or the KMZ's again): swapped inside its folder's group. */
+  function reemplazarCapa(it, nueva) {
+    if (it.capa === nueva) return;
+    const carpetaCapa = s.capas.get(it.c.id), vieja = it.capa;
+    const estaba = !!carpetaCapa && carpetaCapa.grupo.hasLayer(vieja);
+    if (estaba) carpetaCapa.grupo.removeLayer(vieja);
+    it.capa = nueva;
+    if (!nueva._ligada) { nueva._ligada = true; ligar(it); }
+    if (estaba) carpetaCapa.grupo.addLayer(nueva);
   }
 
   function reestilar(id) {
@@ -247,11 +264,13 @@
       if (it.linea) {
         it.linea.setStyle(estiloLinea(c, it.f, it.est));
         if (it.borde) it.borde.setStyle({ opacity: 0.85 * op });
+        it.lineaConEstilo = true;                       // forces KmzCambios to put its own colour back (below), if it has one
       } else if (it.capa.setOpacity) {
         it.capa.setOpacity(op);
       } else if (it.capa.setStyle) {
         it.capa.setStyle({ opacity: op, fillOpacity: (it.est.opacidad || 1) * op });
       }
+      if (window.KmzCambios) window.KmzCambios.aplicarEstilo(it);
     });
   }
 
@@ -441,12 +460,89 @@
     }
   }
 
+  // ------------------------------------------------------------------ varios elementos en el mismo punto (una mufa y un splitter, un poste y su mufa…)
+  const RADIO_SUPERPUESTOS_PX = 14;
+
+  /** Pixel centre of what is drawn for a point (an icon is not centred on its coordinate: a drop points with its tip). */
+  function centroVisual(it) {
+    const p = mapa.latLngToContainerPoint(it.capa.getLatLng());
+    const ic = it.capa.options && it.capa.options.icon && it.capa.options.icon.options;
+    if (ic && ic.iconSize && ic.iconAnchor) {
+      const tam = L.point(ic.iconSize), ancla = L.point(ic.iconAnchor);
+      return p.add([tam.x / 2 - ancla.x, tam.y / 2 - ancla.y]);
+    }
+    return p;
+  }
+
+  /** The points of the KMZ drawn within a few pixels of `punto` (container point), nearest first. Clustered posts do not count: they are not drawn alone. */
+  function superpuestos(punto) {
+    const vista = mapa.getBounds().pad(0.05), lista = [];
+    s.capas.forEach((capa) => {
+      if (!capa.enMapa) return;
+      capa.items.forEach((x) => {
+        if (!x || x.borrado || x.linea || !x.capa.getLatLng) return;
+        if (!vista.contains(x.capa.getLatLng()) || !capa.grupo.hasLayer(x.capa)) return;
+        if (capa.grupo.getVisibleParent && capa.grupo.getVisibleParent(x.capa) !== x.capa) return;
+        const d = centroVisual(x).distanceTo(punto);
+        if (d <= RADIO_SUPERPUESTOS_PX) lista.push([d, x]);
+      });
+    });
+    return lista.sort((a, b) => a[0] - b[0]).map(([, x]) => x);
+  }
+
+  function muestraElemento(it) {
+    const est = it.est || {};
+    if (it.estilo && it.estilo.icono && window.Iconos) return window.Iconos.svg({ ...it.estilo.icono, escala: 1, opacidad: 1 }, 22);
+    return muestra(est, 18);
+  }
+
+  /** Two or more points under the click: a list to choose which one (each one then opens its own popup, with Move / Rename / Enter the mufa…). */
+  function elegirSuperpuesto(lista, ll) {
+    window.__superpuestos = lista;
+    const filas = lista.map((x, n) => `<button type="button" class="lg-sup" data-superpuesto="${n}" title="${esc(rutaCorta(x.c.ruta))}">
+        <span class="lg-sup-icono">${muestraElemento(x)}</span><span class="lg-sup-texto"><b>${esc(x.f.properties.n || x.c.nombre)}</b><br><span class="nota">${esc(rutaCorta(x.c.ruta))}</span></span></button>`).join("");
+    const popup = L.popup({ maxWidth: 340, autoPanPaddingTopLeft: [20, 60] }).setLatLng(ll)
+      .setContent(`<div class="popup lg-popup"><h3>${lista.length} elementos aquí</h3><div class="tipo">Elija cuál (en la lista o en el abanico)</div><div class="lg-sups">${filas}</div></div>`).openOn(mapa);
+    abrirAbanico(lista, ll, popup);
+  }
+
+  // The stacked points also open like a fan: each one at its own place (below the point, the list stays above), joined to it by a thin line.
+  let abanico = null;
+  function quitarAbanico() {
+    if (abanico) { mapa.removeLayer(abanico); abanico = null; }
+  }
+
+  function abrirAbanico(lista, centro, popup) {
+    quitarAbanico();
+    abanico = L.layerGroup().addTo(mapa);
+    const c = mapa.latLngToContainerPoint(centro), n = lista.length, radio = Math.max(38, 13 * n + 18);
+    lista.forEach((it, i) => {
+      const grados = n === 1 ? 90 : 25 + (130 * i) / (n - 1);                // 25°..155° with the screen's y downwards: the lower half
+      const rad = (grados * Math.PI) / 180;
+      const ll = mapa.containerPointToLatLng(L.point(c.x + radio * Math.cos(rad), c.y + radio * Math.sin(rad)));
+      L.polyline([centro, ll], { color: "#2b2b2b", weight: 1.6, opacity: 0.85, interactive: false, pane: "kmzEtiquetas" }).addTo(abanico);
+      L.marker(ll, { icon: L.divIcon({ className: "icono", html: `<div class="lg-abanico">${muestraElemento(it)}</div>`, iconSize: [32, 32], iconAnchor: [16, 16] }),
+                     pane: "kmzEtiquetas", zIndexOffset: 3000, keyboard: false })
+        .bindTooltip(esc(it.f.properties.n || it.c.nombre), { direction: "right", offset: [10, 0], className: "hover" })
+        .on("click", (e) => { L.DomEvent.stopPropagation(e); abrirPopup(it, it.capa.getLatLng()); })
+        .addTo(abanico);
+    });
+    // Whatever closes the list (a click elsewhere, choosing one…) folds the fan. A little later: a click on a fan icon first closes the popup
+    // (Leaflet's «preclick») and only then reaches the icon, which must still be there.
+    popup.on("remove", () => setTimeout(quitarAbanico, 150));
+    mapa.once("zoomstart", () => { quitarAbanico(); mapa.closePopup(popup); });
+  }
+
   function alClic(it, e) {
     if (ctx.midiendo()) {                // measuring: a marker click adds a point (lines bubble to the map)
       if (it.capa instanceof L.Marker) ctx.agregarPunto(e.latlng);
       return;
     }
     if (e.originalEvent) L.DomEvent.stopPropagation(e);
+    if (!it.linea && e.originalEvent) {
+      const lista = superpuestos(mapa.mouseEventToContainerPoint(e.originalEvent));
+      if (lista.length > 1) { elegirSuperpuesto(lista, it.capa.getLatLng()); return; }
+    }
     // Enter opens its migrated editor (else its Visio diagram)
     window.__mufaExistente = esMufa(it) ? { nombre: it.orig.n, lat: it.orig.ll && it.orig.ll[0], lon: it.orig.ll && it.orig.ll[1] } : null;
     abrirPopup(it, it.capa.getLatLng ? it.capa.getLatLng() : e.latlng);
@@ -546,7 +642,7 @@
   }
 
   function estadoSeccion(sec) {
-    const activos = sec.items().filter((it) => !it.deshabilitado);
+    const activos = sec.items().filter((it) => !it.deshabilitado && it.tipo !== "accion");        // an action row has no box
     if (!activos.length) return "empty";
     const encendidos = activos.filter((it) => it.marcado).length;
     return encendidos === activos.length ? "on" : (encendidos ? "partial" : "off");
@@ -565,6 +661,10 @@
     const it = sec.items().find((x) => x.id === f.item);
     if (!it) return "";
     const aviso = it.deshabilitado ? it.motivo : (it.pista || "");
+    if (it.tipo === "accion") {          // a row that does something instead of switching a layer (no box)
+      return `<div class="lg-fila elemento capa-visor accion" style="${top}" data-fila="${k}" data-accion-visor="${esc(sec.id)}:${esc(it.id)}" title="${esc(aviso || it.texto)}" role="button" tabindex="0">
+        <span class="lg-flecha"></span><span class="lg-nombre">⚙ ${esc(it.texto)}</span></div>`;
+    }
     return `<div class="lg-fila elemento capa-visor${it.deshabilitado ? " vacia" : ""}" style="${top}" data-fila="${k}" title="${esc(aviso || it.texto)}">
       <span class="lg-flecha"></span><input type="${it.tipo === "radio" ? "radio" : "checkbox"}" class="lg-casilla" name="lgcv-${esc(sec.id)}"
         data-capa-visor="${esc(sec.id)}:${esc(it.id)}" ${it.marcado ? "checked" : ""} ${it.deshabilitado ? "disabled" : ""}>
@@ -686,6 +786,8 @@
     const menu = $("lg-menu");
     menu.dataset.id = id;
     $("lg-menu-etiquetas").textContent = `${etiquetasDe(id) ? "✓ " : ""}Etiquetas de nombre`;
+    const editor = !!(window.KmzCambios && window.KmzCambios.puedeEditar());          // icons / colours are changed by administrators and editors
+    menu.querySelectorAll("[data-lg-editor]").forEach((li) => { li.hidden = !editor; });
     menu.hidden = false;
     const r = menu.getBoundingClientRect();
     menu.style.left = `${Math.min(x, window.innerWidth - r.width - 8)}px`;
@@ -717,6 +819,14 @@
       caja.style.top = menu.style.top;
       caja.hidden = false;
       menu.hidden = true;
+      return;
+    } else if (accion === "estilo" && window.KmzCambios) {
+      cerrarMenu();
+      window.KmzCambios.estiloCarpeta(id);
+      return;
+    } else if (accion === "estilo_quitar" && window.KmzCambios) {
+      cerrarMenu();
+      window.KmzCambios.quitarEstiloCarpeta(id);
       return;
     }
     cerrarMenu();
@@ -774,6 +884,13 @@
         const sec = seccion(secCasilla.dataset.secCasilla);
         if (sec) sec.alternarTodas(estadoSeccion(sec) !== "on");
         refrescar();
+        return;
+      }
+      const accionVisor = e.target.closest("[data-accion-visor]");
+      if (accionVisor) {
+        const [secId, ...resto] = accionVisor.dataset.accionVisor.split(":");
+        const sec = seccion(secId);
+        if (sec) sec.alternar(resto.join(":"), true);
         return;
       }
       const capaVisor = e.target.closest("[data-capa-visor]");
@@ -878,6 +995,11 @@
     document.addEventListener("click", (e) => {
       const diagrama = e.target.closest("[data-diagrama-mufa]");
       if (diagrama && window.visor) window.visor.abrirDiagramaPorNombre(diagrama.dataset.diagramaMufa);
+      const sup = e.target.closest("[data-superpuesto]");
+      if (sup && window.__superpuestos) {
+        const x = window.__superpuestos[Number(sup.dataset.superpuesto)];
+        if (x) abrirPopup(x, x.capa.getLatLng());
+      }
       if (e.target.closest("[data-entrar-mufa]") && window.__kmzItem) { mapa.closePopup(); entrarMufa(window.__kmzItem); }
       const img = e.target.closest("img.lg-foto");
       if (img && img.src) verFotoGrande(img.src);
@@ -993,6 +1115,9 @@
     /** Every loaded element of the KMZ: fn({id, capa, it}); `redibujarEtiquetas` after changing names or removing some. */
     porCadaItem: (fn) => s.capas.forEach((capa, id) => capa.items.forEach((it) => { if (it) fn({ id, capa, it }); })),
     redibujarEtiquetas: () => s.capas.forEach((capa, id) => { if (capa.enMapa) dibujarEtiquetas(id); }),
+    /** For lugares/kmz_cambios.js (icons / colours of their own): the folder, its descendants, the KMZ's own line style, the folder's opacity, the layer swap. */
+    carpeta: (id) => s.carpetas[id] || null, descendientes: (id) => descendientes(id), estiloBaseLinea: (it) => estiloLinea(it.c, it.f, it.est),
+    opacidad: (id) => opacidadDe(id), reemplazarCapa,
     get panel() { return $("lugares"); },
     // read-only handle for automated checks
     get estado() { return { carpetas: Object.keys(s.carpetas).length, marcadas: [...s.marcadas], cargadas: [...s.capas.keys()], filas: s.filas.length }; },

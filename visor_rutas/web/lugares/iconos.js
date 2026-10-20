@@ -1,7 +1,8 @@
 /* Íconos propios de "Mis lugares" (visor v2, fase 3), sin depender de Google: pushpins de colores, letras A–Z, números 1–10 y
  * figuras. Mismo catálogo y mismas formas que visor_rutas/redes/lugares_iconos.py (que los dibuja en PNG para el KMZ).
  *
- * Un ícono es {tipo: "pushpin" | "letra" | "numero" | "figura" | "ninguno", id, color, escala, opacidad}. Las gotas (pushpin, letra,
+ * Un ícono es {tipo: "pushpin" | "letra" | "numero" | "figura" | "ninguno" | "imagen" | "texto", id, color, escala, opacidad}; «imagen» lleva además
+ * `datos` (la imagen del usuario, reducida a 96 px, como data URL) y «texto» hasta tres caracteres (un emoji, "OLT") en `id`. Las gotas (pushpin, letra,
  * número) señalan con la punta; las figuras, con el centro.
  *   Iconos.svg(icono, alto)            SVG para listas y botones
  *   Iconos.leaflet(icono)              L.divIcon para el mapa
@@ -17,20 +18,31 @@
   const COLORES = [["#f7d117", "Amarillo"], ["#2f6bff", "Azul"], ["#2ca02c", "Verde"], ["#1ec8e8", "Celeste"], ["#ff6fb5", "Rosa"],
                    ["#8e44ad", "Morado"], ["#e53935", "Rojo"], ["#ffffff", "Blanco"], ["#fb8c00", "Naranja"], ["#222222", "Negro"]];
   const DEFECTO = { tipo: "pushpin", id: "pushpin", color: "#f7d117", escala: 1.1, opacidad: 1 };
+  const MAX_IMAGEN = 80000, LADO_IMAGEN = 96;                    // characters of the data URL / px of the longest side (the server checks the same)
+  const RE_IMAGEN = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+  const TEXTO_PROHIBIDO = /[<>&"'\\\u0000-\u001f]/;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const esGota = (ic) => ["pushpin", "letra", "numero"].includes(ic.tipo);
 
   function limpiar(ic) {
     if (!ic || typeof ic !== "object") return { ...DEFECTO };
-    const tipo = ["pushpin", "letra", "numero", "figura", "ninguno"].includes(ic.tipo) ? ic.tipo : "pushpin";
-    let id = String(ic.id || "");
+    let tipo = ["pushpin", "letra", "numero", "figura", "ninguno", "imagen", "texto"].includes(ic.tipo) ? ic.tipo : "pushpin";
+    let id = String(ic.id || ""), datos;
+    if (tipo === "imagen") {
+      if (typeof ic.datos === "string" && ic.datos.length <= MAX_IMAGEN && RE_IMAGEN.test(ic.datos)) { datos = ic.datos; id = "imagen"; } else tipo = "pushpin";
+    } else if (tipo === "texto") {
+      id = Array.from(id.trim()).slice(0, 3).join("");
+      if (!id || TEXTO_PROHIBIDO.test(id)) tipo = "pushpin";
+    }
     if (tipo === "pushpin") id = "pushpin";
     if (tipo === "letra" && !LETRAS.includes(id)) id = "A";
     if (tipo === "numero" && !NUMEROS.includes(id)) id = "1";
     if (tipo === "figura" && !FIGURAS.some(([f]) => f === id)) id = "circulo";
     const color = /^#[0-9a-fA-F]{6}$/.test(ic.color || "") ? ic.color : DEFECTO.color;
     const num = (v, mn, mx, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(mx, Math.max(mn, n)) : d; };
-    return { tipo, id, color, escala: Math.round(num(ic.escala, 0.3, 4, 1.1) * 100) / 100, opacidad: Math.round(num(ic.opacidad, 0, 1, 1) * 100) / 100 };
+    const salida = { tipo, id, color, escala: Math.round(num(ic.escala, 0.3, 4, 1.1) * 100) / 100, opacidad: Math.round(num(ic.opacidad, 0, 1, 1) * 100) / 100 };
+    if (datos) salida.datos = datos;
+    return salida;
   }
 
   function oscuro(hexa) {
@@ -51,6 +63,15 @@
     const ic = limpiar(icono);
     if (ic.tipo === "ninguno") return `<svg width="${alto}" height="${alto}" viewBox="0 0 40 40" aria-label="Sin ícono"><circle cx="20" cy="20" r="14" fill="none" stroke="#9aa0ab" stroke-width="2"/><path d="M10 30 30 10" stroke="#9aa0ab" stroke-width="2"/></svg>`;
     const borde = oscuro(ic.color), op = ic.opacidad < 1 ? ` opacity="${ic.opacidad}"` : "";
+    if (ic.tipo === "imagen") {
+      return `<svg width="${alto}" height="${alto}" viewBox="0 0 40 40"${op}><image href="${esc(ic.datos)}" x="0" y="0" width="40" height="40" preserveAspectRatio="xMidYMid meet"/></svg>`;
+    }
+    if (ic.tipo === "texto") {
+      const n = Array.from(ic.id).length;
+      return `<svg width="${alto}" height="${alto}" viewBox="0 0 40 40"${op}><circle cx="20" cy="20" r="17" fill="${ic.color}" stroke="${borde}" stroke-width="2.4"/>` +
+        `<text x="20" y="${n > 1 ? 25 : 27}" text-anchor="middle" font-family="'Segoe UI Emoji','Apple Color Emoji',Arial,sans-serif" font-weight="700" font-size="${n === 1 ? 20 : n === 2 ? 15 : 11}" ` +
+        `fill="${claro(ic.color) ? "#1e1e1e" : "#fff"}">${esc(ic.id)}</text></svg>`;
+    }
     if (esGota(ic)) {
       const interior = ic.tipo === "pushpin"
         ? `<circle cx="15" cy="15" r="5.5" fill="#fff" stroke="${borde}" stroke-width="1.5"/>`
@@ -96,6 +117,13 @@
               <label>Escala <input type="number" id="ml-ic-escala" min="0.3" max="4" step="0.1"></label>
               <label>Opacidad <input type="number" id="ml-ic-opacidad" min="0" max="100" step="5"> %</label>
             </div>
+            <div class="ml-iconos-extra">
+              <label class="btn btn-chico ml-ic-imagen" title="Una imagen tuya (PNG, JPG, WebP o GIF): se reduce a 96 px">Imagen propia…
+                <input type="file" id="ml-ic-archivo" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>
+              <label class="ml-ic-texto">Texto o emoji <input type="text" id="ml-ic-texto" maxlength="3" size="4" placeholder="OLT, 5G, 🔌"></label>
+              <button type="button" class="btn btn-chico" data-ml-ic="usar_texto">Usar texto</button>
+              <span class="nota ml-ic-error" id="ml-ic-error"></span>
+            </div>
             <div class="ml-iconos-rejilla" id="ml-iconos-rejilla"></div>
           </div>
           <footer class="ml-iconos-pie">
@@ -105,6 +133,28 @@
         </div>
       </div>`);
     modal = document.getElementById("ml-iconos");
+  }
+
+  /** Reads an image file and shrinks it to LADO_IMAGEN px (the longest side) as a PNG data URL; rejects what is not an image or stays too big. */
+  function imagenReducida(archivo) {
+    return new Promise((resolver, rechazar) => {
+      if (!archivo || !/^image\/(png|jpeg|webp|gif)$/.test(archivo.type)) { rechazar(new Error("Elija una imagen PNG, JPG, WebP o GIF")); return; }
+      const url = URL.createObjectURL(archivo), img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        for (const lado of [LADO_IMAGEN, 64, 40]) {
+          const k = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight, 1));
+          const lienzo = document.createElement("canvas");
+          lienzo.width = Math.max(1, Math.round(img.naturalWidth * k)); lienzo.height = Math.max(1, Math.round(img.naturalHeight * k));
+          lienzo.getContext("2d").drawImage(img, 0, 0, lienzo.width, lienzo.height);
+          const datos = lienzo.toDataURL("image/png");
+          if (datos.length <= MAX_IMAGEN) { resolver(datos); return; }
+        }
+        rechazar(new Error("La imagen es demasiado compleja: use una más simple"));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); rechazar(new Error("No se pudo leer la imagen")); };
+      img.src = url;
+    });
   }
 
   function seleccionar(actual) {
@@ -125,8 +175,10 @@
         document.getElementById("ml-ic-color").value = ic.color;
         document.getElementById("ml-ic-escala").value = ic.escala;
         document.getElementById("ml-ic-opacidad").value = Math.round(ic.opacidad * 100);
+        document.getElementById("ml-ic-texto").value = ic.tipo === "texto" ? ic.id : "";
+        document.getElementById("ml-ic-error").textContent = "";
       };
-      const cerrar = (valor) => { modal.hidden = true; modal.onclick = modal.oninput = modal.onkeydown = null; resolver(valor); };
+      const cerrar = (valor) => { modal.hidden = true; modal.onclick = modal.oninput = modal.onkeydown = modal.onchange = null; resolver(valor); };
       modal.onclick = (e) => {
         const celdaEl = e.target.closest("[data-ic]");
         if (celdaEl) {
@@ -137,7 +189,12 @@
         }
         const accion = (e.target.closest("[data-ml-ic]") || {}).dataset;
         if (!accion) { if (e.target === modal) cerrar(null); return; }
-        if (accion.mlIc === "aceptar") cerrar(ic);
+        if (accion.mlIc === "usar_texto") {
+          const texto = document.getElementById("ml-ic-texto").value;
+          const nuevo = limpiar({ ...ic, tipo: "texto", id: texto, escala: ic.tipo === "texto" ? ic.escala : 1.3 });
+          if (nuevo.tipo !== "texto") { document.getElementById("ml-ic-error").textContent = "Escriba de 1 a 3 caracteres (sin < > & \" ')"; return; }
+          ic = nuevo; pintar();
+        } else if (accion.mlIc === "aceptar") cerrar(ic);
         else if (accion.mlIc === "ninguno") cerrar({ tipo: "ninguno", id: "ninguno", color: ic.color, escala: ic.escala, opacidad: ic.opacidad });
         else cerrar(null);
       };
@@ -148,7 +205,20 @@
         else return;
         if (e.target.id === "ml-ic-color") { pintar(); } else { document.getElementById("ml-iconos-vista").innerHTML = svg(ic, 48); }
       };
-      modal.onkeydown = (e) => { if (e.key === "Escape") { e.stopPropagation(); cerrar(null); } };
+      modal.onkeydown = (e) => {
+        if (e.key === "Escape") { e.stopPropagation(); cerrar(null); }
+        else if (e.key === "Enter" && e.target.id === "ml-ic-texto") { e.preventDefault(); modal.querySelector("[data-ml-ic=usar_texto]").click(); }
+      };
+      modal.onchange = async (e) => {
+        if (e.target.id !== "ml-ic-archivo") return;
+        const archivo = e.target.files && e.target.files[0];
+        e.target.value = "";
+        try {
+          const datos = await imagenReducida(archivo);
+          ic = limpiar({ ...ic, tipo: "imagen", id: "imagen", datos, escala: ic.tipo === "imagen" ? ic.escala : 1.6 });
+          pintar();
+        } catch (err) { document.getElementById("ml-ic-error").textContent = err.message; }
+      };
       pintar();
       modal.hidden = false;
       modal.querySelector("[data-ml-ic=aceptar]").focus();

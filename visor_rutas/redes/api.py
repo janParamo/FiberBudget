@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import psycopg
 
-from visor_rutas.redes import (actualizar_red, bandejas, db, diagrama, lugares, importar_kmz, kmz_cambios, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, problemas,
+from visor_rutas.redes import (actualizar_red, bandejas, db, diagrama, lugares, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, problemas,
                                proyectos, red, respaldo, trazado, usuarios, verificar)
 
 log = logging.getLogger(__name__)
@@ -124,6 +124,10 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "proyecto_desde_masivas": masivas_red.a_proyecto,
     "publicar_importacion_kmz": importar_kmz.publicar,
     "revertir_publicacion_kmz": importar_kmz.revertir_publicacion,
+    # visor v2, fase 9: ícono / color propio de los elementos del KMZ
+    "estilos_kmz": kmz_estilos.listar,
+    "guardar_estilo_kmz": kmz_estilos.guardar,
+    "quitar_estilo_kmz": kmz_estilos.quitar,
     # visor v2, fase 8: subir el KMZ nuevo y poner la base del presupuesto al día (administradores)
     "estado_actualizar_red": actualizar_red.estado,
     "subir_kmz_red": actualizar_red.subir_kmz,

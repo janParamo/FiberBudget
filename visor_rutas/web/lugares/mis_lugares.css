@@ -161,3 +161,10 @@ body.editando-red .barra-herramientas { display: none; }
 .ms-barra { height: 10px; border-radius: 5px; background: var(--fondo-suave); border: 1px solid var(--borde); overflow: hidden; }
 .ms-barra div { height: 100%; background: var(--primario); transition: width 0.4s; }
 .ms-num { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; color: #fff; font: 700 11px/20px Arial, sans-serif; text-align: center; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); }
+
+/* íconos: imagen propia y texto / emoji */
+.ml-iconos-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--borde); margin-bottom: 6px; }
+.ml-ic-imagen { cursor: pointer; }
+.ml-ic-texto { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.ml-ic-texto input { height: 28px; padding: 0 6px; border: 1px solid var(--borde); border-radius: 6px; font: inherit; }
+.ml-ic-error { color: var(--error); }

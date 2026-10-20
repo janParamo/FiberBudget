@@ -546,6 +546,85 @@ def buscar_mufas(texto: str, visio_con: Any = None, archivo_sqlite: Path | None 
     return [dict(zip(columnas, f)) for f in filas]
 
 
+MAX_RESULTADOS_DIAGRAMA = 60
+TOLERANCIA_COORDENADA_M = 25.0         # a coordinate typed is the one written in the diagram if it is this close
+_SINONIMOS_MUFA = {"MF", "MC", "MUFA", "MUFAS"}
+_RE_GRADO_DECIMAL = re.compile(r"(\d+\.\d+)\s*[°º˚�]+")
+
+
+def _plano(texto: str) -> str:
+    sin = "".join(c for c in unicodedata.normalize("NFD", texto or "") if unicodedata.category(c) != "Mn")
+    return " ".join(re.sub(r"[^A-Z0-9.,\- ]", " ", sin.upper()).split())
+
+
+def buscar_en_diagrama(md5: str, texto: str, visio_con: Any = None, archivo_sqlite: Path | None = None,
+                       limite: int = MAX_RESULTADOS_DIAGRAMA) -> dict[str, Any]:
+    """Texts of one Visio diagram that match what was typed, with where they are drawn (cm on the page) so the viewer can go there.
+
+    A coordinate (any format of the search box: 12.1115, -86.2340 / N12°06'41" …) finds the texts that WRITE a coordinate within
+    25 m of it, nearest first, and says how far each one is. Anything else is a text search: every word must be in the text
+    (accents and case ignored; MF / MC / MUFA are the same word). Texts without a position are left out.
+    """
+    from visor_rutas import coordenadas, masivas
+    md5, _ = _validar(md5, 0)
+    consulta = " ".join((texto or "").split())
+    vacio: dict[str, Any] = {"modo": "texto", "resultados": [], "total": 0}
+    if len(consulta) < 2:
+        return vacio
+    odg = CACHE_ODG / f"{md5}.odg"
+    if not odg.is_file():
+        raise FileNotFoundError("diagrama no convertido")
+    ancho_cm, alto_cm = _tamano_pagina_cm(odg)
+    if archivo_sqlite is None:
+        archivo_sqlite = get_settings().red_fibra_db
+    fuente = _Fuente(visio_con, archivo_sqlite)
+    if not fuente.disponible:
+        raise FileNotFoundError("base de diagramas no disponible")
+    try:
+        filas = fuente.filas("SELECT pagina, x_cm, y_cm, texto FROM textos_crudos WHERE x_cm IS NOT NULL AND y_cm IS NOT NULL AND archivo_id IN "
+                             "(SELECT id FROM archivos WHERE md5 = ?)", (md5,))
+    finally:
+        fuente.cerrar()
+
+    def item(p: Any, x: Any, y: Any, t: str, **extra: Any) -> dict[str, Any]:
+        return {"texto": _limpio(t)[:160], "pagina": p, "x_cm": float(x), "y_cm": float(y), "ancho_cm": ancho_cm, "alto_cm": alto_cm, **extra}
+
+    resultado = coordenadas.interpretar(consulta)
+    if resultado.estado in (coordenadas.OK, coordenadas.INVERTIDA):
+        lat, lon = (resultado.lat, resultado.lon) if resultado.estado == coordenadas.OK else tuple(resultado.sugerencia)
+        halladas: list[dict[str, Any]] = []
+        for p, x, y, t in filas:
+            if not re.search(r"\d", t or ""):
+                continue
+            # the diagrams write «12.111510°, -86.234059°» (the degree sign is often stored as a broken character): without it the pair is a plain one
+            for punto in masivas._desde_texto([_RE_GRADO_DECIMAL.sub(r"\1", t or "")]):
+                if punto["lat"] is None:
+                    continue
+                d = _distance_m(lat, lon, punto["lat"], punto["lon"])
+                if d <= TOLERANCIA_COORDENADA_M:
+                    halladas.append(item(p, x, y, t, coordenada={"lat": punto["lat"], "lon": punto["lon"]}, distancia_m=round(d, 1)))
+                    break
+        halladas.sort(key=lambda r: (r["distancia_m"], r["y_cm"], r["x_cm"]))
+        return {"modo": "coordenada", "consulta": {"lat": lat, "lon": lon}, "resultados": halladas[:limite], "total": len(halladas)}
+
+    palabras = _plano(consulta).split()
+    grupos = [_SINONIMOS_MUFA if p in _SINONIMOS_MUFA else {p} for p in palabras]
+    vistos: set[tuple[str, int, int]] = set()
+    halladas = []
+    for p, x, y, t in filas:
+        plano = _plano(t or "")
+        if not plano or not all(any(a in plano for a in alternativas) for alternativas in grupos):
+            continue
+        clave = (plano, round(float(x) * 10), round(float(y) * 10))
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        puntaje = 0 if plano == " ".join(palabras) else 1 if plano.startswith(palabras[0]) else 2
+        halladas.append((puntaje, len(plano), float(y), float(x), item(p, x, y, t)))
+    halladas.sort(key=lambda r: r[:4])
+    return {"modo": "texto", "resultados": [r[4] for r in halladas[:limite]], "total": len(halladas)}
+
+
 def detalle_mufa(nodo_id: int, visio_con: Any = None, archivo_sqlite: Path | None = None) -> dict[str, Any] | None:
     """Everything the viewer shows for one searched mufa: same data as a fusion-route stop
     (diagrams with the mufa's position in each, Excel hilos, splitters, clients, notes, pilot)."""

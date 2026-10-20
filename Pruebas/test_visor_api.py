@@ -326,3 +326,31 @@ def test_remote_viewer_sends_the_poles_marked_as_existing(entorno, tmp_path):
     assert est["ok"] and est["supuestos"]["postes_marcados"] == 2
     pres = remota.generar_presupuesto({**CAMPOS, "postes_existentes_m": metros[:1]})
     assert pres["ok"] and pres["resultado"]["postes_marcados"] == 1
+
+
+def test_diagram_search_goes_through_the_server_like_the_local_one(entorno, tmp_path, monkeypatch):
+    """«Buscar en el diagrama»: /visor/diagrama/<md5>/buscar (declared before «/{pagina}»: «buscar» is not a page) gives what the local one gives."""
+    main, _, cliente, _, _ = entorno
+    from visor_rutas import fusion, ventana_web
+    pedidos = []
+
+    def falsa(md5, texto, visio_con=None, archivo_sqlite=None, limite=60):
+        pedidos.append((md5, texto))
+        if md5 == "c" * 32:
+            raise FileNotFoundError("diagrama no convertido")
+        return {"modo": "texto", "resultados": [{"texto": "MUFA UNO", "pagina": 0, "x_cm": 5.0, "y_cm": 6.0, "ancho_cm": 60.0, "alto_cm": 30.0}], "total": 1}
+
+    monkeypatch.setattr(fusion, "buscar_en_diagrama", falsa)
+    md5 = "a" * 32
+    assert cliente.get(f"/visor/diagrama/{md5}/buscar", params={"texto": "mufa uno"}).status_code == 401         # a key is required
+    directa = cliente.get(f"/visor/diagrama/{md5}/buscar", params={"texto": "mufa uno"}, headers=JAN)
+    assert directa.status_code == 200 and directa.json()["total"] == 1, directa.text                                         # not taken for a page number (422)
+    local, remota = ventana_web.Api(), _api_remota(main, tmp_path)
+    assert local.buscar_en_diagrama(md5, "mufa uno")["ok"] is True
+    assert remota.buscar_en_diagrama(md5, "mufa uno") == json.loads(json.dumps(local.buscar_en_diagrama(md5, "mufa uno")))
+    assert pedidos[-1] == (md5, "mufa uno")
+    # what the server cannot do comes back as a message, not as an error page; a bad id never reaches the server
+    assert remota.buscar_en_diagrama("c" * 32, "x")["ok"] is False and "no se puede buscar" in remota.buscar_en_diagrama("c" * 32, "x")["error"].lower()
+    n = len(pedidos)
+    assert remota.buscar_en_diagrama("no-es-md5", "x")["ok"] is False and len(pedidos) == n
+    assert cliente.get("/visor/diagrama/no-es-md5/buscar", headers=JAN).status_code == 422

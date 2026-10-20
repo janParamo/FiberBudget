@@ -452,6 +452,14 @@ def archivo(nombre: str = PathParam(max_length=210), persona: str = Depends(pers
         return FileResponse(pdf, filename=pdf.name, media_type="application/pdf")
 
 
+@router.get("/diagrama/{md5}/buscar")
+def diagrama_buscar(md5: str = PathParam(pattern=r"^[0-9a-fA-F]{32}$"), texto: str = Query(default="", max_length=100),
+                    persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Search inside one diagram (text or coordinate), read-only. Declared before «/diagrama/{md5}/{pagina}»: «buscar» is not a page."""
+    with _registro(persona, "diagrama.buscar"):
+        return api_local().buscar_en_diagrama(md5.lower(), texto)
+
+
 @router.get("/diagrama/{md5}/{pagina}")
 def diagrama(md5: str = PathParam(pattern=r"^[0-9a-fA-F]{32}$"), pagina: int = PathParam(ge=0, le=50),
              persona: str = Depends(persona_visor)) -> Response:

@@ -348,3 +348,68 @@ def test_api_diagrama_devuelve_data_url_o_mensaje_claro(entorno, monkeypatch):
     monkeypatch.setattr(fusion, "diagrama_mejor", no_esta)
     assert "no está convertido" in ventana_web.Api().diagrama("e" * 32)["error"]
     assert ventana_web.Api().diagrama("../x")["ok"] is False                 # malformed md5
+
+
+# ---------------------------------------------------------------------------- buscar dentro de un diagrama (texto o coordenada)
+
+def test_buscar_texto_dentro_de_un_diagrama(entorno, base, monkeypatch):
+    _, fusion, tmp_path = entorno
+    monkeypatch.setattr(fusion, "CACHE_ODG", tmp_path / "odg")
+    _odg_falso(tmp_path / "odg", "a" * 32, 60, 30)
+    buscar = lambda texto, md5="a" * 32: fusion.buscar_en_diagrama(md5, texto, archivo_sqlite=base)
+    r = buscar("sangría")                                            # accents and case do not matter
+    assert (r["modo"], r["total"]) == ("texto", 1)
+    assert r["resultados"][0] == {"texto": "BUFFER EN SANGRIA", "pagina": 0, "x_cm": 8.0, "y_cm": 5.0, "ancho_cm": 60.0, "alto_cm": 30.0}   # where it is drawn, and the page size
+    assert [x["texto"] for x in buscar("mufa pequena")["resultados"]] == ["MUFA PEQUEÑA"]
+    # every word must be there; MF, MC and MUFA are the same word
+    assert buscar("spl puerto")["resultados"][0]["texto"] == "SPL 1/16 PUERTO 3 OLT X" and buscar("spl nada")["total"] == 0
+    assert [x["texto"] for x in buscar("mufa otra")["resultados"]] == ["MF OTRA / 12.1234567, -86.2345678 / SATURADA"]
+    assert buscar("mf otra")["total"] == 1
+    # the exact text first, then the ones that start with it, then the rest
+    r = buscar("mufa")
+    assert r["total"] == 2 and r["resultados"][0]["texto"] == "MUFA PEQUEÑA"
+    # nothing typed or a single character: no search; another diagram has its own texts
+    assert buscar("m")["resultados"] == [] and buscar("   ")["resultados"] == []
+    assert buscar("sangria", "b" * 32)["total"] == 0 if (tmp_path / "odg" / ("b" * 32 + ".odg")).is_file() else True
+
+
+def test_buscar_una_coordenada_dentro_de_un_diagrama(entorno, base, monkeypatch):
+    _, fusion, tmp_path = entorno
+    monkeypatch.setattr(fusion, "CACHE_ODG", tmp_path / "odg")
+    _odg_falso(tmp_path / "odg", "a" * 32, 60, 30)
+    _odg_falso(tmp_path / "odg", "b" * 32, 60, 30)
+    exacta = fusion.buscar_en_diagrama("a" * 32, "12.1234567, -86.2345678", archivo_sqlite=base)
+    assert exacta["modo"] == "coordenada" and exacta["total"] == 1
+    r = exacta["resultados"][0]
+    assert r["texto"].startswith("MF OTRA") and r["distancia_m"] == 0.0 and r["coordenada"] == {"lat": 12.1234567, "lon": -86.2345678}
+    # a few metres away (another way of writing it, other decimals) is the same place; the nearest comes first
+    cerca = fusion.buscar_en_diagrama("a" * 32, "12.12346 -86.23457", archivo_sqlite=base)
+    assert cerca["total"] == 1 and 0 < cerca["resultados"][0]["distancia_m"] < 10
+    assert fusion.buscar_en_diagrama("a" * 32, "N12°07'24.4\" W86°14'04.4\"", archivo_sqlite=base)["total"] == 1       # degrees too, like the search box
+    # farther than 25 m, or written in another diagram: nothing
+    assert fusion.buscar_en_diagrama("a" * 32, "12.2000, -86.3000", archivo_sqlite=base)["total"] == 0
+    assert fusion.buscar_en_diagrama("a" * 32, "12.1001, -86.2500", archivo_sqlite=base)["total"] == 0
+    assert fusion.buscar_en_diagrama("b" * 32, "12.1001, -86.2500", archivo_sqlite=base)["resultados"][0]["texto"] == "MF CONEXION 12.1001, -86.2500"
+    # lat / lon typed the other way round are understood (the search box does the same)
+    assert fusion.buscar_en_diagrama("a" * 32, "-86.2345678, 12.1234567", archivo_sqlite=base)["total"] == 1
+    # the real diagrams write «12.111510°, -86.234059°», the degree sign often stored as a broken character
+    con = sqlite3.connect(base)
+    con.execute("INSERT INTO textos_crudos(archivo_id, pagina, x_cm, y_cm, texto) VALUES (1, 0, 15, 15, ?)", ("MUFA FERRETERIA\n12.111510�, -86.234059�",))
+    con.execute("INSERT INTO textos_crudos(archivo_id, pagina, x_cm, y_cm, texto) VALUES (1, 0, 16, 16, ?)", ("MF GRADOS / 12.111600°, -86.234100°",))
+    con.commit()
+    con.close()
+    rotos = fusion.buscar_en_diagrama("a" * 32, "12.11151, -86.234059", archivo_sqlite=base)
+    assert rotos["total"] == 2 and rotos["resultados"][0]["texto"].startswith("MUFA FERRETERIA") and rotos["resultados"][0]["distancia_m"] < 1       # the other one is 12 m away: second
+    assert fusion.buscar_en_diagrama("a" * 32, "12.1116, -86.2341", archivo_sqlite=base)["resultados"][0]["texto"].startswith("MF GRADOS")
+
+
+def test_buscar_en_un_diagrama_pide_cosas_validas(entorno, base, monkeypatch):
+    _, fusion, tmp_path = entorno
+    monkeypatch.setattr(fusion, "CACHE_ODG", tmp_path / "odg")
+    with pytest.raises(ValueError):
+        fusion.buscar_en_diagrama("no-es-un-md5", "mufa", archivo_sqlite=base)
+    with pytest.raises(FileNotFoundError):                              # the diagram was never converted on this PC / server
+        fusion.buscar_en_diagrama("a" * 32, "mufa", archivo_sqlite=base)
+    _odg_falso(tmp_path / "odg", "a" * 32)
+    with pytest.raises(FileNotFoundError):
+        fusion.buscar_en_diagrama("a" * 32, "mufa", archivo_sqlite=tmp_path / "no_existe.db")

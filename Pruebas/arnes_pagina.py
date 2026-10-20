@@ -202,8 +202,9 @@ def se_cruzan(a, b) -> bool:
 
 
 @contextlib.asynccontextmanager
-async def pagina_edge(ancho=1366, alto=768, api=None, puerto=9333, con=None, usuario="jgutierrez"):
-    """The viewer open in headless Edge of `ancho` x `alto` pixels, started (api = ApiPrueba by default; `con` = test database)."""
+async def pagina_edge(ancho=1366, alto=768, api=None, puerto=9333, con=None, usuario="jgutierrez", consulta=""):
+    """The viewer open in headless Edge of `ancho` x `alto` pixels, started (api = ApiPrueba by default; `con` = test database;
+    `consulta` = query string after visor.html, e.g. "?ventana=diagrama&nombre=MF X": a window of its own)."""
     api = api or crear_api_prueba(con, usuario)
     servidor = _servidor(api)
     perfil = tempfile.mkdtemp(prefix="edge_")
@@ -227,7 +228,7 @@ async def pagina_edge(ancho=1366, alto=768, api=None, puerto=9333, con=None, usu
                 await p.enviar(f"{dominio}.enable")
             await p.enviar("Emulation.setDeviceMetricsOverride", width=ancho, height=alto, deviceScaleFactor=1, mobile=False)
             await p.enviar("Page.addScriptToEvaluateOnNewDocument", source=SHIM)
-            await p.enviar("Page.navigate", url=f"http://127.0.0.1:{servidor.server_address[1]}/visor.html")
+            await p.enviar("Page.navigate", url=f"http://127.0.0.1:{servidor.server_address[1]}/visor.html{consulta}")
             await p.esperar("window.visor && window.visor.mapa", 40)
             yield p
             tarea.cancel()

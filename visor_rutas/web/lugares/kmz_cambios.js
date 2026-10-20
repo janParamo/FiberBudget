@@ -13,7 +13,7 @@
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const normal = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-  const k = { ctx: null, cambios: new Map(), listo: false, mover: null, actual: null };
+  const k = { ctx: null, cambios: new Map(), estilos: new Map(), listo: false, mover: null, actual: null };
   const llamar = (m, a) => window.Redes.llamar(m, a);
   const aviso = (t, tipo) => k.ctx.aviso(t, tipo);
   const puedeEditar = () => !!(window.Redes && window.Redes.estado && window.Redes.estado.puede && window.Redes.estado.puede.editar);
@@ -47,7 +47,150 @@
       }
       if (typeof ch.despues.descripcion === "string" && ch.despues.descripcion !== (it.origDesc || "")) it.f.properties.d = ch.despues.descripcion;
     }
+    aplicarEstilo(it);                                              // icon / colour of its own (or of its folder) — may swap the layer
     if (it.capa.setTooltipContent) it.capa.setTooltipContent(esc(it.f.properties.n || it.c.nombre));
+  }
+
+  // ------------------------------------------------------------------ ícono / color propio (de un elemento o de toda una carpeta)
+  const claveCarpeta = (c) => `${c.ruta}|*|`;
+
+  /** The style that applies to `it`: its own, else the one of its folder, else the one of the nearest folder above (null: the KMZ's). */
+  function estiloDe(it) {
+    const propio = k.estilos.get(it.clave || claveDe(it));
+    if (propio) return { ...propio.estilo, origen: "elemento" };
+    for (let c = it.c; c; c = c.padre ? window.Lugares.carpeta(c.padre) : null) {
+      const f = k.estilos.get(claveCarpeta(c));
+      if (f) return { ...f.estilo, origen: "carpeta" };
+    }
+    return null;
+  }
+
+  /** Paints `it` as its style says: a point gets an icon of its own (a layer swap), a line its colour and width. Idempotent. */
+  function aplicarEstilo(it) {
+    const st = estiloDe(it);
+    it.estilo = st;
+    if (it.linea) {
+      const ln = st && st.linea;
+      if (!ln && !it.lineaConEstilo) return;                          // nothing of its own now and nothing to undo: leave the KMZ's style alone
+      const base = window.Lugares.estiloBaseLinea(it);
+      it.linea.setStyle(ln ? { ...base, color: ln.color, weight: ln.grosor, opacity: ln.opacidad * window.Lugares.opacidad(it.c.id) } : base);
+      it.lineaConEstilo = !!ln;
+      return;
+    }
+    const ic = st && st.icono;
+    if (ic && window.Iconos) {
+      const clave = JSON.stringify(ic);
+      if (!it.capaEstilo || it.capaEstiloClave !== clave) {
+        it.capaEstilo = L.marker(it.capa.getLatLng(), { icon: window.Iconos.leaflet(ic), pane: "kmzPuntos", riseOnHover: true, opacity: window.Lugares.opacidad(it.c.id) });
+        it.capaEstiloClave = clave;
+      }
+      it.capaEstilo.setLatLng(it.capa.getLatLng());
+      window.Lugares.reemplazarCapa(it, it.capaEstilo);
+    } else if (it.capa !== it.capaBase) {
+      it.capaBase.setLatLng(it.capa.getLatLng());
+      window.Lugares.reemplazarCapa(it, it.capaBase);
+    }
+  }
+
+  /** The dialog of a line's style: colour, width, opacity. Resolves {color, grosor, opacidad} or null. */
+  function pedirEstiloLinea(actual) {
+    return new Promise((resolver) => {
+      let modal = $("kc-linea");
+      if (!modal) {
+        document.body.insertAdjacentHTML("beforeend", `<div id="kc-linea" class="modal ml-modal" hidden role="dialog" aria-modal="true" aria-labelledby="kc-linea-titulo">
+          <div class="modal-caja config-caja"><header class="modal-cabecera"><h2 id="kc-linea-titulo">Estilo de la línea</h2><button type="button" class="btn-icono" data-kl="cancelar" aria-label="Cerrar">✕</button></header>
+          <div class="config-cuerpo"><label>Color <input type="color" id="kl-color"></label>
+            <label>Grosor <input type="number" id="kl-grosor" min="0.5" max="12" step="0.5"></label>
+            <label>Opacidad <input type="number" id="kl-opacidad" min="0" max="100" step="5"> %</label>
+            <span class="kl-vista" id="kl-vista"></span>
+            <div class="config-acciones"><button type="button" class="btn" data-kl="cancelar">Cancelar</button><button type="button" class="btn btn-primario" data-kl="aceptar">Aceptar</button></div></div></div></div>`);
+        modal = $("kc-linea");
+      }
+      const leer = () => ({ color: $("kl-color").value, grosor: Math.min(12, Math.max(0.5, Number($("kl-grosor").value) || 3)),
+                            opacidad: Math.min(1, Math.max(0, (Number($("kl-opacidad").value) || 0) / 100)) });
+      const vista = () => { const l = leer(); $("kl-vista").innerHTML = `<svg width="160" height="20"><line x1="6" y1="10" x2="154" y2="10" stroke="${esc(l.color)}" stroke-width="${l.grosor}" stroke-opacity="${l.opacidad}" stroke-linecap="round"/></svg>`; };
+      const cerrar = (valor) => { modal.hidden = true; modal.onclick = modal.oninput = modal.onkeydown = null; resolver(valor); };
+      $("kl-color").value = (actual && actual.color) || "#0000ff";
+      $("kl-grosor").value = (actual && actual.grosor) || 3;
+      $("kl-opacidad").value = Math.round(((actual && actual.opacidad) ?? 1) * 100);
+      vista();
+      modal.oninput = vista;
+      modal.onclick = (e) => {
+        const a = (e.target.closest("[data-kl]") || {}).dataset;
+        if (a) cerrar(a.kl === "aceptar" ? leer() : null); else if (e.target === modal) cerrar(null);
+      };
+      modal.onkeydown = (e) => { if (e.key === "Escape") { e.stopPropagation(); cerrar(null); } };
+      modal.hidden = false;
+      modal.querySelector("[data-kl=aceptar]").focus();
+    });
+  }
+
+  async function guardarEstilo(clave, alcance, carpeta, nombre, icono, linea) {
+    const r = await llamar("guardar_estilo_kmz", { clave, alcance, carpeta, nombre, ...(icono ? { icono } : {}), ...(linea ? { linea } : {}) });
+    if (!r.ok) { aviso(r.error, "error"); return false; }
+    k.estilos.set(clave, r.estilo);
+    return true;
+  }
+
+  async function cambiarEstilo(it) {
+    window.visor.mapa.closePopup();
+    const actual = estiloDe(it);
+    if (it.linea) {
+      const linea = await pedirEstiloLinea(actual && actual.linea);
+      if (!linea) return;
+      if (!(await guardarEstilo(it.clave || claveDe(it), "elemento", it.c.ruta, it.f.properties.n || it.c.nombre, null, linea))) return;
+    } else {
+      const icono = await window.Iconos.seleccionar((actual && actual.icono) || window.Iconos.DEFECTO);
+      if (!icono) return;
+      if (!(await guardarEstilo(it.clave || claveDe(it), "elemento", it.c.ruta, it.f.properties.n || it.c.nombre, icono, null))) return;
+    }
+    aplicarEstilo(it);
+    window.Lugares.redibujarEtiquetas();
+    aviso("Estilo cambiado. Para volver al original: «Quitar estilo»", "ok");
+  }
+
+  async function quitarEstilo(it) {
+    window.visor.mapa.closePopup();
+    const clave = it.clave || claveDe(it);
+    if (!k.estilos.has(clave)) return;
+    const r = await llamar("quitar_estilo_kmz", { clave });
+    if (!r.ok) { aviso(r.error, "error"); return; }
+    k.estilos.delete(clave);
+    aplicarEstilo(it);
+    aviso("Estilo quitado", "ok");
+  }
+
+  /** Every loaded element under folder `id` (itself included) looks again as its style says. */
+  function reaplicarCarpeta(id) {
+    const ids = new Set(window.Lugares.descendientes(id));
+    window.Lugares.porCadaItem(({ it }) => { if (ids.has(it.c.id)) aplicarEstilo(it); });
+    window.Lugares.redibujarEtiquetas();
+  }
+
+  /** «Ícono / estilo…» of a folder of the tree (right click): points get an icon, lines a colour and width; everything below follows. */
+  async function estiloCarpeta(id) {
+    const c = window.Lugares.carpeta(id);
+    if (!c || !puedeEditar()) return;
+    const previo = (k.estilos.get(claveCarpeta(c)) || {}).estilo || {};
+    const geo = c.geometria || "mixta";
+    let icono = null, linea = null;
+    if (geo !== "linea") icono = await window.Iconos.seleccionar(previo.icono || window.Iconos.DEFECTO);
+    if (geo !== "punto") linea = await pedirEstiloLinea(previo.linea);
+    if (!icono && !linea) return;
+    if (!(await guardarEstilo(claveCarpeta(c), "carpeta", c.ruta, c.nombre, icono || previo.icono || null, linea || previo.linea || null))) return;
+    reaplicarCarpeta(id);
+    aviso(`Estilo de «${c.nombre}» cambiado. Para volver al original: clic derecho → Quitar estilo`, "ok");
+  }
+
+  async function quitarEstiloCarpeta(id) {
+    const c = window.Lugares.carpeta(id);
+    if (!c || !puedeEditar()) return;
+    if (!k.estilos.has(claveCarpeta(c))) { aviso(`«${c.nombre}» no tiene un estilo propio`); return; }
+    const r = await llamar("quitar_estilo_kmz", { clave: claveCarpeta(c) });
+    if (!r.ok) { aviso(r.error, "error"); return; }
+    k.estilos.delete(claveCarpeta(c));
+    reaplicarCarpeta(id);
+    aviso(`«${c.nombre}» vuelve a su estilo original`, "ok");
   }
 
   function reaplicar() {
@@ -66,6 +209,8 @@
     const r = await llamar("cambios_kmz", {});
     if (!r.ok) { aviso(`Cambios al KMZ: ${r.error}`, "error"); return; }
     k.cambios = new Map(r.cambios.map((c) => [c.clave, c]));
+    const e = await llamar("estilos_kmz", {});                      // icons / colours of their own: a failure here does not stop the rest
+    if (e.ok) k.estilos = new Map(e.estilos.map((x) => [x.clave, x]));
     k.listo = true;
     reaplicar();
   }
@@ -75,6 +220,8 @@
     const punto = !it.linea;
     return `<div class="acciones kc-acciones"><button type="button" class="btn btn-chico" data-kc="renombrar">Renombrar</button>
       ${punto ? '<button type="button" class="btn btn-chico" data-kc="mover">Mover</button>' : ""}
+      <button type="button" class="btn btn-chico" data-kc="estilo">${punto ? "Cambiar ícono…" : "Cambiar estilo…"}</button>
+      ${k.estilos.has(it.clave || claveDe(it)) ? '<button type="button" class="btn btn-chico" data-kc="estilo_quitar">Quitar estilo</button>' : ""}
       <button type="button" class="btn btn-chico" data-kc="borrar">Eliminar</button>
       ${it.cambio ? '<button type="button" class="btn btn-chico" data-kc="deshacer">Deshacer cambios</button>' : ""}</div>
       <div class="nota kc-nota">${it.cambio ? `Cambiado en el visor (${it.cambio.accion === "borrar" ? "eliminado" : "editado"}); el archivo KMZ no se modifica.` : "Los cambios son del visor: el archivo KMZ no se modifica."}</div>`;
@@ -182,11 +329,11 @@
       const b = e.target.closest("[data-kc]");
       const it = window.__kmzItem;
       if (!b || !it) return;
-      ({ renombrar, mover, borrar, deshacer }[b.dataset.kc] || (() => {}))(it);
+      ({ renombrar, mover, borrar, deshacer, estilo: cambiarEstilo, estilo_quitar: quitarEstilo }[b.dataset.kc] || (() => {}))(it);
     }, true);
     window.Redes.cuandoListo(() => { if (window.Redes.disponible) cargar(); });
   }
 
-  window.KmzCambios = { iniciar, aplicarAItem, botones, cargar, get actual() { return k.actual; }, set actual(v) { k.actual = v; },
+  window.KmzCambios = { iniciar, aplicarAItem, aplicarEstilo, estiloCarpeta, quitarEstiloCarpeta, puedeEditar, botones, cargar, get estilos() { return k.estilos; }, get actual() { return k.actual; }, set actual(v) { k.actual = v; },
                         get cantidad() { return k.cambios.size; } };
 })();

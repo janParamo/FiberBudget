@@ -1,4 +1,4 @@
-﻿/* Visor de rutas – Fiber Budget.
+/* Visor de rutas – Fiber Budget.
  * Toda la lógica de negocio está en Python (visor_rutas/calculo.py), que se llama con
  * window.pywebview.api.calcular(texto). Este archivo solo dibuja y maneja la interfaz.
  */
@@ -35,12 +35,25 @@
   const coordTexto = (lat, lon) => `${Number(lat).toFixed(6)}, ${Number(lon).toFixed(6)}`;
   const mismoPunto = (a, b) => Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
 
+  // «Ventana aparte»: el diagrama Visio o el editor de una mufa en su propia ventana de Windows (visor.html?ventana=diagrama|mufa&nombre=…).
+  const VENTANA = (() => {
+    // the parameters travel after «#»: WebView2 turns a «?» of a file URL into part of the file name (ERR_FILE_NOT_FOUND)
+    const q = new URLSearchParams(location.hash.replace(/^#/, "")), tipo = q.get("ventana");
+    if (tipo !== "diagrama" && tipo !== "mufa") return null;
+    return { tipo, nombre: q.get("nombre") || "", id: Number(q.get("id")) || null, indice: Number(q.get("indice")) || 0, titulo: q.get("t") || document.title };
+  })();
+  if (VENTANA) { document.body.classList.add("ventana-aparte"); document.title = VENTANA.titulo; }
+
+  let relojMensaje = null;
+  /** Aviso flotante sobre la barra inferior. «cargando» se queda hasta el siguiente mensaje; los demás se van solos (en una ventana aparte se quedan). */
   function mensaje(texto, tipo = "") {
     const caja = $("mensaje");
     caja.className = "mensaje" + (tipo && tipo !== "cargando" ? " " + tipo : "");
     $("spinner").hidden = tipo !== "cargando";
     $("mensaje-texto").textContent = texto;
     $("mensaje-texto").title = texto;
+    clearTimeout(relojMensaje);
+    if (tipo !== "cargando" && !VENTANA) relojMensaje = setTimeout(() => caja.classList.add("oculto"), tipo === "error" ? 12000 : 7000);
   }
 
   async function copiar(texto, avisoOk) {
@@ -89,6 +102,33 @@
     ICONOS.poste = circulo(COLORES.poste, 11);
     ICONOS.posteNuevo = circulo(COLORES.posteNuevo, 11);
     ICONOS.posteMarcado = circulo(COLORES.poste, 13, COLORES.posteMarcado, 3.5);
+    Object.entries(personalizados).forEach(([id, icono]) => { ICONOS[id] = window.Iconos.leaflet(icono); });      // the ones changed for everyone
+  }
+
+  // Icons of what the viewer itself draws that can be changed for everyone (mapa/iconos_visor.js; saved in the database with the KMZ styles).
+  // `defecto`: the icon of Iconos that looks most like the original, to start from in the picker.
+  const CATALOGO_ICONOS = [
+    { id: "conexion", texto: "Punto de conexión", defecto: { tipo: "pushpin", id: "pushpin", color: COLORES.conexion, escala: 1.3, opacidad: 1 } },
+    { id: "cliente", texto: "Cliente", defecto: { tipo: "pushpin", id: "pushpin", color: COLORES.cliente, escala: 1.3, opacidad: 1 } },
+    { id: "buscada", texto: "Mufa buscada", defecto: { tipo: "pushpin", id: "pushpin", color: COLORES.buscada, escala: 1.3, opacidad: 1 } },
+    { id: "mufaIntervenida", texto: "Mufa intervenida", defecto: { tipo: "figura", id: "circulo", color: COLORES.mufa, escala: 0.9, opacidad: 1 } },
+    { id: "mufaRuta", texto: "Mufa en ruta", defecto: { tipo: "figura", id: "circulo", color: COLORES.mufa, escala: 0.7, opacidad: 1 } },
+    { id: "nodo", texto: "Nodo Visio cercano", defecto: { tipo: "figura", id: "rombo", color: COLORES.nodo, escala: 0.8, opacidad: 1 } },
+    { id: "poste", texto: "Poste existente", defecto: { tipo: "figura", id: "circulo", color: COLORES.poste, escala: 0.5, opacidad: 1 } },
+    { id: "posteNuevo", texto: "Poste nuevo", defecto: { tipo: "figura", id: "circulo", color: COLORES.posteNuevo, escala: 0.5, opacidad: 1 } },
+    { id: "posteMarcado", texto: "Poste nuevo marcado como existente", defecto: { tipo: "figura", id: "anillo", color: COLORES.posteMarcado, escala: 0.6, opacidad: 1 } },
+  ];
+  const personalizados = {};
+
+  /** The icons changed for everyone ({id: icon}) replace the originals on the map, the searched pin and the legend. */
+  function aplicarIconosVisor(nuevos) {
+    Object.keys(personalizados).forEach((id) => delete personalizados[id]);
+    CATALOGO_ICONOS.forEach(({ id }) => { if (nuevos && nuevos[id]) personalizados[id] = nuevos[id]; });
+    crearIconos();
+    if (!mapa) return;
+    if (datos) dibujar(datos, { sinEncuadre: true });
+    capas.busqueda.eachLayer((l) => { if (l.setIcon) l.setIcon(ICONOS.buscada); });
+    refrescarLeyenda();
   }
 
   // ------------------------------------------------------------------ mapa
@@ -121,6 +161,7 @@
     // Whole network (like the KMZ in Google Earth): one canvas in its own pane under the route and
     // markers; the layers start OFF and load only the visible area when turned on (see cargarRed).
     mapa.createPane("red").style.zIndex = 350;
+    mapa.createPane("buscada").style.zIndex = 585;       // searched mufa / coordinate: UNDER the KMZ points (590), so the mufa's own marker stays clickable
     lienzoRed = L.canvas({ pane: "red", padding: 0.2 });
     Object.keys(CAPAS_RED).forEach((nombre) => { capas[nombre] = L.layerGroup(); });   // not added: off
     capas.caminoFibra = L.layerGroup().addTo(mapa);     // logical fibre path (fusion route), under the new route
@@ -150,12 +191,22 @@
     mapa.on("movestart zoomstart", ocultarMenu);
   }
 
+  let controlLeyenda = null;
+  function refrescarLeyenda() {
+    if (!controlLeyenda) return;
+    const plegada = controlLeyenda.getContainer() && controlLeyenda.getContainer().classList.contains("leyenda-plegada");
+    mapa.removeControl(controlLeyenda);
+    crearLeyenda();
+    if (plegada) controlLeyenda.getContainer().classList.add("leyenda-plegada");
+  }
+
   function crearLeyenda() {
     const fila = (muestra, texto) =>
       `<div class="fila"><span class="muestra">${muestra}</span><span>${texto}</span></div>`;
     const linea = (css) => `<span class="linea" style="${css}"></span>`;
-    const icono = (ic) => ic.options.html;
+    const icono = (ic, id) => (id && personalizados[id] ? window.Iconos.svg({ ...personalizados[id], escala: 1, opacidad: 1 }, 22) : ic.options.html);
     const control = L.control({ position: "bottomleft" });
+    controlLeyenda = control;
     control.onAdd = () => {
       const div = L.DomUtil.create("div", "leyenda");
       div.innerHTML = `<h4>Leyenda</h4><div class="cuerpo">
@@ -164,15 +215,15 @@
         ${fila(linea(`border-top:4px dashed ${COLORES.acometida}`), "Acometida al cliente")}
         ${fila(linea(`border-top:4px dotted ${COLORES.fibra}`), "Camino de la fibra (fusión)")}
         ${fila(linea(`border-top:4px solid ${COLORES.medida}`), "Mis medidas")}
-        ${fila(icono(pin(COLORES.conexion, 17, 24)), "Punto de conexión")}
-        ${fila(icono(pin(COLORES.cliente, 17, 24)), "Cliente")}
-        ${fila(icono(pin(COLORES.buscada, 17, 24)), "Mufa buscada")}
-        ${fila(icono(ICONOS.mufaIntervenida), "Mufa intervenida")}
-        ${fila(icono(ICONOS.mufaRuta), "Mufa en ruta")}
-        ${fila(icono(ICONOS.nodo), "Nodo Visio cercano")}
-        ${fila(icono(ICONOS.poste), "Poste existente")}
-        ${fila(icono(ICONOS.posteNuevo), "Poste nuevo (aprox.; clic: ya existe)")}
-        ${fila(icono(ICONOS.posteMarcado), "Poste nuevo marcado como existente")}
+        ${fila(icono(pin(COLORES.conexion, 17, 24), "conexion"), "Punto de conexión")}
+        ${fila(icono(pin(COLORES.cliente, 17, 24), "cliente"), "Cliente")}
+        ${fila(icono(pin(COLORES.buscada, 17, 24), "buscada"), "Mufa buscada")}
+        ${fila(icono(ICONOS.mufaIntervenida, "mufaIntervenida"), "Mufa intervenida")}
+        ${fila(icono(ICONOS.mufaRuta, "mufaRuta"), "Mufa en ruta")}
+        ${fila(icono(ICONOS.nodo, "nodo"), "Nodo Visio cercano")}
+        ${fila(icono(ICONOS.poste, "poste"), "Poste existente")}
+        ${fila(icono(ICONOS.posteNuevo, "posteNuevo"), "Poste nuevo (aprox.; clic: ya existe)")}
+        ${fila(icono(ICONOS.posteMarcado, "posteMarcado"), "Poste nuevo marcado como existente")}
         ${fila(linea(`border-top:3px dashed ${COLORES.nodo}`), "Red Visio: enlace entre nodos")}
         <div class="nota">Red KMZ: panel <b>Lugares</b> (izquierda), con los estilos del KMZ</div>
       </div>`;
@@ -852,21 +903,48 @@
   let visorPanel = null, visorModal = null;
   let diagramaActual = null;          // { titulo, archivos, indice } shown in the panel
 
+  // «Círculo»: show or hide the ring that marks the mufa (and what a search in the diagram found); remembered on this PC.
+  const prefDiagrama = { circulo: (() => { try { return localStorage.getItem("visor.circulo_diagrama") !== "0"; } catch (e) { return true; } })() };
+
   function crearVisor(ids) {
     const lienzo = $(ids.lienzo), img = $(ids.img), anillo = $(ids.anillo), estado = $(ids.estado);
     const v = { escala: 1, x: 0, y: 0, base: { w: 1, h: 1 }, arrastre: null, pedido: 0, archivo: null,
-                cargado: false, pendiente: false };
+                cargado: false, pendiente: false, resultado: null, alCargar: null };
+    const resalte = document.createElement("div");                    // the ring of what the diagram search found (another colour than the mufa's)
+    resalte.className = "anillo-mufa anillo-busqueda";
+    resalte.hidden = true;
+    lienzo.appendChild(resalte);
 
     function aplicar() {
       Object.assign(img.style, { left: `${v.x}px`, top: `${v.y}px`,
                                  width: `${v.base.w * v.escala}px`, height: `${v.base.h * v.escala}px` });
       const a = v.archivo && v.archivo.ancla;
-      anillo.hidden = !(a && v.cargado);
+      anillo.hidden = !(a && v.cargado && prefDiagrama.circulo);
       if (!anillo.hidden) {
         anillo.style.left = `${v.x + (a.x_cm / a.ancho_cm) * v.base.w * v.escala}px`;
         anillo.style.top = `${v.y + (a.y_cm / a.alto_cm) * v.base.h * v.escala}px`;
       }
+      const r = v.resultado;
+      resalte.hidden = !(r && v.cargado && prefDiagrama.circulo);
+      if (!resalte.hidden) {
+        resalte.style.left = `${v.x + (r.x_cm / r.ancho_cm) * v.base.w * v.escala}px`;
+        resalte.style.top = `${v.y + (r.y_cm / r.alto_cm) * v.base.h * v.escala}px`;
+      }
     }
+    v.refrescar = aplicar;
+    /** Zoom to a text found by the diagram search ({x_cm, y_cm, ancho_cm, alto_cm}) and mark it with the ring. */
+    v.irA = (r) => {
+      if (!v.cargado || !r) return false;
+      v.resultado = r;
+      const w = lienzo.clientWidth, h = lienzo.clientHeight;
+      const pxPorCm = v.base.w / r.ancho_cm;
+      v.escala = Math.min(Math.min(w, h) / (CM_ALREDEDOR * pxPorCm), ZOOM_MAXIMO_PX / v.base.w);
+      v.x = w / 2 - (r.x_cm / r.ancho_cm) * v.base.w * v.escala;
+      v.y = h / 2 - (r.y_cm / r.alto_cm) * v.base.h * v.escala;
+      aplicar();
+      return true;
+    };
+    v.quitarResalte = () => { v.resultado = null; resalte.hidden = true; };
     v.ajustar = () => {
       const w = lienzo.clientWidth, h = lienzo.clientHeight;
       v.escala = Math.min(w / v.base.w, h / v.base.h) * 0.97;
@@ -906,8 +984,10 @@
       v.pedido++;
       v.archivo = null;
       v.cargado = false;
+      v.resultado = null;
       img.hidden = true;
       anillo.hidden = true;
+      resalte.hidden = true;
       estado.className = "diagrama-estado";
       estado.textContent = texto;
     };
@@ -915,8 +995,10 @@
       const pedido = ++v.pedido;          // ignore answers for a diagram that is no longer selected
       v.archivo = archivo;
       v.cargado = false;
+      v.resultado = null;
       img.hidden = true;
       anillo.hidden = true;
+      resalte.hidden = true;
       if (ids.ruta) $(ids.ruta).textContent = archivo.ruta_relativa;
       estado.className = "diagrama-estado";
       estado.innerHTML = `<span class="spinner"></span> Generando el diagrama… la primera vez tarda unos segundos`;
@@ -940,6 +1022,7 @@
         estado.innerHTML = "";
         img.hidden = false;
         colocar();
+        if (v.alCargar) v.alCargar();                      // the diagram search looks again in this one if something is typed
       };
       img.src = url;
     };
@@ -991,13 +1074,13 @@
   }
 
   /** Show a mufa's diagrams in the panel's "Diagrama" tab (the panel widens). */
-  function mostrarDiagrama(titulo, infoHtml, archivos, indice = 0) {
-    diagramaActual = { titulo, archivos, indice };
+  function mostrarDiagrama(titulo, infoHtml, archivos, indice = 0, nombre = titulo) {
+    diagramaActual = { titulo, archivos, indice, nombre };
     $("pd-info").innerHTML = infoHtml;
     $("pd-archivo").innerHTML = archivos.length ? opcionesArchivos(archivos) : `<option>Sin diagrama Visio</option>`;
     $("pd-archivo").disabled = archivos.length < 2;
     $("pd-archivo").value = String(indice);
-    ["pd-menos", "pd-mas", "pd-ubicar", "pd-ajustar", "pd-pantalla"].forEach((id) => { $(id).disabled = !archivos.length; });
+    ["pd-menos", "pd-mas", "pd-ubicar", "pd-ajustar", "pd-pantalla", "pd-aparte"].forEach((id) => { $(id).disabled = !archivos.length; });
     mostrarPestana("diagrama");
     if (archivos.length) visorPanel.cargar(archivos[indice]);
     else visorPanel.limpiar("Esta mufa no aparece en ningún diagrama Visio");
@@ -1008,7 +1091,7 @@
     if (!p) return;
     marcarParada(p.orden, false);
     mostrarDiagrama(`${p.orden}. ${p.nombre}`, htmlInfoMufa(p, `${p.orden}. ${p.nombre}`),
-                    (p.archivos || []).filter((a) => a.diagrama));
+                    (p.archivos || []).filter((a) => a.diagrama), 0, p.nombre);
   }
 
   function abrirPantallaCompleta() {
@@ -1023,26 +1106,65 @@
   }
 
   function cerrarDiagrama() {
+    if (VENTANA && VENTANA.tipo === "diagrama") { cerrarVentana(); return; }       // a window of its own: closing it closes the window
     $("modal-diagrama").hidden = true;
     document.body.classList.remove("visio-al-lado");
     visorModal.limpiar();
   }
 
-  /** "Ver Visio original" of the mufa editor (migración Visio, fase 5): the mufa's Visio diagram in
-   *  the full viewer, on the right half of the screen, next to the editor. */
-  async function verVisioAlLado(nombre) {
+  /** Opens `tipo` ('diagrama' | 'mufa') in its own window of Windows; the window can be moved out of the program. */
+  async function abrirVentana(tipo, parametros) {
+    if (!api || !api.abrir_ventana) return { ok: false, error: "Esta versión no puede abrir ventanas aparte" };
+    let r;
+    try { r = await api.abrir_ventana(tipo, parametros); } catch (e) { r = { ok: false, error: String(e) }; }
+    if (!r.ok) mensaje(r.error, "error");
+    return r;
+  }
+
+  function cerrarVentana() {
+    if (VENTANA && api) api.cerrar_ventana(VENTANA.titulo);
+  }
+
+  /** The diagram of the mufa now shown, in a window of its own (the in-program viewer closes). */
+  async function diagramaAparte() {
+    if (!diagramaActual || !diagramaActual.archivos.length) return;
+    const r = await abrirVentana("diagrama", { nombre: diagramaActual.nombre, indice: diagramaActual.indice });
+    if (r.ok && !$("modal-diagrama").hidden) cerrarDiagrama();
+  }
+
+  /** The mufa's Visio diagram in the modal viewer: `alLado` = right half of the screen beside the editor; else it fills the window. */
+  /** The Visio mufa of that name that has a diagram, or null (the reason goes to the message). */
+  async function mufaConDiagrama(nombre) {
     const limpio = String(nombre || "").trim();
     let res;
     try { res = await api.buscar_mufa(limpio); } catch (e) { res = { ok: false, error: String(e) }; }
-    if (!res.ok) { mensaje(res.error, "error"); return false; }
+    if (!res.ok) { mensaje(res.error, "error"); return null; }
     const normal = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
     const m = res.resultados.find((x) => normal(x.nombre) === normal(limpio)) || res.resultados[0];
-    if (!m || !m.diagramas) { mensaje(`${limpio}: no tiene diagrama Visio`, "error"); return false; }
+    if (!m || !m.diagramas) { mensaje(`${limpio}: no tiene diagrama Visio`, "error"); return null; }
+    return m;
+  }
+
+  async function mostrarDiagramaDeMufa(nombre, { alLado = false, indice = 0 } = {}) {
+    const m = await mufaConDiagrama(nombre);
+    if (!m) return false;
     await seleccionarMufa(m);
     if (!diagramaActual || !diagramaActual.archivos.length) return false;
-    document.body.classList.add("visio-al-lado");
+    diagramaActual.indice = Math.min(indice, diagramaActual.archivos.length - 1);
+    if (alLado) document.body.classList.add("visio-al-lado");
     abrirPantallaCompleta();
     return true;
+  }
+
+  /** "Ver Visio original" of the mufa editor (migración Visio, fase 5): the mufa's Visio diagram in
+   *  the full viewer, on the right half of the screen, next to the editor. In the editor's own window it opens
+   *  the diagram in another window of its own instead, so both can be placed anywhere. */
+  async function verVisioAlLado(nombre) {
+    if (VENTANA && VENTANA.tipo === "mufa") {
+      const m = await mufaConDiagrama(nombre);
+      return !!m && !!(await abrirVentana("diagrama", { nombre: m.nombre })).ok;
+    }
+    return mostrarDiagramaDeMufa(nombre, { alLado: true });
   }
 
   function conectarDiagrama() {
@@ -1055,7 +1177,23 @@
     $("pd-ubicar").addEventListener("click", () => {
       if (!visorPanel.ubicar()) mensaje("No se encontró la mufa dentro de este diagrama");
     });
+    const circulo = {
+      leer: () => prefDiagrama.circulo,
+      poner: (on) => {
+        prefDiagrama.circulo = !!on;
+        try { localStorage.setItem("visor.circulo_diagrama", on ? "1" : "0"); } catch (e) { /* not saved: it works for this session */ }
+        [visorPanel, visorModal].forEach((x) => x.refrescar());
+        busquedas.forEach((b) => b.sincronizarCirculo());
+      },
+    };
+    const busquedas = [[$("pd-busqueda"), visorPanel], [$("diagrama-busqueda"), visorModal]].map(([caja, visor]) => {
+      const b = window.BusquedaDiagrama.montar(caja, { visor: () => visor, api: () => api, circulo, mensaje });
+      visor.alCargar = () => b.alCargar();
+      return b;
+    });
     $("pd-pantalla").addEventListener("click", abrirPantallaCompleta);
+    $("pd-aparte").addEventListener("click", diagramaAparte);
+    $("diagrama-aparte").addEventListener("click", diagramaAparte);
     $("pd-archivo").addEventListener("change", (e) => {
       diagramaActual.indice = Number(e.target.value);
       visorPanel.cargar(diagramaActual.archivos[diagramaActual.indice]);
@@ -1107,10 +1245,10 @@
     try { res = await api.mufa(m.id); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return; }
     const d = res.mufa;
-    mostrarDiagrama(d.nombre, htmlInfoMufa(d), (d.archivos || []).filter((a) => a.diagrama));
+    mostrarDiagrama(d.nombre, htmlInfoMufa(d), (d.archivos || []).filter((a) => a.diagrama), 0, d.nombre);
     capas.busqueda.clearLayers();
     if (tieneCoord(d)) {
-      L.marker([d.lat, d.lon], { icon: ICONOS.buscada, zIndexOffset: 1200 })
+      L.marker([d.lat, d.lon], { icon: ICONOS.buscada, zIndexOffset: 1200, pane: "buscada" })
         .bindTooltip(esc(d.nombre), { permanent: true, direction: "top", className: "etiqueta buscada" })
         .bindPopup(() => popupHtml({ nombre: d.nombre, tipo: `Mufa buscada · ${d.tipo || ""}`,
                                      filas: [["Zona", d.zona], ["Propietario", d.propietario]] }, L.latLng(d.lat, d.lon)))
@@ -1166,7 +1304,7 @@
   /** A searched element of the network base: fly there and mark it like a searched mufa. */
   function marcarBuscada(lat, lon, nombre, tipo) {
     capas.busqueda.clearLayers();
-    L.marker([lat, lon], { icon: ICONOS.buscada, zIndexOffset: 1200 })
+    L.marker([lat, lon], { icon: ICONOS.buscada, zIndexOffset: 1200, pane: "buscada" })
       .bindTooltip(esc(nombre), { permanent: true, direction: "top", className: "etiqueta buscada" })
       .bindPopup(() => popupHtml({ nombre, tipo: `Buscado · ${tipo || ""}`, filas: [] }, L.latLng(lat, lon))).addTo(capas.busqueda);
     refrescarCapas();
@@ -2156,6 +2294,20 @@
     });
   }
 
+  // ------------------------------------------------------------------ ventana aparte
+  async function arrancarVentanaAparte() {
+    if (VENTANA.tipo === "diagrama") {
+      const ok = await mostrarDiagramaDeMufa(VENTANA.nombre, { indice: VENTANA.indice });
+      if (!ok) $("mensaje").classList.remove("oculto");            // the reason stays on screen: the window has nothing else to show
+      return;
+    }
+    if (!window.Redes || !window.EditorMufa || !VENTANA.id) { mensaje("El editor de mufas no está disponible en esta ventana", "error"); return; }
+    window.Redes.cuandoListo(() => {
+      if (!window.Redes.disponible) { mensaje("El módulo de redes no está disponible: no se puede abrir la mufa", "error"); return; }
+      window.EditorMufa.abrir(VENTANA.id, VENTANA.nombre);
+    });
+  }
+
   // ------------------------------------------------------------------ arranque
   async function iniciar() {
     if (iniciado || !window.pywebview || !window.pywebview.api) return;
@@ -2197,11 +2349,16 @@
           window.Redes.iniciar(api).catch((e) => console.error("Redes", e));
         }
       }
+      if (VENTANA) {                   // a window of its own: only the diagram or the editor, no KMZ network, no saved layer state
+        await arrancarVentanaAparte();
+        return;
+      }
       if (window.Lugares) {            // KMZ network panel (lugares.js); never blocks the map
         window.Lugares.iniciar({
           mapa, api, esc, copiar, coordTexto, mensaje,
           midiendo: () => med.activo, agregarPunto: (ll) => agregarPunto(imantar(ll)),
         }).catch((e) => console.error("Lugares", e));
+        if (window.IconosVisor) window.IconosVisor.iniciar({ aviso: mensaje });      // icons of the poles, mufas, nodes… changed for everyone
         if (window.CapasVisor) {       // "Mapa base" and "Capas del visor": sections of the same tree
           window.CapasVisor.iniciar({ mapa, capas, base: baseMapa, redes: CAPAS_RED, cargarRed, quitarRed, hayRuta: () => !!datos });
         }
@@ -2255,7 +2412,10 @@
     get mapa() { return mapa; }, get datos() { return datos; }, get medidas() { return medidas.length; },
     get estimacion() { return estim.estado; }, mostrarVista: (nombre) => mostrarVista(nombre),
     get midiendo() { return med.activo; }, abrirDiagramaPorNombre: (nombre) => abrirDiagramaPorNombre(nombre),
-    verVisioAlLado: (nombre) => verVisioAlLado(nombre), marcarBuscada: (lat, lon, nombre, tipo) => marcarBuscada(lat, lon, nombre, tipo),
+    iconosVisor: { catalogo: CATALOGO_ICONOS, personalizados: () => ({ ...personalizados }), aplicar: (m) => aplicarIconosVisor(m),
+                   html: (id) => (personalizados[id] ? window.Iconos.svg({ ...personalizados[id], escala: 1, opacidad: 1 }, 26) : ICONOS[id].options.html) },
+    verVisioAlLado: (nombre) => verVisioAlLado(nombre), abrirVentana: (tipo, parametros) => abrirVentana(tipo, parametros),
+    cerrarVentana: () => cerrarVentana(), get aparte() { return VENTANA ? VENTANA.tipo : null; }, marcarBuscada: (lat, lon, nombre, tipo) => marcarBuscada(lat, lon, nombre, tipo),
     mensaje: (texto, tipo) => mensaje(texto, tipo), modoCaptura: (activar) => modoCaptura(activar),
     abrirDiagrama: (orden) => abrirDiagrama(orden), mostrarPestana: (nombre) => mostrarPestana(nombre),
   };

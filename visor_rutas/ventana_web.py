@@ -28,6 +28,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from visor_rutas import config_visor, excel_html
 from visor_rutas.remoto import ErrorRemoto, ProveedorRemoto
@@ -471,6 +472,23 @@ class Api:
         if detalle is None:
             return {"ok": False, "error": "La mufa ya no está en la base de diagramas"}
         return {"ok": True, "mufa": a_json(detalle)}
+
+    def buscar_en_diagrama(self, md5: str, texto: str) -> dict[str, Any]:
+        """Search inside one Visio diagram: text (words) or a coordinate. {"modo", "resultados": [{texto, x_cm, y_cm, ancho_cm, alto_cm, …}], "total"}."""
+        if self._modo == "remoto":
+            return self._remota("buscar_en_diagrama", md5, texto)
+        try:
+            with self._lock:
+                respuesta = fusion.buscar_en_diagrama(str(md5 or ""), str(texto or ""), visio_con=self._conexion_visio(),
+                                                      archivo_sqlite=get_settings().red_fibra_db)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        except FileNotFoundError as exc:
+            return {"ok": False, "error": f"No se puede buscar en este diagrama ({exc})"}
+        except Exception as exc:
+            log.exception("Visor web: diagram search failed")
+            return {"ok": False, "error": f"No se pudo buscar ({type(exc).__name__})"}
+        return {"ok": True, **a_json(respuesta)}
 
     def configuracion(self) -> dict[str, Any]:
         """Tile URLs and constants shared with the Tkinter window and the Excel map, plus the mode."""
@@ -919,6 +937,60 @@ class Api:
         except (FileNotFoundError, OSError, ErrorRemoto) as exc:
             return {"ok": False, "error": f"No se pudo abrir la carpeta: {exc}"}
 
+    # ----------------------------------------------------------------------- ventanas aparte
+    # The Visio diagram and the editor of a mufa can live in their own window of Windows (moved to another screen, side by side with the
+    # other one) to fill the mufa by hand from the diagram. They are the same page with `?ventana=<tipo>`: it shows only that window.
+
+    VENTANAS_APARTE = {"diagrama": "Diagrama Visio", "mufa": "Mufa"}
+
+    def abrir_ventana(self, tipo: str, parametros: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Opens `tipo` ('diagrama' | 'mufa') in its own window. `parametros`: nombre, id (mufa), indice (diagram file). One per mufa and kind:
+        if it is already open it is brought forward."""
+        if tipo not in self.VENTANAS_APARTE:
+            return {"ok": False, "error": "Ventana desconocida"}
+        p = parametros or {}
+        nombre = str(p.get("nombre") or "").strip()[:200]
+        if not nombre:
+            return {"ok": False, "error": "Falta el nombre de la mufa"}
+        titulo = f"{self.VENTANAS_APARTE[tipo]} · {nombre} – Fiber Budget"
+        consulta = {"ventana": tipo, "nombre": nombre, "t": titulo}
+        if tipo == "mufa":
+            try:
+                consulta["id"] = str(int(p.get("id")))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "Mufa no válida"}
+        else:
+            indice = str(p.get("indice") or "0")
+            consulta["indice"] = indice if indice.isdigit() else "0"
+        try:
+            import webview
+            abierta = next((w for w in webview.windows if getattr(w, "title", None) == titulo), None)
+            if abierta is not None:
+                try:
+                    abierta.restore()
+                    abierta.show()
+                except Exception:                                  # noqa: BLE001 - bringing it forward is a courtesy
+                    pass
+                return {"ok": True, "ya_abierta": True}
+            # The parameters go after «#»: with «?» WebView2 takes it as part of the file name of a file:// URL (ERR_FILE_NOT_FOUND).
+            webview.create_window(titulo, url=HTML.as_uri() + "#" + urlencode(consulta), js_api=self, width=1100, height=820,
+                                  min_size=(640, 420), text_select=True)
+        except Exception as exc:                                    # noqa: BLE001
+            log.warning("Visor web: window %s could not be opened (%s)", tipo, exc)
+            return {"ok": False, "error": f"No se pudo abrir la ventana: {exc}"}
+        return {"ok": True, "ya_abierta": False}
+
+    def cerrar_ventana(self, titulo: str) -> dict[str, Any]:
+        """Closes the window with that title (a window of `abrir_ventana`; never the main one)."""
+        try:
+            import webview
+            ventana = next((w for w in webview.windows if getattr(w, "title", None) == str(titulo) and w is not self._ventana), None)
+            if ventana is not None:
+                ventana.destroy()
+        except Exception as exc:                                    # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True}
+
     def copiar(self, texto: str) -> dict[str, Any]:
         try:
             copiar_al_portapapeles(str(texto))
@@ -949,4 +1021,13 @@ def abrir(forzar_remoto: bool = False) -> None:
         # Visor budgets older than OUTPUT_RETENTION_DAYS (output/visor only; never the API's files).
         threading.Thread(target=presupuesto_visor.limpiar_archivos_viejos, daemon=True).start()
     ventana.events.shown += lambda: ventana.maximize()   # maximized=True is not always honoured
+
+    def cerrar_aparte() -> None:         # the windows of abrir_ventana go with the main one (webview.start returns when all are closed)
+        for otra in list(webview.windows):
+            if otra is not ventana:
+                try:
+                    otra.destroy()
+                except Exception:        # noqa: BLE001
+                    pass
+    ventana.events.closed += cerrar_aparte
     webview.start(gui="edgechromium", http_server=False, debug=False)

@@ -44,6 +44,7 @@ COLUMNAS = {
     # visor v2, fase 3: Mis lugares (lo personal de cada usuario)
     "lugares_carpetas": {"usuario_id", "padre_id", "nombre", "orden", "visible", "expandida", "borrado_en"},
     "kmz_cambios": {"clave", "carpeta", "nombre", "tipo", "accion", "antes", "despues", "publicado", "importacion_id", "borrado_en"},
+    "kmz_estilos": {"clave", "alcance", "carpeta", "nombre", "estilo", "borrado_en"},
     "kmz_importaciones": {"archivo", "md5", "modo", "modo_sugerido", "estado", "conteos", "aplicada_en", "aplicada_por", "revertida_en", "publicada",
                           "publicacion", "publicada_en", "borrado_en"},
     "lugares_elementos": {"carpeta_id", "tipo", "nombre", "descripcion_html", "geom", "estilo", "vista", "propiedades", "orden", "visible",
