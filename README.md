@@ -1301,3 +1301,6 @@ En la pestaña *Diagrama*, en el visor a pantalla completa y en el editor de la 
 ## Íconos propios del KMZ (fase 9)
 En la ficha de cada elemento del mapa: **Cambiar ícono…** (puntos) o **Cambiar estilo…** (líneas). Para toda una carpeta: clic derecho en el árbol de Lugares → **Ícono / estilo…**. El del elemento gana al de la carpeta; **Quitar estilo** vuelve al del KMZ. Lo ven todos (se guarda en la base, tabla edes.kmz_estilos); no cambia el archivo KMZ ni el presupuesto. Si hay varios elementos en el mismo punto, el clic lista cuáles hay.
 
+
+## Splitters de los diagramas (se rellenan con cada ruta)
+Al generar una ruta de fusión, el visor lee los splitters dibujados en los diagramas de cada mufa: **secundario** (morado) o **principal** (dorado; si el texto es negro, por la palabra SECUNDARIO / PRINCIPAL; si no, «por confirmar»), su relación (1/8, 1/16…) y, cuando el diagrama trae la lista «1- cliente … 8-», los puertos libres. Lo leído se guarda en `redes.splitters_diagrama` (migración 016). Cada parada muestra «Splitters del diagrama» con **Confirmar**: una persona marca la clase y cada puerto libre / ocupado; lo confirmado se guarda y se usa en las rutas siguientes. El plan de fusión usa el primer secundario con puertos libres desde el cliente. Detalle y medición: `docs/modulo_redes/ESTUDIO_SPLITTERS.md`.

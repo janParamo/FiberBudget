@@ -112,6 +112,8 @@ FROM red_puntos p, pt
 WHERE p.geom IS NOT NULL
     AND p.tipo ILIKE ANY(%(tipos)s)
     AND NOT (p.tipo ILIKE ANY(%(excluded)s))
+    AND (%(nombre_excluida)s::text IS NULL OR NOT (coalesce(p.nombre, '') ~* %(nombre_excluida)s::text
+         AND NOT (%(nombre_excepcion)s::text IS NOT NULL AND coalesce(p.nombre, '') ~* %(nombre_excepcion)s::text)))
     AND (%(radius_m)s::float8 IS NULL
          OR ST_DWithin(p.geom::geography, pt.g::geography, %(radius_m)s::float8))
 ORDER BY p.geom <-> pt.g
@@ -129,6 +131,8 @@ WITH ruta AS (
     WHERE p.geom IS NOT NULL
       AND p.tipo ILIKE 'mufa%%'
       AND NOT (p.tipo ILIKE ANY(%(excluded)s))
+      AND (%(nombre_excluida)s::text IS NULL OR NOT (coalesce(p.nombre, '') ~* %(nombre_excluida)s::text
+           AND NOT (%(nombre_excepcion)s::text IS NOT NULL AND coalesce(p.nombre, '') ~* %(nombre_excepcion)s::text)))
       AND ST_DWithin(p.geom::geography, ruta.geom::geography, %(buffer_m)s)
 ), classified AS (
     SELECT m.id, m.tipo, m.geom, m.nombre,
@@ -301,6 +305,12 @@ def find_point_coords(ids: list) -> dict:
     return {row[0]: (float(row[1]), float(row[2])) for row in rows}
 
 
+def _nombres(excluded_names: tuple[str | None, str | None] | None) -> dict[str, str | None]:
+    """Query parameters of the mufa names that cannot be used (reglas_mufas.patrones_sql): the regex of the names and of its exceptions."""
+    excluida, excepcion = excluded_names or (None, None)
+    return {"nombre_excluida": excluida, "nombre_excepcion": excepcion}
+
+
 def _connection_point_from_row(row: tuple) -> Segment:
     seg_id, tipo, seg_lat, seg_lon, dist, nombre, *rest = row
     kind = (tipo or "").casefold()
@@ -318,6 +328,7 @@ def find_connection_candidates(
     radius_m: float,
     limit: int,
     include_reserves: bool = False,
+    excluded_names: tuple[str | None, str | None] | None = None,
 ) -> list[Segment]:
     """The `limit` KMZ mufas (and reservas if asked) nearest to the client within radius_m,
     nearest first, to compare them by street-route length."""
@@ -331,7 +342,7 @@ def find_connection_candidates(
             rows = conn.execute(
                 _CONNECTION_POINT_SQL,
                 {"lat": lat, "lon": lon, "tipos": tipos, "radius_m": radius_m, "limit": int(limit),
-                 "excluded": [f"%{keyword}%" for keyword in excluded_keywords]},
+                 "excluded": [f"%{keyword}%" for keyword in excluded_keywords], **_nombres(excluded_names)},
             ).fetchall()
     except psycopg.Error as exc:
         log.error("PostGIS connection-candidates query failed (%s)", type(exc).__name__)
@@ -344,6 +355,7 @@ def find_nearest_connection_point(
     lon: float,
     excluded_keywords: list[str],
     mufa_search_radius_m: float = 500,
+    excluded_names: tuple[str | None, str | None] | None = None,
 ) -> Segment:
     """Select the connection point from existing network points, never a line projection.
 
@@ -370,7 +382,7 @@ def find_nearest_connection_point(
                 row = conn.execute(
                     _CONNECTION_POINT_SQL,
                     {"lat": lat, "lon": lon, "tipos": tipos, "excluded": patterns,
-                     "radius_m": radius_m, "limit": 1},
+                     "radius_m": radius_m, "limit": 1, **_nombres(excluded_names)},
                 ).fetchone()
                 if row is not None:
                     break
@@ -390,6 +402,7 @@ def find_mufas_near_route(
     route_linestring_wkt: str,
     buffer_m: float,
     excluded_keywords: list[str],
+    excluded_names: tuple[str | None, str | None] | None = None,
 ) -> list[RouteMufa]:
     """Return valid mufas near the actual street route, classified by backbone proximity."""
     if buffer_m < 0:
@@ -404,7 +417,7 @@ def find_mufas_near_route(
             rows = conn.execute(
                 _ROUTE_MUFAS_SQL,
                 {"route_wkt": route_linestring_wkt, "buffer_m": buffer_m,
-                 "excluded": patterns},
+                 "excluded": patterns, **_nombres(excluded_names)},
             ).fetchall()
     except psycopg.Error as exc:
         log.error("Route mufa query failed (%s)", type(exc).__name__)
@@ -412,6 +425,63 @@ def find_mufas_near_route(
     return [RouteMufa(id=row[0], tipo=row[1], lat=float(row[2]), lon=float(row[3]),
                       distance_m=float(row[4]), is_backbone=bool(row[5]),
                       nombre=((row[6] or "").strip() or None) if len(row) > 6 else None) for row in rows]
+
+
+_ROUTE_POZOS_SQL = """
+WITH route AS (
+    SELECT ST_SetSRID(ST_GeomFromText(%(route_wkt)s), 4326) AS geom,
+           ST_SetSRID(ST_GeomFromText(%(route_wkt)s), 4326)::geography AS geog
+)
+SELECT ST_LineLocatePoint(route.geom, p.geom) * ST_Length(route.geog) AS route_position_m
+FROM red_puntos p, route
+WHERE p.geom IS NOT NULL
+  AND p.tipo ILIKE 'pozo%%'
+  AND ST_DWithin(p.geom::geography, route.geog, %(buffer_m)s)
+ORDER BY route_position_m
+"""
+
+
+def find_pozos_near_route(route_linestring_wkt: str, buffer_m: float) -> list[float]:
+    """Positions (metres from the start of the route) of the wells (pozos) within `buffer_m` of the route, sorted."""
+    if buffer_m < 0:
+        raise ValueError("buffer_m must be >= 0")
+    s = get_settings()
+    try:
+        with psycopg.connect(host=s.db_host, port=s.db_port, dbname=s.db_name, user=s.db_user, password=s.db_password, connect_timeout=5) as conn:
+            rows = conn.execute(_ROUTE_POZOS_SQL, {"route_wkt": route_linestring_wkt, "buffer_m": buffer_m}).fetchall()
+    except psycopg.Error as exc:
+        log.error("Route wells query failed (%s)", type(exc).__name__)
+        raise ExistingPolesQueryError(str(exc)) from exc
+    return [float(row[0]) for row in rows]
+
+
+_RESERVAS_SQL = """
+WITH pt AS (SELECT ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326) AS g)
+SELECT p.id, p.tipo, ST_Y(p.geom) AS lat, ST_X(p.geom) AS lon, ST_Distance(p.geom::geography, pt.g::geography) AS dist_m, p.nombre
+FROM red_puntos p, pt
+WHERE p.geom IS NOT NULL
+  AND ST_DWithin(p.geom::geography, pt.g::geography, %(radius_m)s)
+  AND (p.tipo ILIKE 'reserva%%' OR coalesce(p.nombre, '') ~* %(palabras)s)
+  AND NOT (p.tipo ILIKE ANY(%(excluded)s))
+ORDER BY p.geom <-> pt.g
+LIMIT %(limit)s
+"""
+
+
+def find_reservas_cercanas(lat: float, lon: float, radius_m: float, palabras_regex: str, excluded_keywords: list[str] | None = None,
+                           limit: int = 3) -> list[Segment]:
+    """The reservas nearest to a point: points of the folder «reserva» and poles / points whose name says RSV, RVA or RESERVA
+    (`palabras_regex`: reglas_mufas.regex_palabras). Nearest first. Where a splitter can be installed in a new mufa."""
+    s = get_settings()
+    try:
+        with psycopg.connect(host=s.db_host, port=s.db_port, dbname=s.db_name, user=s.db_user, password=s.db_password, connect_timeout=5) as conn:
+            rows = conn.execute(_RESERVAS_SQL, {"lat": lat, "lon": lon, "radius_m": radius_m, "palabras": palabras_regex, "limit": int(limit),
+                                                "excluded": [f"%{k}%" for k in (excluded_keywords or [])] or ["%sin-coincidencia-posible%"]}).fetchall()
+    except psycopg.Error as exc:
+        log.error("PostGIS reservas query failed (%s)", type(exc).__name__)
+        raise DatabaseError(str(exc)) from exc
+    return [Segment(id=r[0], tipo=r[1], lat=float(r[2]), lon=float(r[3]), distance_m=float(r[4]), is_mufa=False, is_reserve=True,
+                    nombre=(r[5] or "").strip() or None) for r in rows]
 
 
 def find_existing_poles_near_route(route_linestring_wkt: str, buffer_m: float) -> list[ExistingPole]:

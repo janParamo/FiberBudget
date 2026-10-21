@@ -14,7 +14,7 @@ from typing import Any, Callable
 import psycopg
 
 from visor_rutas.redes import (actualizar_red, bandejas, db, diagrama, lugares, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, problemas,
-                               proyectos, red, respaldo, trazado, usuarios, verificar)
+                               proyectos, red, respaldo, splitters, trazado, usuarios, verificar)
 
 log = logging.getLogger(__name__)
 
@@ -134,6 +134,10 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "comparar_red_presupuesto": actualizar_red.comparar,
     "sincronizar_red_presupuesto": actualizar_red.sincronizar,
     "revertir_sincronizacion_red": actualizar_red.revertir_sincronizacion,
+    # splitters de los diagramas: lo confirmado por una persona (visor_rutas/splitters_diagrama.py)
+    "splitters_de_diagrama": splitters.de_diagrama,
+    "confirmar_splitter": splitters.confirmar,
+    "quitar_confirmacion_splitter": splitters.quitar_confirmacion,
     # sección 8: integridad de los datos
     "verificar_base": verificar.verificar,
 }

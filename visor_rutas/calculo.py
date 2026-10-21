@@ -25,10 +25,11 @@ import db
 import main
 import presupuesto
 import red_fibra_pg
+import reglas_mufas
 import routing
 from config import NI_LAT_MAX, NI_LAT_MIN, NI_LON_MAX, NI_LON_MIN
 from origen import _distance_m
-from visor_rutas import fusion, ruta_fusion_plan
+from visor_rutas import fusion, ruta_fusion_plan, splitters_diagrama
 
 log = logging.getLogger(__name__)
 
@@ -107,13 +108,16 @@ def _punto_en_ruta(puntos: list[LatLon], acumulada: list[float], fraccion: float
 
 
 def posiciones_postes_nuevos(distance_m: float, spacing_m: float, existing_positions_m: list[float],
-                             max_span_m: float | None = None, max_span_between_existing_m: float | None = None) -> list[float]:
+                             max_span_m: float | None = None, max_span_between_existing_m: float | None = None,
+                             tramos_aereos: list[tuple[float, float]] | None = None) -> list[float]:
     """Metro de la ruta de cada poste nuevo por huecos.
 
     Es presupuesto.new_pole_positions_by_gaps, el mismo recorrido que cuenta los postes nuevos
     (sin los postes extra por esquina, que no tienen posición); el visor comprueba que la
     cantidad coincida. Esos metros identifican el poste que se marca como existente en el mapa.
     """
+    if tramos_aereos is not None:                      # wells on the route: only the aerial stretches get poles
+        return presupuesto.new_pole_positions_in_spans(tramos_aereos, spacing_m, existing_positions_m, max_span_m, max_span_between_existing_m)
     return presupuesto.new_pole_positions_by_gaps(distance_m, spacing_m, existing_positions_m, max_span_m, max_span_between_existing_m)
 
 
@@ -311,11 +315,12 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         puntos = [(seg.lat, seg.lon), (lat, lon)]
     route_wkt = main._route_linestring_wkt(puntos)
 
-    # 3) Mufas sobre la ruta.
+    # 3) Mufas sobre la ruta (sin las de corte, aéreas ni punta plana: reglas_mufas.py).
+    mufas_cfg = reglas_mufas.configuracion(rules)
     try:
-        route_mufas = db.find_mufas_near_route(
+        route_mufas = reglas_mufas.filtrar(db.find_mufas_near_route(
             route_wkt, rules.get("fixed_events", {}).get("route_mufa_search_buffer_m", 15),
-            rules["excluded_tipo_keywords"])
+            rules["excluded_tipo_keywords"], excluded_names=reglas_mufas.patrones_sql(mufas_cfg)), mufas_cfg)
     except db.ExistingPolesQueryError:
         route_mufas = []
         avisos.append("No se pudieron consultar las mufas de la ruta (el presupuesto fallaría)")
@@ -343,10 +348,10 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
                         and rules.get("traffic_origin", {}).get("count_path_mufas", True))
     if use_diagram_path:
         intervened[seg.id] = seg.nombre
-        intervened.update((f"diagrama:{name}", name) for name in origin.path[1:])
+        intervened.update((f"diagrama:{name}", name) for name in origin.path[1:] if reglas_mufas.usable(name, mufas_cfg))
         mufa_count_source = "diagramas"
     else:
-        intervened.update((mufa.id, mufa.nombre) for mufa in chain)
+        intervened.update((mufa.id, mufa.nombre) for mufa in reglas_mufas.filtrar(chain, mufas_cfg))
         mufa_count_source = "postgis" if seg.is_mufa else None
     for mufa in route_mufas:
         intervened.setdefault(mufa.id, mufa.nombre)
@@ -359,6 +364,13 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         poles = []
         avisos.append("No se pudieron consultar los postes existentes; se asumen 0 (el presupuesto fallaría)")
     pole_positions_m = [pole.route_position_m for pole in poles]
+    # Wells along the route: that stretch goes in duct (main._generar_presupuesto_con does the same).
+    try:
+        pozos_m = db.find_pozos_near_route(route_wkt, float((rules.get("ducto") or {}).get("pozo_search_buffer_m", 15)))
+    except db.ExistingPolesQueryError:
+        pozos_m = []
+        avisos.append("No se pudieron consultar los pozos de la ruta: se asume fibra aérea en toda la ruta")
+    tramos_ducto = presupuesto.tramos_ducto(distancia_m, pozos_m, rules)
     quantities = presupuesto.calcular_presupuesto(
         distancia_m, puntos, rules,
         existing_poles=len(poles),
@@ -367,19 +379,22 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         connection_is_reserve=seg.is_reserve,
         mufa_count=len(intervened),
         new_connections=1,
+        duct_spans=tramos_ducto or None,
     )
     poles_rules = rules["poles"]
+    existentes_usados = quantities[poles_rules["existing_pole_row_label"]]      # the poles inside a duct stretch are not used
     if postes_extra:                      # poles added by hand on the map count as new ones
         quantities[poles_rules["new_pole_row_label"]] += postes_extra
     nuevos = quantities[poles_rules["new_pole_row_label"]]
     final_m = presupuesto.calcular_metraje_final(distancia_m, rules)
-    materials = presupuesto.calcular_materiales(final_m, len(poles) + nuevos, rules)
+    materials = presupuesto.calcular_materiales(final_m, existentes_usados + nuevos, rules)
 
     # Posiciones aproximadas de los postes nuevos sobre la ruta.
     turns = presupuesto.count_turns(puntos, poles_rules["corner_angle_deg"])
     extra_esquinas = turns * poles_rules["extra_poles_per_corner"]
     metros = posiciones_postes_nuevos(distancia_m, poles_rules["spacing_m"], pole_positions_m,
-                                      poles_rules.get("max_span_m"), poles_rules.get("max_span_between_existing_m"))
+                                      poles_rules.get("max_span_m"), poles_rules.get("max_span_between_existing_m"),
+                                      presupuesto.tramos_aereos(distancia_m, tramos_ducto) if tramos_ducto else None)
     posiciones: list[LatLon] = []
     metros_mapa: list[float] = []
     if len(metros) + extra_esquinas == nuevos - postes_extra and distancia_m > 0:
@@ -497,6 +512,9 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
                            "diagnostico": origin.diagnostico},
         "avisos": avisos,
     }
+    if tramos_ducto:                      # only when there are wells: the answer of a route without them keeps its keys
+        resultado["ducto"] = {"tramos_m": [[a, b] for a, b in tramos_ducto], "metros": round(sum(b - a for a, b in tramos_ducto), 1),
+                              "pozos_m": [round(p, 1) for p in pozos_m]}
 
     # 7) Ruta de fusión (solo datos de la base de diagramas); nunca rompe el cálculo de la ruta.
     try:
@@ -507,6 +525,23 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         log.warning("Visor: fusion route failed (%s: %s)", type(exc).__name__, exc)
         resultado["ruta_fusion"] = []
         avisos.append(f"No se pudo armar la ruta de fusión ({type(exc).__name__})")
+    # 7a) The splitters drawn in the diagrams of those mufas: read, stored (people confirm them later) and shown per stop.
+    splitters_diagrama.enriquecer(resultado["ruta_fusion"], splitters_diagrama.guardar_en_redes)
+    # 7b) More mufas to intervene than `splitter_secundario.max_mufas`: the plan suggests a secondary splitter in a new mufa on the
+    # nearest reserva (a suggestion only; the budget does not change).
+    cfg_split = rules.get("splitter_secundario") or {}
+    cfg_mufas = ruta_fusion_plan.reglas()
+    usables = [p for p in resultado.get("ruta_fusion") or [] if ruta_fusion_plan.motivo_no_tocar(p.get("nombre"), cfg_mufas) is None]
+    if cfg_split and len(usables) > int(cfg_split.get("max_mufas", 10)):
+        try:
+            resultado["reservas_cercanas"] = [
+                {"id": r.id, "nombre": r.nombre or "Reserva", "tipo": r.tipo, "lat": r.lat, "lon": r.lon, "distancia_m": round(r.distance_m, 1)}
+                for r in db.find_reservas_cercanas(lat, lon, float(cfg_split.get("radio_reserva_m", 400)),
+                                                   reglas_mufas.regex_palabras(cfg_split.get("palabras_reserva", ["RSV", "RVA", "RESERVA"])),
+                                                   rules["excluded_tipo_keywords"])]
+        except db.DatabaseError:
+            resultado["reservas_cercanas"] = []
+            avisos.append("No se pudieron consultar las reservas para sugerir un splitter secundario")
     # 8) Plan editable para el Excel de rutas de fusión (cliente -> potencia; aérea / corte no se tocan).
     try:
         resultado["plan_fusion"] = ruta_fusion_plan.armar(resultado)

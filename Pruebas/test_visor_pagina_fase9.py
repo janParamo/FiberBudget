@@ -100,7 +100,7 @@ async def _recorrido(mundo):
         assert len(filas) == 2 and any("SPLITTER UNO" in f for f in filas) and any("MF UNO" in f for f in filas), filas
         # ... and the same two open like a fan around the point (below it, each joined by a thin line); a click on one opens that one
         assert await p.evaluar("document.querySelectorAll('.lg-abanico').length") == 2
-        assert await p.evaluar("document.querySelectorAll('.leaflet-kmzEtiquetas-pane path').length") == 2           # the two legs
+        assert await p.evaluar("document.querySelectorAll('.leaflet-abanico-pane path').length") == 2           # the two legs
         caja = await p.evaluar("(() => { const r = document.querySelector('.lg-abanico').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
         centro = await _pixel(p, 12.13, -86.25)
         assert caja[1] > centro[1] + 10 and abs(caja[0] - centro[0]) > 20, (caja, centro)                                                          # below the point: the list stays above

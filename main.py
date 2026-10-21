@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 import db
 import mapa_ruta
+import reglas_mufas
 import origen
 import pdf_export
 import recalc
@@ -33,7 +34,8 @@ from config import (NI_LAT_MAX, NI_LAT_MIN, NI_LON_MAX, NI_LON_MIN,
 from excel_generator import generar_excel
 from presupuesto import (calcular_equipos, calcular_materiales, calcular_metraje_final,
                          calcular_presupuesto, count_turns, match_marked_poles,
-                         new_pole_positions_by_gaps, seleccionar_tecnologia)
+                         new_pole_positions_by_gaps, new_pole_positions_in_spans, requiere_visita_tecnica,
+                         seleccionar_tecnologia, tramos_aereos, tramos_ducto)
 
 settings = get_settings()          # fails fast if the .env is incomplete
 setup_logging(settings.log_file, settings.log_level)
@@ -305,8 +307,11 @@ def _resolver_conexion(lat: float, lon: float, rules: dict[str, Any], visio_con:
     farther fallback point.
     """
     kmz_radius = rules["connection"]["mufa_search_radius_m"]
+    mufas = reglas_mufas.configuracion(rules)
     try:
-        seg = db.find_nearest_connection_point(lat, lon, rules["excluded_tipo_keywords"], kmz_radius)
+        # never a mufa de corte / aérea / punta plana: by the folder of the KMZ (excluded_tipo_keywords) and by its name (mufas_no_usables)
+        seg = db.find_nearest_connection_point(lat, lon, rules["excluded_tipo_keywords"], kmz_radius,
+                                               excluded_names=reglas_mufas.patrones_sql(mufas))
     except db.NoSegmentFound:
         seg = None
     except db.DatabaseError:
@@ -315,6 +320,9 @@ def _resolver_conexion(lat: float, lon: float, rules: dict[str, Any], visio_con:
         seg = None
     busqueda = red_fibra_pg.buscar_origen(lat, lon, radio_m, visio_con)
     nodo = busqueda.nodo
+    if nodo is not None and reglas_mufas.motivo(nodo.get("nombre"), mufas):      # a Visio node of that kind cannot be the connection point either
+        log.info("Visio node %s ignored as connection point: %s", nodo.get("nombre"), reglas_mufas.motivo(nodo.get("nombre"), mufas))
+        nodo = None
     if (seg is None or seg.distance_m > kmz_radius) and nodo is not None and (
             seg is None or nodo["distancia_m"] < seg.distance_m):
         log.info("Connection point from Visio: %s (%.1f m); KMZ had %s", nodo["nombre"], nodo["distancia_m"],
@@ -376,7 +384,8 @@ def _elegir_por_ruta(seg: db.Segment, desde_visio: bool, lat: float, lon: float,
     try:
         candidatos = db.find_connection_candidates(
             lat, lon, rules["excluded_tipo_keywords"], float(config.get("candidate_radius_m", 2000)),
-            int(config.get("max_candidates", 5)) + 1, include_reserves=seg.is_reserve)
+            int(config.get("max_candidates", 5)) + 1, include_reserves=seg.is_reserve,
+            excluded_names=reglas_mufas.patrones_sql(reglas_mufas.configuracion(rules)))
     except db.DatabaseError:
         seleccion["error"] = "no se pudieron consultar otras mufas del KMZ"
         return seg, route, seleccion
@@ -505,6 +514,19 @@ def _generar_presupuesto(req: TicketRequest) -> dict[str, Any]:
             visio_con.close()
 
 
+def hardware_fibra(rules: dict[str, Any], cable_key: str, hay_ducto: bool) -> dict[str, Any]:
+    """The MATERIALES rules of the fibre and the hanging hardware for the cable type used. The fibre material is what is installed: the aerial
+    row, and also the duct row when the route goes through wells (only for the material of the cable type used)."""
+    cable = rules["cable"]
+    fibra = {etiqueta: dict(valor) if isinstance(valor, dict) else valor for etiqueta, valor in cable.get("fiber_material_from_install", {}).items()}
+    ducto = rules["route"].get("duct_install_row_label")
+    if hay_ducto and ducto:
+        etiqueta = cable["flat_material_label"] if cable_key == "flat" else cable["adss_material_label"]
+        if isinstance(fibra.get(etiqueta), dict) and "same_as_install" in fibra[etiqueta]:
+            fibra[etiqueta] = {"same_as_install": [fibra[etiqueta]["same_as_install"], ducto]}
+    return {**fibra, **cable.get("hardware_by_cable_type", {}).get(cable_key, {})}
+
+
 def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: Path | None = None,
                              get_route: Any = None,
                              new_poles_marked_existing_m: list[float] | None = None,
@@ -548,9 +570,12 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
             route_wkt,
             rules.get("fixed_events", {}).get("route_mufa_search_buffer_m", 15),
             rules["excluded_tipo_keywords"],
+            excluded_names=reglas_mufas.patrones_sql(reglas_mufas.configuracion(rules)),
         )
     except db.ExistingPolesQueryError:
         raise HTTPException(status_code=500, detail="Database mufa query failed")
+    mufas_cfg = reglas_mufas.configuracion(rules)
+    route_mufas = reglas_mufas.filtrar(route_mufas, mufas_cfg)
 
     # Intervened mufas: every mufa the new hilo passes from where the service is fed down
     # to the client, plus any other mufa on the new route. That path comes from the Visio
@@ -578,10 +603,11 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     if use_diagram_path:
         # path[0] is the connection mufa itself: keep its PostGIS id so route mufas dedupe.
         intervened[seg.id] = seg.nombre
-        intervened.update((f"diagrama:{name}", name) for name in origin.path[1:])
+        # the mufas de corte / aérea / punta plana of the path are passed by, not intervened
+        intervened.update((f"diagrama:{name}", name) for name in origin.path[1:] if reglas_mufas.usable(name, mufas_cfg))
         mufa_count_source = "diagramas"
     else:
-        intervened.update((mufa.id, mufa.nombre) for mufa in chain)
+        intervened.update((mufa.id, mufa.nombre) for mufa in reglas_mufas.filtrar(chain, mufas_cfg))
         mufa_count_source = "postgis" if seg.is_mufa else None
     for mufa in route_mufas:
         intervened.setdefault(mufa.id, mufa.nombre)
@@ -611,6 +637,13 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     existing_pole_records = db.deduplicate_existing_poles(existing_pole_records)
     existing_poles = len(existing_pole_records)
     existing_pole_positions_m = [pole.route_position_m for pole in existing_pole_records]
+    # Wells along the route: that stretch is installed in duct, not aerial (business_rules.yaml: ducto; presupuesto.tramos_ducto).
+    try:
+        pozos_m = db.find_pozos_near_route(route_wkt, float((rules.get("ducto") or {}).get("pozo_search_buffer_m", 15)))
+    except db.ExistingPolesQueryError:
+        log.warning("Ticket %s: the wells of the route could not be queried; aerial fibre on the whole route", req.ticket_id)
+        pozos_m = []
+    duct_spans = tramos_ducto(route.distance_m, pozos_m, rules)
     quantities = calcular_presupuesto(
         route.distance_m,
         route.points,
@@ -623,7 +656,10 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
         connection_is_reserve=seg.is_reserve,
         mufa_count=mufa_count,
         new_connections=1,
+        technical_visit=requiere_visita_tecnica([req.client_name, req.raw_comment, req.service_type], rules),
+        duct_spans=duct_spans or None,
     )
+    existing_poles = quantities[rules["poles"]["existing_pole_row_label"]]      # the poles inside a duct stretch are not used
     pole_spacing_m = rules["poles"]["spacing_m"]
     turns = count_turns(route.points, rules["poles"]["corner_angle_deg"])
     new_pole_label = rules["poles"]["new_pole_row_label"]
@@ -635,9 +671,12 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
         # Viewer only: new poles the user saw standing on the map count as existing poles.
         marked_m, unmatched_m = match_marked_poles(
             new_poles_marked_existing_m,
-            new_pole_positions_by_gaps(route.distance_m, pole_spacing_m, existing_pole_positions_m,
-                                       rules["poles"].get("max_span_m"),
-                                       rules["poles"].get("max_span_between_existing_m")))
+            (new_pole_positions_in_spans(tramos_aereos(route.distance_m, duct_spans), pole_spacing_m, existing_pole_positions_m,
+                                         rules["poles"].get("max_span_m"), rules["poles"].get("max_span_between_existing_m"))
+             if duct_spans else
+             new_pole_positions_by_gaps(route.distance_m, pole_spacing_m, existing_pole_positions_m,
+                                        rules["poles"].get("max_span_m"),
+                                        rules["poles"].get("max_span_between_existing_m"))))
         marked = min(len(marked_m), quantities[new_pole_label])
         quantities[new_pole_label] -= marked
         quantities[rules["poles"]["existing_pole_row_label"]] += marked
@@ -676,6 +715,9 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
         "mufa_distances_m": [round(mufa.distance_m, 2) for mufa in route_mufas],
         "quantities": quantities,
     }
+    if duct_spans:                                   # only with wells: the answer of a route without them keeps its keys
+        budget["duct_m"] = round(sum(b - a for a, b in duct_spans), 1)
+        budget["duct_spans_m"] = [[a, b] for a, b in duct_spans]
     if new_poles_marked_existing_m is not None:      # viewer only: the API response keeps its keys
         budget["new_poles_marked_existing_m"] = [round(position, 2) for position in marked_m[:marked]]
     distance_km = round(route.distance_m / 1000, 3)
@@ -720,10 +762,9 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
         "raw_comment": req.raw_comment,
         "quantities": quantities,
         "materials": {**equipment, **pole_material},
-        "hardware": {**rules["cable"].get("fiber_material_from_install", {}),
-                     **rules["cable"].get("hardware_by_cable_type", {}).get(materials["cable_key"], {})},
+        "hardware": hardware_fibra(rules, materials["cable_key"], bool(duct_spans)),
         "route_fields": {
-            "origin_node": origin.origin_mufa or "",
+            "origin_node": "",          # only the node's traffic origin goes in the Excel, never the mufa's (rule of 2026-10-20)
             "traffic_node": traffic_node,
             "connection_point": f"{seg.lat:.6f}, {seg.lon:.6f}"
                                 + red_fibra_pg.leyenda_punto_conexion(origen_block),

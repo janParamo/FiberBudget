@@ -310,3 +310,42 @@ def test_export_adds_the_strip_to_the_configured_workbook(entorno, tmp_path, mon
     abierto = api.exportar_fusion(plan, {})
     assert abierto["ok"] is False and abierto["abierto"] is True and "Excel" in abierto["error"]
     assert exportar_fusion  # imported
+
+
+def _ruta_de(nombres):
+    """Fusion stops, OLT side first; the last one is the connection mufa."""
+    return [_parada(n, 12.0 + i / 1000, -86.0, orden=i + 1, es_conexion=(i == len(nombres) - 1)) for i, n in enumerate(nombres)]
+
+
+RESERVA = {"id": 9, "nombre": "PM_I7573 RSV", "tipo": "reserva", "lat": 12.0501, "lon": -86.0502, "distancia_m": 85.4}
+
+
+def test_more_than_ten_mufas_suggest_a_secondary_splitter_in_a_new_mufa(entorno):
+    from visor_rutas import ruta_fusion_plan as plan
+    datos = {"origen_trafico": {"nodo": "NODO X"}, "ruta_fusion": _ruta_de([f"MF {i}" for i in range(1, 13)]), "reservas_cercanas": [RESERVA]}
+    p = plan.armar(datos)
+    nueva = p["pasos"][0]
+    assert (nueva["tipo"], nueva["nombre"], nueva["splitter"], nueva["tocar"]) == ("nueva", "MF NUEVA", "1/8", True)       # first: next to the client
+    assert (nueva["lat"], nueva["lon"]) == (12.0501, -86.0502) and len(p["pasos"]) == 13                                    # on the reserva; the path stays
+    assert p["lineas"][0].startswith("En MF NUEVA 12.050100°, -86.050200° instalar MF FOSC y ingresar la acometida del cliente. H1 del cliente fusionarlo con H__ del SPL 1/8")
+    aviso = next(a for a in p["avisos_rojos"] if "splitter secundario" in a)
+    assert "12 mufas" in aviso and "PM_I7573 RSV" in aviso and "85 m" in aviso and "splitter principal con hilos disponibles" in aviso
+    assert plan.redactar(p)["tocadas"] == 13                                                                               # the plan stays editable
+
+
+def test_ten_mufas_or_fewer_need_no_new_splitter_and_the_mufas_passed_by_do_not_count(entorno):
+    from visor_rutas import ruta_fusion_plan as plan
+    diez = plan.armar({"origen_trafico": {"nodo": "NODO X"}, "ruta_fusion": _ruta_de([f"MF {i}" for i in range(1, 11)]), "reservas_cercanas": [RESERVA]})
+    assert diez["pasos"][0]["tipo"] == "mufa" and not any("splitter secundario" in a for a in diez["avisos_rojos"])          # exactly 10: no
+    # 14 mufas of which 4 are corte / aérea / punta plana / mini nodo: 10 to intervene, so no suggestion either
+    nombres = [f"MF {i}" for i in range(1, 11)] + ["MC", "MF AEREA 2", "MF PUNTA PLANA", "MF MINI NODO 3"]
+    nombres = nombres[:5] + nombres[10:] + nombres[5:10]                                    # the connection mufa stays the last one
+    catorce = plan.armar({"origen_trafico": {"nodo": "NODO X"}, "ruta_fusion": _ruta_de(nombres), "reservas_cercanas": [RESERVA]})
+    assert catorce["tocadas"] == 10 and catorce["pasos"][0]["tipo"] == "mufa"
+
+
+def test_without_a_reserva_nearby_the_plan_only_warns(entorno):
+    from visor_rutas import ruta_fusion_plan as plan
+    p = plan.armar({"origen_trafico": {"nodo": "NODO X"}, "ruta_fusion": _ruta_de([f"MF {i}" for i in range(1, 13)]), "reservas_cercanas": []})
+    assert p["pasos"][0]["tipo"] == "mufa" and len(p["pasos"]) == 12
+    assert any("no se encontró ninguna reserva cerca del cliente" in a for a in p["avisos_rojos"])

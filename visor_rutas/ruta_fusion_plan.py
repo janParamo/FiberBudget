@@ -18,6 +18,8 @@ import unicodedata
 from typing import Any
 
 import main
+import reglas_mufas
+from visor_rutas import splitters_diagrama
 
 HILO_CLIENTE = "H1"
 HILO_DESCONOCIDO = "H__"
@@ -34,23 +36,14 @@ def _plano(texto: Any) -> str:
 
 
 def reglas() -> dict[str, Any]:
-    cfg = (main.load_rules(main.settings.rules_path).get("ruta_fusion") or {})
-    return {"palabras": [_plano(p) for p in (cfg.get("no_tocar") or {}).get("palabras", ["AEREA", "CORTE"])],
-            "excepciones": [_plano(p) for p in (cfg.get("no_tocar") or {}).get("excepciones", ["FUERZA AEREA"])]}
+    """The rules of the mufas that cannot be used (business_rules.yaml: `mufas_no_usables`, reglas_mufas.py)."""
+    return reglas_mufas.configuracion(main.load_rules(main.settings.rules_path))
 
 
 def motivo_no_tocar(nombre: str, config: dict[str, Any] | None = None) -> str | None:
-    """"aérea" / "de corte" when the mufa's name says so (whole words; the exceptions are places, not mufas), else None."""
-    config = config or reglas()
-    plano = f" {_plano(nombre)} "
-    for excepcion in config["excepciones"]:
-        plano = plano.replace(f" {excepcion} ", " ")
-    palabras = set(plano.split())
-    if palabras & {"AEREA", "AEREO", "AEREAS", "AEREOS"} & set(config["palabras"]):
-        return "aérea"
-    if palabras & {"CORTE", "CORTES"} & set(config["palabras"]):
-        return "de corte"
-    return None
+    """"de corte" / "aérea" / "punta plana" / "mini nodo" when the mufa's name says so (whole words; the exceptions are places,
+    not mufas), else None: the fusion passes by a mufa like that."""
+    return reglas_mufas.motivo(nombre, config or reglas(), en_ruta_de_fusion=True)
 
 
 def hilo(valor: Any) -> str:
@@ -99,11 +92,41 @@ def armar(datos: dict[str, Any]) -> dict[str, Any]:
         pasos.append({"id": f"p{i + 1}", "tipo": "mufa", "nombre": p["nombre"], "lat": p.get("lat"), "lon": p.get("lon"), "tocar": motivo is None,
                       "motivo": motivo, "hilo_cliente": ha, "hilo_potencia": hb, "splitter": None, "texto_manual": None,
                       "fuente_hilos": "excel" if HILO_DESCONOCIDO not in (ha, hb) else p.get("fuente_hilos", "sin_dato"),
-                      "por_nombre": bool(p.get("emparejado_por_nombre"))})
+                      "por_nombre": bool(p.get("emparejado_por_nombre")), "info_splitter": None})
     avisos = []
+    # Splitters read from the diagrams: each usable stop says which one it has; the first stop (client side) with a secondary that has free
+    # ports gets its splitter (the hilo is fused there). A secondary whose ports nobody has confirmed is only mentioned.
+    usado = False
+    for paso, parada in zip(pasos, paradas):
+        elegido = splitters_diagrama.preferido(parada.get("splitters_diagrama") or [])
+        if elegido is None or not paso["tocar"]:
+            continue
+        paso["info_splitter"] = splitters_diagrama.descripcion(elegido)[:200]
+        if not usado and elegido["clase"] == "secundario" and elegido["libres"] and elegido.get("ratio") in SPLITTERS:
+            paso["splitter"], usado = elegido["ratio"], True
+            avisos.append(f"{con_mf(paso['nombre'])}: {paso['info_splitter']}; se fusiona ahí. Validar los puertos en el diagrama")
+        elif elegido["clase"] == "secundario" and elegido["desconocidos"]:
+            avisos.append(f"{con_mf(paso['nombre'])}: tiene un splitter secundario con puertos por confirmar; ábralo en «Splitters» de la parada")
     if paradas and paradas[0]["nombre"] and motivo_no_tocar(paradas[0]["nombre"], config):
         avisos.append(f"La mufa de conexión {paradas[0]['nombre']} es {motivo_no_tocar(paradas[0]['nombre'], config)}: "
                       "el cliente entra ahí, así que se toca; validar con Planta Externa")
+    # More mufas than `splitter_secundario.max_mufas` up to the splitter: suggest a secondary splitter in a NEW mufa on the nearest reserva
+    # (calculo.py looked the reservas up). A suggestion: the user edits or removes the step; the budget does not change.
+    maximo = int((main.load_rules(main.settings.rules_path).get("splitter_secundario") or {}).get("max_mufas", 10))
+    tocadas = sum(1 for p in pasos if p["tocar"])
+    reservas = datos.get("reservas_cercanas") or []
+    if tocadas > maximo:
+        if reservas:
+            r = reservas[0]
+            pasos.insert(0, {"id": "p0", "tipo": "nueva", "nombre": "MF NUEVA", "lat": r.get("lat"), "lon": r.get("lon"), "tocar": True, "motivo": None,
+                             "hilo_cliente": HILO_DESCONOCIDO, "hilo_potencia": HILO_DESCONOCIDO, "splitter": "1/8", "texto_manual": None,
+                             "fuente_hilos": "sin_dato", "por_nombre": False})
+            avisos.append(f"Hay {tocadas} mufas por intervenir (más de {maximo}): se sugiere instalar un splitter secundario en una MF NUEVA en la reserva "
+                          f"{r.get('nombre') or ''} ({r.get('distancia_m', 0):.0f} m del cliente) y conectarlo al splitter principal con hilos disponibles; "
+                          "validar con Planta Externa")
+        else:
+            avisos.append(f"Hay {tocadas} mufas por intervenir (más de {maximo}): conviene instalar un splitter secundario en una MF NUEVA sobre una reserva, "
+                          "pero no se encontró ninguna reserva cerca del cliente")
     plan = {"pasos": pasos, "potencia": nodo, "compartir_potencia": False, "avisos_rojos": avisos}
     return redactar(plan)
 
@@ -134,7 +157,8 @@ def redactar(plan: dict[str, Any]) -> dict[str, Any]:
         pasos.append({"id": str(p.get("id") or f"p{i + 1}")[:20], "tipo": tipo, "nombre": nombre, "lat": _numero(p.get("lat")), "lon": _numero(p.get("lon")),
                       "tocar": bool(p.get("tocar", True)), "motivo": p.get("motivo") if isinstance(p.get("motivo"), str) else None,
                       "hilo_cliente": hilo(p.get("hilo_cliente")), "hilo_potencia": hilo(p.get("hilo_potencia")), "splitter": splitter,
-                      "texto_manual": manual, "fuente_hilos": p.get("fuente_hilos") or "usuario", "por_nombre": bool(p.get("por_nombre"))})
+                      "texto_manual": manual, "fuente_hilos": p.get("fuente_hilos") or "usuario", "por_nombre": bool(p.get("por_nombre")),
+                      "info_splitter": " ".join(str(p.get("info_splitter") or "").split())[:200] or None})
     tocados = [p for p in pasos if p["tocar"]]
     lineas = []
     for k, p in enumerate(tocados):

@@ -230,6 +230,7 @@
   /** Tooltip and click handlers of the layer the element shows now (also after its icon was replaced by one of its own). */
   function ligar(it) {
     const { capa, linea, c } = it;
+    capa._infoSuperpuesto = () => ({ nombre: it.f.properties.n || c.nombre, detalle: rutaCorta(c.ruta) });      // for mapa/superpuestos.js (several icons at one point)
     capa.bindTooltip(esc(it.f.properties.n || c.nombre), { sticky: !!linea, direction: "top", className: "hover" });
     capa.on("click", (e) => alClic(it, e));
     if (esMufa(it)) {                     // existing mufa: Enter or double click -> its editor (an empty one is created if it was not migrated)
@@ -460,89 +461,12 @@
     }
   }
 
-  // ------------------------------------------------------------------ varios elementos en el mismo punto (una mufa y un splitter, un poste y su mufa…)
-  const RADIO_SUPERPUESTOS_PX = 14;
-
-  /** Pixel centre of what is drawn for a point (an icon is not centred on its coordinate: a drop points with its tip). */
-  function centroVisual(it) {
-    const p = mapa.latLngToContainerPoint(it.capa.getLatLng());
-    const ic = it.capa.options && it.capa.options.icon && it.capa.options.icon.options;
-    if (ic && ic.iconSize && ic.iconAnchor) {
-      const tam = L.point(ic.iconSize), ancla = L.point(ic.iconAnchor);
-      return p.add([tam.x / 2 - ancla.x, tam.y / 2 - ancla.y]);
-    }
-    return p;
-  }
-
-  /** The points of the KMZ drawn within a few pixels of `punto` (container point), nearest first. Clustered posts do not count: they are not drawn alone. */
-  function superpuestos(punto) {
-    const vista = mapa.getBounds().pad(0.05), lista = [];
-    s.capas.forEach((capa) => {
-      if (!capa.enMapa) return;
-      capa.items.forEach((x) => {
-        if (!x || x.borrado || x.linea || !x.capa.getLatLng) return;
-        if (!vista.contains(x.capa.getLatLng()) || !capa.grupo.hasLayer(x.capa)) return;
-        if (capa.grupo.getVisibleParent && capa.grupo.getVisibleParent(x.capa) !== x.capa) return;
-        const d = centroVisual(x).distanceTo(punto);
-        if (d <= RADIO_SUPERPUESTOS_PX) lista.push([d, x]);
-      });
-    });
-    return lista.sort((a, b) => a[0] - b[0]).map(([, x]) => x);
-  }
-
-  function muestraElemento(it) {
-    const est = it.est || {};
-    if (it.estilo && it.estilo.icono && window.Iconos) return window.Iconos.svg({ ...it.estilo.icono, escala: 1, opacidad: 1 }, 22);
-    return muestra(est, 18);
-  }
-
-  /** Two or more points under the click: a list to choose which one (each one then opens its own popup, with Move / Rename / Enter the mufa…). */
-  function elegirSuperpuesto(lista, ll) {
-    window.__superpuestos = lista;
-    const filas = lista.map((x, n) => `<button type="button" class="lg-sup" data-superpuesto="${n}" title="${esc(rutaCorta(x.c.ruta))}">
-        <span class="lg-sup-icono">${muestraElemento(x)}</span><span class="lg-sup-texto"><b>${esc(x.f.properties.n || x.c.nombre)}</b><br><span class="nota">${esc(rutaCorta(x.c.ruta))}</span></span></button>`).join("");
-    const popup = L.popup({ maxWidth: 340, autoPanPaddingTopLeft: [20, 60] }).setLatLng(ll)
-      .setContent(`<div class="popup lg-popup"><h3>${lista.length} elementos aquí</h3><div class="tipo">Elija cuál (en la lista o en el abanico)</div><div class="lg-sups">${filas}</div></div>`).openOn(mapa);
-    abrirAbanico(lista, ll, popup);
-  }
-
-  // The stacked points also open like a fan: each one at its own place (below the point, the list stays above), joined to it by a thin line.
-  let abanico = null;
-  function quitarAbanico() {
-    if (abanico) { mapa.removeLayer(abanico); abanico = null; }
-  }
-
-  function abrirAbanico(lista, centro, popup) {
-    quitarAbanico();
-    abanico = L.layerGroup().addTo(mapa);
-    const c = mapa.latLngToContainerPoint(centro), n = lista.length, radio = Math.max(38, 13 * n + 18);
-    lista.forEach((it, i) => {
-      const grados = n === 1 ? 90 : 25 + (130 * i) / (n - 1);                // 25°..155° with the screen's y downwards: the lower half
-      const rad = (grados * Math.PI) / 180;
-      const ll = mapa.containerPointToLatLng(L.point(c.x + radio * Math.cos(rad), c.y + radio * Math.sin(rad)));
-      L.polyline([centro, ll], { color: "#2b2b2b", weight: 1.6, opacity: 0.85, interactive: false, pane: "kmzEtiquetas" }).addTo(abanico);
-      L.marker(ll, { icon: L.divIcon({ className: "icono", html: `<div class="lg-abanico">${muestraElemento(it)}</div>`, iconSize: [32, 32], iconAnchor: [16, 16] }),
-                     pane: "kmzEtiquetas", zIndexOffset: 3000, keyboard: false })
-        .bindTooltip(esc(it.f.properties.n || it.c.nombre), { direction: "right", offset: [10, 0], className: "hover" })
-        .on("click", (e) => { L.DomEvent.stopPropagation(e); abrirPopup(it, it.capa.getLatLng()); })
-        .addTo(abanico);
-    });
-    // Whatever closes the list (a click elsewhere, choosing one…) folds the fan. A little later: a click on a fan icon first closes the popup
-    // (Leaflet's «preclick») and only then reaches the icon, which must still be there.
-    popup.on("remove", () => setTimeout(quitarAbanico, 150));
-    mapa.once("zoomstart", () => { quitarAbanico(); mapa.closePopup(popup); });
-  }
-
   function alClic(it, e) {
     if (ctx.midiendo()) {                // measuring: a marker click adds a point (lines bubble to the map)
       if (it.capa instanceof L.Marker) ctx.agregarPunto(e.latlng);
       return;
     }
     if (e.originalEvent) L.DomEvent.stopPropagation(e);
-    if (!it.linea && e.originalEvent) {
-      const lista = superpuestos(mapa.mouseEventToContainerPoint(e.originalEvent));
-      if (lista.length > 1) { elegirSuperpuesto(lista, it.capa.getLatLng()); return; }
-    }
     // Enter opens its migrated editor (else its Visio diagram)
     window.__mufaExistente = esMufa(it) ? { nombre: it.orig.n, lat: it.orig.ll && it.orig.ll[0], lon: it.orig.ll && it.orig.ll[1] } : null;
     abrirPopup(it, it.capa.getLatLng ? it.capa.getLatLng() : e.latlng);
@@ -995,11 +919,6 @@
     document.addEventListener("click", (e) => {
       const diagrama = e.target.closest("[data-diagrama-mufa]");
       if (diagrama && window.visor) window.visor.abrirDiagramaPorNombre(diagrama.dataset.diagramaMufa);
-      const sup = e.target.closest("[data-superpuesto]");
-      if (sup && window.__superpuestos) {
-        const x = window.__superpuestos[Number(sup.dataset.superpuesto)];
-        if (x) abrirPopup(x, x.capa.getLatLng());
-      }
       if (e.target.closest("[data-entrar-mufa]") && window.__kmzItem) { mapa.closePopup(); entrarMufa(window.__kmzItem); }
       const img = e.target.closest("img.lg-foto");
       if (img && img.src) verFotoGrande(img.src);

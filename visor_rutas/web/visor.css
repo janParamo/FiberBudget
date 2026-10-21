@@ -661,6 +661,9 @@ table.xl td.sin-calculo { color: #9a9a9a; text-align: center; }
 .lg-sup:hover { background: #e7f0ff; }
 .lg-abanico { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: #fff; border: 2px solid #2b2b2b; border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,.45); cursor: pointer; }
 .lg-abanico:hover { background: #e7f0ff; }
+.lg-abanico svg, .lg-abanico img, .lg-abanico .icono { max-width: 24px; max-height: 24px; }
+.sup-punto { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #1a1a1a; }
+.lg-sup-icono svg, .lg-sup-icono img { max-width: 24px; max-height: 24px; }
 .lg-sup-icono { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; }
 .lg-sup-texto { min-width: 0; line-height: 1.25; }
 .lg-popup .lg-fotos { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -736,3 +739,21 @@ body.ventana-aparte .mensaje { bottom: 16px; }
 .iv-nombre { flex: 1; min-width: 0; font-size: 13px; }
 .lg-fila.accion { cursor: pointer; font-weight: 600; }
 .lg-fila.accion:hover { background: #e7f0ff; }
+
+/* ---------------------------------------------------------------- splitters de los diagramas (mapa/splitters.js) */
+.bloque-splitters { margin-top: 6px; }
+.lista-splitters { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.splitter-fila { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.splitter-texto { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insignia.splitter-secundario { background: #ece1f6; color: #5a2a86; }
+.insignia.splitter-principal { background: #fdecc8; color: #8a5a00; }
+.insignia.splitter-por_confirmar { background: #eceef1; color: #5b6270; }
+.splitter-modal { align-items: center; justify-content: center; }
+.splitter-caja { flex: 0 1 460px; max-height: 90vh; }
+.splitter-cuerpo { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.splitter-puertos { border-collapse: collapse; }
+.splitter-puertos th { width: 28px; text-align: right; padding-right: 8px; }
+.splitter-puertos td { padding: 2px 8px 2px 0; }
+.splitter-puertos td label { margin-right: 10px; white-space: nowrap; }
+.splitter-error { color: var(--error); margin: 0; }
+.splitter-botones { display: flex; gap: 8px; }

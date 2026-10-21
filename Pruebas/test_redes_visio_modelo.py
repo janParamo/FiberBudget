@@ -239,7 +239,7 @@ def test_real_upgrade_from_008_backs_up_first(base_redes, tmp_path, monkeypatch)
                           "VALUES (%s, 'C1', 24, 12, %s, %s, %s, 'SRID=4326;LINESTRING(-86.3 12.1, -86.3 12.11)', 1112) RETURNING id",
                           (pid, a, b, json.dumps([{**_v(12.1, -86.3), "elemento_id": a}, {**_v(12.11, -86.3), "elemento_id": b}]))).fetchone()["id"]
         mufa.sincronizar_hilos(con, cid, 24, yo["id"])
-        assert migrar.aplicar(con) == [9, 10, 11, 12, 13, 14, 15]           # all the real folder: 009 to 015 were missing
+        assert migrar.aplicar(con) == [9, 10, 11, 12, 13, 14, 15, 16]           # all the real folder: 009 to 016 were missing
         hechos = sorted((tmp_path / "respaldos").glob("respaldo_redes_*.json"))
         assert len(hechos) == 7                                            # one before each marked migration, never overwritten
         datos = json.loads(hechos[0].read_text(encoding="utf-8"))
@@ -277,3 +277,4 @@ def test_automatic_backup_before_a_marked_migration(base_minima, tmp_path, monke
     # an empty database (fresh install, tests) needs no backup
     con.execute("UPDATE redes.proyectos SET borrado_en = now()")
     assert migrar.respaldo_previo(con, migrar.Migracion(992, "x", "-- respaldo: previo", "0")) is None
+

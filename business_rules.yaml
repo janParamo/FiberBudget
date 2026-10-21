@@ -4,6 +4,23 @@ excluded_tipo_keywords:
   - "mal estado"
   - "deshabilitado"
   - "sin info"
+  # Folders of the KMZ whose mufas cannot be used (rules of 2026-10-20; the names are checked too: `mufas_no_usables` below)
+  - "de corte"
+  - "aerea"
+  - "punta plana"
+  - "plancha"
+
+# Mufas that cannot be used (reglas_mufas.py): not as the connection point (the nearest mufa), not counted as intervened mufas up to the
+# splitter, and the fusion route passes them by. Recognised by NAME (whole words, no accents, any case); the exceptions are places, not mufas
+# ("MF FUERZA AEREA"). `solo_ruta_de_fusion`: also left out of the fusion route only (a mini nodo cannot be used there).
+mufas_no_usables:
+  motivos:
+    "de corte": ["MC", "CORTE", "CORTES"]
+    "aérea": ["AEREA", "AEREAS", "AEREO", "AEREOS"]
+    "punta plana": ["PUNTA PLANA", "PUNTA PLANCHA", "PLANCHA"]
+  solo_ruta_de_fusion:
+    "mini nodo": ["MINI NODO", "MN"]
+  excepciones: ["FUERZA AEREA"]
 
 budget_alerts:
   distance_threshold_km: 5.0
@@ -57,6 +74,7 @@ connection:
       - "BACKBONE"
 
 route:
+  duct_install_row_label: "Instalacion de Fibra en Ducto ADSS-FLAT/FTTH (6H - 12H) / ADSS (24H - 48H)"
   aerial_install_row_label: "Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)"
   adss_install_row_label: "Instalacion de Fibra Optica Area ADSS (24H - 48H)"
   safety_margin: 0.0
@@ -64,6 +82,14 @@ route:
   reserve_interval_m: 300
   reserve_percent: 0.20
   connection_reserve_m: 35
+
+# Wells (pozos) along the route (rule of Jan, 2026-10-20): where the route goes through wells the cable is installed in DUCT (row
+# route.duct_install_row_label), not aerial, and no poles are needed there; where the route leaves the wells for the poles, one stretch is duct and
+# the other aerial (the same in a building: duct inside, aerial outside). The fibre material counts both. See presupuesto.tramos_ducto.
+ducto:
+  pozo_search_buffer_m: 15       # a well this close to the route is on it
+  pozo_gap_max_m: 100            # wells farther apart than this are not one duct run
+  extender_a_extremo_m: 60       # a run that ends this close to the connection mufa or to the client goes all the way to it
 
 poles:
   new_pole_row_label: "Instalacion de poste metalico tipo tuvo 8 mt."
@@ -93,6 +119,7 @@ cable:
   green_preformed_label: "Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"
   # Fiber material = aerial installation metres only. Duct is not budgeted for now: the
   # template's Flat formula (=G12+G28) is replaced and the ADSS row (constant 0) gets one.
+  # With wells on the route (ducto) the material of the cable type used also counts the duct row (main.py: hardware_fibra).
   fiber_material_from_install:
     "FIBRA OPTICA 12 Hilos ADSS Flat SingleMode Span 100 m":
       same_as_install: "Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)"
@@ -125,6 +152,9 @@ splice:
 
 fixed_events:
   backbone_splice_per_mufa: 1
+  # The splices of the backbone row are the mufas intervened up to the splitter PLUS two of the splitter itself (rule of 2026-10-20);
+  # only when the connection is an existing mufa (a reserva installs a new one).
+  backbone_splice_extra_splitter: 2
   last_mile_splice_per_new_connection: 1
   odf_per_new_connection: 1
   labeling_min_per_new_connection: 1
@@ -163,9 +193,12 @@ equipment:
     12: "Odf Rack 12 Acopladores"
     24: "Odf Rack 24 Acopladores"
 
-# Not included in the budget: the template row stays at 0.
+# A technical visit is budgeted when the client is in a plaza, a building or a mall (words of the client's name, the ticket comment or the
+# service type; whole words, no accents); otherwise the row stays at 0. Rule of 2026-10-20.
 technical_visit:
   visit_row_label: "Visita Técnica (Certificación de FO existente cuantificación de obra)"
+  quantity: 1
+  keywords: ["PLAZA", "PLAZAS", "EDIFICIO", "EDIFICIOS", "CENTRO COMERCIAL", "CENTROS COMERCIALES", "CC"]
 
 # These rows remain available for a technician to complete manually.
 manual_zero_row_labels:
@@ -265,13 +298,16 @@ visor_estimacion:
   servicio_sobre_umbral: "Empresarial"
   cliente: "Estimación visor"
 
-# Ruta de fusión (visor_rutas/ruta_fusion_plan.py): qué mufas se intervienen. Una mufa aérea (suspendida en los cables) y una mufa
-# de corte NO se tocan; se reconocen por el nombre (palabras completas, sin acentos). Las excepciones son lugares, no mufas
-# ("MF FUERZA AEREA"). La mufa donde entra el cliente siempre se toca. El usuario puede marcar / desmarcar a mano en el visor.
-ruta_fusion:
-  no_tocar:
-    palabras: [AEREA, CORTE]
-    excepciones: ["FUERZA AEREA"]
+# Splitter secundario nuevo (rule of Jan, 2026-10-20): when the fusion route has MORE than `max_mufas` mufas to intervene up to the splitter, the plan
+# suggests installing a secondary splitter in a NEW mufa on the nearest reserva (a point of the folder «reserva», or a pole / point whose name says
+# RSV, RVA or RESERVA) and connecting it to the principal splitter that has free hilos. It is only a suggestion in the plan: the budget is not changed.
+splitter_secundario:
+  max_mufas: 10
+  radio_reserva_m: 400
+  palabras_reserva: ["RSV", "RVA", "RESERVA"]
+
+# Ruta de fusión (visor_rutas/ruta_fusion_plan.py): qué mufas se intervienen. Las mufas de `mufas_no_usables` (corte, aérea, punta plana) y los
+# mini nodos NO se tocan: la fusión pasa de largo. La mufa donde entra el cliente siempre se toca. El usuario puede marcar / desmarcar a mano.
 
 # Coordenadas masivas del visor (visor_rutas/masivas.py): un presupuesto aproximado por cada coordenada, en segundo plano.
 #   google_por_minuto: rutas de Google (Directions) que se piden por minuto; el lote espera si las alcanza

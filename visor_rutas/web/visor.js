@@ -777,6 +777,7 @@
       ${resto ? `<details><summary>${textos.length - 4} texto(s) más del diagrama</summary><ul class="lista-textos">${resto}</ul></details>` : ""}
       ${clientes ? `<details><summary>${p.clientes.length} cliente(s) fusionado(s) en esta mufa</summary><ul class="lista-textos">${clientes}</ul></details>` : ""}
       ${piloto}
+      ${window.SplitterPuertos ? window.SplitterPuertos.html(p) : ""}
       <div class="acciones-parada">
         ${diagramas.length ? `<button type="button" class="btn btn-chico" data-diagrama="${p.orden}">Ver diagrama${diagramas.length > 1 ? ` (${diagramas.length})` : ""}</button>` : `<span class="nota">Sin diagrama</span>`}
       </div>
@@ -2215,6 +2216,13 @@
       if (centrar && !centrar.disabled) centrarParada(centrar.dataset.centrar);
       const ver = e.target.closest("[data-diagrama]");
       if (ver) abrirDiagrama(ver.dataset.diagrama);
+      const spl = e.target.closest("[data-splitter]");
+      if (spl && window.SplitterPuertos) {
+        const [orden, i] = spl.dataset.splitter.split(":").map(Number);
+        const parada = ((datos && datos.ruta_fusion) || []).find((x) => x.orden === orden);
+        const s = parada && (parada.splitters_diagrama || [])[i];
+        if (s) window.SplitterPuertos.abrir(s, (r) => { window.SplitterPuertos.aplicar(s, r); renderFusion(); mensaje("Splitter guardado", "ok"); });
+      }
     });
     conectarDiagrama();
     conectarBuscador();

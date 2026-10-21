@@ -530,7 +530,9 @@ def _hardware_assignments(ws: Any, hardware: dict[str, Any]) -> dict[str, Any]:
     for label, value in hardware.items():
         target = f"G{row_of(label)}"
         if isinstance(value, dict) and "same_as_install" in value:
-            assignments[target] = Formula(f"G{install_row_of(value['same_as_install'])}")
+            origen = value["same_as_install"]
+            etiquetas = origen if isinstance(origen, (list, tuple)) else [origen]            # several rows add up (aerial + duct)
+            assignments[target] = Formula("+".join(f"G{install_row_of(e)}" for e in etiquetas))
         elif isinstance(value, dict):
             assignments[target] = Formula(f"G{row_of(value['same_as'])}")
         else:

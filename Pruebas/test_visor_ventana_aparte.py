@@ -204,8 +204,13 @@ async def _marcador_de_busqueda_no_tapa_la_mufa():
         pos = await p.evaluar("""(() => { const m = window.visor.mapa, q = m.latLngToContainerPoint([12.1115, -86.2340]), r = m.getContainer().getBoundingClientRect();
                                           return {x: Math.round(r.left + q.x), y: Math.round(r.top + q.y - 10)}; })()""")
         await p.clic(pos["x"], pos["y"])
-        await asyncio.sleep(0.5)
-        assert await p.evaluar("window.__clics") == {"kmz": 1, "buscada": 0}                           # the click reaches the mufa's marker (its popup: Entrar a la mufa, diagrama…)
+        await p.esperar("document.querySelector('.sup-popup')", 5)
+        # the two icons on one point are offered (list and fan): nothing opens by itself, and choosing the mufa's own marker reaches it
+        assert await p.evaluar("window.__clics") == {"kmz": 0, "buscada": 0}
+        assert await p.evaluar("document.querySelectorAll('.sup-popup .lg-sup').length") == 2
+        await p.evaluar("[...document.querySelectorAll('.sup-popup .lg-sup')].find(b => !b.innerText.includes('FERRETERIA')).click(); true")
+        await p.esperar("window.__clics.kmz === 1", 5)
+        assert await p.evaluar("window.__clics") == {"kmz": 1, "buscada": 0}                           # the mufa's marker (its popup: Entrar a la mufa, diagrama…)
         assert await p.errores() == []
 
 

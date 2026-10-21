@@ -472,7 +472,7 @@ def test_upstream_chain_sets_interventions_backbone_and_labels(client, monkeypat
 
     quantities = data["quantities"]
     assert quantities["Intervencion de Mufa Existente"] == 3
-    assert quantities["Empalme de fibra optica cables de Red Backbone (core/troncal)"] == 3
+    assert quantities["Empalme de fibra optica cables de Red Backbone (core/troncal)"] == 3 + 2      # the mufas up to the splitter plus two of the splitter
     assert quantities["Rotulacion de Cable de fibra en mufas y ODF"] == 3
     assert [m["name"] for m in data["budget"]["intervened_mufas"]] == [
         "MUFA REBECA", "MF KAREN BERMUDEZ", "MF CACIQUE"]
@@ -528,7 +528,7 @@ def test_traced_diagram_path_sets_intervened_mufas(client, monkeypatch):
     quantities = data["quantities"]
     assert data["budget"]["mufa_count_source"] == "diagramas"
     assert quantities["Intervencion de Mufa Existente"] == 5
-    assert quantities["Empalme de fibra optica cables de Red Backbone (core/troncal)"] == 5
+    assert quantities["Empalme de fibra optica cables de Red Backbone (core/troncal)"] == 5 + 2
     assert quantities["Rotulacion de Cable de fibra en mufas y ODF"] == 5
     assert [m["name"] for m in data["budget"]["intervened_mufas"]] == [
         "MF EDIFICIO DELTA", *path[1:], None]

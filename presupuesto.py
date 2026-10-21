@@ -85,6 +85,67 @@ def count_new_poles_by_gaps(
     return len(positions) + max(0, int(extra_poles))
 
 
+def tramos_ducto(distance_m: float, pozo_positions_m: list[float], rules: dict[str, Any]) -> list[tuple[float, float]]:
+    """Stretches of the route (metres from the connection point) that go in duct, from the wells (pozos) along it. Rules of Jan, 2026-10-20:
+    where there are wells the fibre is installed in duct (not aerial) up to the nearest mufa / the client, and where the route leaves the wells
+    for the poles there is one aerial stretch and one duct stretch.
+
+    Wells no farther apart than `ducto.pozo_gap_max_m` belong to one duct run (first well .. last well); a run that ends within
+    `ducto.extender_a_extremo_m` of the connection mufa or of the client goes all the way to that end (the cable gets into the mufa / the
+    building through duct). Returns [] when there are no wells."""
+    cfg = rules.get("ducto") or {}
+    if not pozo_positions_m or distance_m <= 0:
+        return []
+    gap = float(cfg.get("pozo_gap_max_m", 100))
+    extremo = float(cfg.get("extender_a_extremo_m", 60))
+    posiciones = sorted(min(distance_m, max(0.0, float(p))) for p in pozo_positions_m)
+    corridas: list[list[float]] = [[posiciones[0], posiciones[0]]]
+    for p in posiciones[1:]:
+        if p - corridas[-1][1] <= gap:
+            corridas[-1][1] = p
+        else:
+            corridas.append([p, p])
+    tramos = []
+    for a, b in corridas:
+        if a <= extremo:
+            a = 0.0
+        if distance_m - b <= extremo:
+            b = distance_m
+        tramos.append((a, b))
+    fusion: list[tuple[float, float]] = []                     # runs that now touch are one
+    for a, b in tramos:
+        if fusion and a <= fusion[-1][1]:
+            fusion[-1] = (fusion[-1][0], max(fusion[-1][1], b))
+        else:
+            fusion.append((a, b))
+    return [(round(a, 3), round(b, 3)) for a, b in fusion if b > a]
+
+
+def tramos_aereos(distance_m: float, ducto: list[tuple[float, float]] | None) -> list[tuple[float, float]]:
+    """The rest of the route: the stretches that go on poles (the whole route when there is no duct)."""
+    if not ducto:
+        return [(0.0, float(distance_m))] if distance_m > 0 else []
+    aereos, cursor = [], 0.0
+    for a, b in sorted(ducto):
+        if a > cursor:
+            aereos.append((cursor, a))
+        cursor = max(cursor, b)
+    if distance_m > cursor:
+        aereos.append((cursor, float(distance_m)))
+    return [(round(a, 3), round(b, 3)) for a, b in aereos]
+
+
+def new_pole_positions_in_spans(spans: list[tuple[float, float]], spacing_m: float, existing_positions_m: list[float],
+                                max_span_m: float | None = None, max_span_between_existing_m: float | None = None) -> list[float]:
+    """Route position of each new pole when only `spans` (the aerial stretches) get poles: every stretch is filled on its own with the poles
+    that already stand inside it. The positions are measured from the start of the whole route."""
+    nuevos: list[float] = []
+    for a, b in spans:
+        dentro = [p - a for p in existing_positions_m if a - 1e-6 <= p <= b + 1e-6]
+        nuevos.extend(a + x for x in new_pole_positions_by_gaps(b - a, spacing_m, dentro, max_span_m, max_span_between_existing_m))
+    return nuevos
+
+
 def match_marked_poles(marked_m: list[float], new_positions_m: list[float],
                        tolerance_m: float = 0.5) -> tuple[list[float], list[float]]:
     """Split poles marked as existing (route metres) into (matched new-pole positions, unmatched marks).
@@ -142,6 +203,8 @@ def calcular_presupuesto(
     new_mufa_required: bool = False,
     mufa_count: int | None = None,
     new_connections: int = 1,
+    technical_visit: bool = False,
+    duct_spans: list[tuple[float, float]] | None = None,
 ) -> dict[str, int]:
     """Return quantities keyed by the exact labels in the Excel template.
 
@@ -161,15 +224,34 @@ def calcular_presupuesto(
     flat_install_label = route["aerial_install_row_label"]
     adss_install_label = route.get("adss_install_row_label")
     use_adss = final_distance_m > rules.get("cable", {}).get("adss_threshold_m", float("inf"))
-    quantities[flat_install_label] = 0 if use_adss else route_quantity
+    # Where the route goes through wells the cable is installed in duct: those metres go to the duct row, the rest stays aerial.
+    duct_quantity = min(route_quantity, math.ceil(sum(b - a for a, b in duct_spans))) if duct_spans else 0
+    if duct_spans and not tramos_aereos(distance_m, duct_spans):
+        duct_quantity = route_quantity                  # all in duct: the reserves too (nothing is left on poles)
+    aerial_quantity = route_quantity - duct_quantity
+    quantities[flat_install_label] = 0 if use_adss else aerial_quantity
     if adss_install_label:
-        quantities[adss_install_label] = route_quantity if use_adss else 0
+        quantities[adss_install_label] = aerial_quantity if use_adss else 0
+    if route.get("duct_install_row_label"):
+        quantities[route["duct_install_row_label"]] = duct_quantity
 
     # Poles follow the physical route; the reserves are coiled cable, not spans between poles.
     turns = count_turns(route_points, poles_rules["corner_angle_deg"])
     required_poles = math.ceil(round(distance_m / poles_rules["spacing_m"], 6))
     required_poles += turns * poles_rules["extra_poles_per_corner"]
-    if existing_pole_positions_m is None:
+    if duct_spans and existing_pole_positions_m is not None:
+        # Poles only along the aerial stretches (a pole inside the duct stretch is not used).
+        aereos = tramos_aereos(distance_m, duct_spans)
+        existing_pole_positions_m = [p for p in existing_pole_positions_m if any(a - 1e-6 <= p <= b + 1e-6 for a, b in aereos)]
+        existing_poles = len(existing_pole_positions_m)
+        new_poles = (len(new_pole_positions_in_spans(aereos, poles_rules["spacing_m"], existing_pole_positions_m, poles_rules.get("max_span_m"),
+                                                     poles_rules.get("max_span_between_existing_m")))
+                     + (turns * poles_rules["extra_poles_per_corner"] if aereos else 0))
+    elif duct_spans:                      # no positions: poles of the aerial metres only
+        aerea_m = sum(b - a for a, b in tramos_aereos(distance_m, duct_spans))
+        existing_poles = max(0, int(existing_poles))
+        new_poles = max(0, math.ceil(round(aerea_m / poles_rules["spacing_m"], 6)) - existing_poles)
+    elif existing_pole_positions_m is None:
         existing_poles = max(0, int(existing_poles))
         new_poles = max(0, required_poles - existing_poles)
     else:
@@ -190,8 +272,11 @@ def calcular_presupuesto(
     effective_mufa_count = (int(mufa_count) if mufa_count is not None
                             else int(connection_is_mufa))
     # Every intervened mufa gets a backbone splice; every new connection a last-mile splice.
-    quantities[splice["backbone_splice_row_label"]] = (
-        effective_mufa_count * int(events.get("backbone_splice_per_mufa", 1)))
+    # The mufas up to the splitter plus two of the splitter itself, when the connection is an existing mufa.
+    backbone = effective_mufa_count * int(events.get("backbone_splice_per_mufa", 1))
+    if connection_is_mufa and not connection_is_reserve and effective_mufa_count > 0:
+        backbone += int(events.get("backbone_splice_extra_splitter", 0))
+    quantities[splice["backbone_splice_row_label"]] = backbone
     quantities[splice["access_splice_row_label"]] = (
         int(new_connections) * int(events.get("last_mile_splice_per_new_connection", 1)))
     quantities[splice["mufa_intervention_row_label"]] = effective_mufa_count
@@ -219,8 +304,22 @@ def calcular_presupuesto(
     if events.get("otdr_row_label"):
         # Always certified once per project, regardless of the connection type.
         quantities[events["otdr_row_label"]] = int(events.get("otdr_certification_per_project", 1))
-    quantities[rules["technical_visit"]["visit_row_label"]] = 0
+    visita = rules["technical_visit"]
+    quantities[visita["visit_row_label"]] = int(visita.get("quantity", 1)) if technical_visit else 0
     return quantities
+
+
+def requiere_visita_tecnica(textos: list[Any], rules: dict[str, Any]) -> bool:
+    """A technical visit is budgeted when the client is in a plaza, a building or a mall: one of `technical_visit.keywords` (whole words or
+    phrases, no accents) in the client's name, the ticket comment or the service type."""
+    palabras = [_plano_visita(k) for k in rules.get("technical_visit", {}).get("keywords", [])]
+    texto = f" {_plano_visita(' '.join(str(t or '') for t in textos))} "
+    return any(p and f" {p} " in texto for p in palabras)
+
+
+def _plano_visita(texto: str) -> str:
+    sin = "".join(c for c in unicodedata.normalize("NFD", texto or "") if unicodedata.category(c) != "Mn")
+    return " ".join(re.sub(r"[^A-Z0-9 ]+", " ", sin.upper()).split())
 
 
 def seleccionar_tecnologia(bandwidth: str, technology: str | None, raw_comment: str,
