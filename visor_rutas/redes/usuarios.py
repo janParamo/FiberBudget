@@ -6,7 +6,7 @@ Identificación al abrir el visor (nadie escribe su nombre):
   - modo remoto (VisorRutas.exe): la persona de su X-Visor-Key (VISOR_API_KEYS). Si no está en la
     tabla se crea como lector; un administrador le asigna el rol.
 Roles: administrador (todo, incluidos usuarios), editor (edita los proyectos donde está
-asignado), lector (solo ve los proyectos donde está asignado).
+asignado), lector (solo ve los proyectos donde está asignado), tecnico (app de campo: solo crea y edita sus propios puntos pendientes).
 Desactivar un usuario es borrado lógico (borrado_en): se puede reactivar.
 """
 import re
@@ -15,7 +15,7 @@ from typing import Any
 from visor_rutas.redes import repositorio
 from visor_rutas.redes.db import DatosInvalidos, NoEncontrado, SinPermiso
 
-ROLES = ("administrador", "editor", "lector")
+ROLES = ("administrador", "editor", "lector", "tecnico")
 _CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _IDENTIFICADOR = re.compile(r"^[\w.@-]{1,64}$")
 PUBLICOS = ("id", "nombre", "correo", "rol", "persona_visor", "usuario_windows", "version",

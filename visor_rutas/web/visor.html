@@ -788,7 +788,7 @@
       <p class="vm-ayuda">Cada persona se identifica sola al abrir el visor: en esta PC, por su usuario de Windows;
         en otra PC (VisorRutas.exe), por su clave <b>X-Visor-Key</b> (la "persona del visor" de <code>VISOR_API_KEYS</code>).
         Quien entra por primera vez queda como <b>lector</b>. <b>Administrador</b>: todo, incluidos los usuarios;
-        <b>editor</b>: edita los proyectos donde está asignado; <b>lector</b>: solo los ve. Desactivar no borra al usuario:
+        <b>editor</b>: edita los proyectos donde está asignado; <b>lector</b>: solo los ve; <b>técnico de campo</b>: solo usa la app de campo (crea y edita sus propios puntos). Desactivar no borra al usuario:
         se puede reactivar.</p>
     </div>
   </section>
@@ -803,7 +803,7 @@
         <div class="vp-campo"><label for="us-nombre">Nombre *</label><input id="us-nombre" maxlength="120"><small></small></div>
         <div class="vp-campo"><label for="us-correo">Correo</label><input id="us-correo" type="email" maxlength="200"><small></small></div>
         <div class="vp-campo"><label for="us-rol">Rol *</label>
-          <select id="us-rol"><option value="lector">Lector</option><option value="editor">Editor</option><option value="administrador">Administrador</option></select><small></small></div>
+          <select id="us-rol"><option value="lector">Lector</option><option value="editor">Editor</option><option value="administrador">Administrador</option><option value="tecnico">Técnico de campo</option></select><small></small></div>
         <div class="vp-fila">
           <div class="vp-campo"><label for="us-persona_visor">Persona del visor (X-Visor-Key)</label><input id="us-persona_visor" maxlength="64" placeholder="marlon"><small></small></div>
           <div class="vp-campo"><label for="us-usuario_windows">Usuario de Windows</label><input id="us-usuario_windows" maxlength="64" placeholder="jgutierrez"><small></small></div>

@@ -311,6 +311,8 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         avisos.append(f"Punto de conexión {seg.nombre or seg.id} marcado {motivo}: validar con Planta Externa")
     if (aviso := main._aviso_seleccion(seleccion)) is not None:
         avisos.append(aviso)
+    if not aproximada and getattr(route, "aviso", None):          # routing.calibrar: the street route was replaced (walking path / straight line)
+        avisos.append(route.aviso)
     if len(puntos) < 2:
         puntos = [(seg.lat, seg.lon), (lat, lon)]
     route_wkt = main._route_linestring_wkt(puntos)

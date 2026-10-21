@@ -465,3 +465,27 @@ route_sheet:
     contact_phone:
       - "Teléfono contacto"
       - "Telefono contacto"
+
+# App de campo (visor_rutas/redes/campo.py, visor_rutas/campo_api.py): técnicos que registran puntos desde el teléfono.
+#   precision_max_m: precisión del GPS por debajo de la cual el punto se toma sin preguntar (la app avisa si es peor)
+#   duplicado_m: un punto a menos de esta distancia de un elemento existente se avisa como posible duplicado
+#   foto_max_bytes / fotos_por_punto: tope de cada foto (la app la comprime a ~1600 px) y de fotos por punto
+#   puntos_por_lote: puntos que se aceptan en un envío; peticiones_por_hora: tope por técnico
+campo:
+  precision_max_m: 10
+  duplicado_m: 5
+  foto_max_bytes: 3145728
+  fotos_por_punto: 8
+  puntos_por_lote: 50
+  peticiones_por_hora: 1200
+
+# Calibración de la ruta (routing.calibrar): la fibra no necesita una calle por donde pase un auto. Si la ruta de Google (en auto) es más larga que
+# detour_factor veces la línea recta (y min_extra_m más), se pide la ruta a pie (veredas y pasos) y se usa si es claramente más corta (walking_gain);
+# si el cliente está cerca (direct_max_m) y la ruta sigue siendo direct_detour_factor veces la recta, se usa la línea recta. Se avisa en el resultado.
+route_calibration:
+  enabled: true
+  detour_factor: 2.0
+  min_extra_m: 150
+  walking_gain: 0.85
+  direct_max_m: 150
+  direct_detour_factor: 3.0

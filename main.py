@@ -139,6 +139,12 @@ import visor_api  # noqa: E402
 
 app.include_router(visor_api.router)
 
+# Field app (technicians register poles / mufas from the phone): /visor/campo/*, same X-Visor-Key. Independent of /presupuesto.
+import visor_rutas.campo_api as campo_api  # noqa: E402
+
+app.include_router(campo_api.router)
+app.include_router(campo_api.pagina)
+
 
 def _route_linestring_wkt(points: list[tuple[float, float]]) -> str:
     """Convert route points from (latitude, longitude) to EPSG:4326 WKT."""
@@ -781,6 +787,8 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     warnings = origin_warnings + marked_warnings + list(generated.warnings)
     if (aviso := _aviso_seleccion(seleccion)) is not None:
         warnings.insert(0, aviso)
+    if getattr(route, "aviso", None):                                  # routing.calibrar replaced the street route (walking path / straight line)
+        warnings.insert(0, route.aviso)
 
     # 5) Cache formula results so readers that do not recalculate see real totals.
     values_cached = False

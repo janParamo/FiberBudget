@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b3d2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Campo">
+  <base href="/campo/">
+  <title>Campo – Fiber Budget</title>
+  <link rel="stylesheet" href="lib/leaflet/leaflet.css">
+  <link rel="stylesheet" href="campo.css">
+</head>
+<body>
+  <!-- Primera vez: la clave del técnico -->
+  <main id="pantalla-clave" class="pantalla" hidden>
+    <h1>Campo</h1>
+    <p>Escriba la clave que le dio el administrador. Se guarda en este teléfono.</p>
+    <label for="clave">Clave</label>
+    <input id="clave" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <p id="clave-error" class="error" role="alert" hidden></p>
+    <button id="clave-entrar" class="grande primario" type="button">Entrar</button>
+  </main>
+
+  <div id="app" hidden>
+    <header id="barra">
+      <button id="btn-menu" class="barra-btn" type="button" aria-label="Menú">☰</button>
+      <div id="titulo"><strong id="jornada-nombre">Jornada</strong><span id="persona"></span></div>
+      <span id="gps-estado" class="chip" title="Precisión del GPS">GPS…</span>
+      <button id="btn-lista" class="barra-btn" type="button" aria-label="Lista de puntos">📋<b id="contador">0</b></button>
+    </header>
+
+    <div id="mapa" aria-label="Mapa"></div>
+    <button id="btn-centrar" class="flotante" type="button" aria-label="Centrar en mi ubicación">◎</button>
+    <button id="btn-capa" class="flotante" type="button" aria-label="Cambiar entre satélite y calles">🛰</button>
+    <div id="mira" hidden><span></span></div>
+
+    <nav id="acciones" aria-label="Registrar">
+      <button type="button" data-tipo="poste">Poste</button>
+      <button type="button" data-tipo="mufa">Mufa</button>
+      <button type="button" data-tipo="reserva">Reserva</button>
+      <button type="button" data-tipo="solitaria">Solitaria</button>
+      <button type="button" data-tipo="cliente">Cliente</button>
+      <button type="button" data-tipo="otro">Otro</button>
+    </nav>
+
+    <!-- Esperando mejor señal -->
+    <section id="hoja-gps" class="hoja" hidden>
+      <h2 id="gps-titulo">Esperando mejor señal…</h2>
+      <p id="gps-detalle">Buscando el GPS.</p>
+      <div class="fila">
+        <button id="gps-usar" class="grande" type="button">Usar igual</button>
+        <button id="gps-mapa" class="grande" type="button">Marcar en el mapa</button>
+      </div>
+      <button id="gps-cancelar" class="grande secundario" type="button">Cancelar</button>
+    </section>
+
+    <!-- Marcar en el mapa -->
+    <section id="hoja-mira" class="hoja corta" hidden>
+      <p>Mueva el mapa hasta que la mira quede sobre el punto.</p>
+      <div class="fila">
+        <button id="mira-ok" class="grande primario" type="button">Aquí</button>
+        <button id="mira-cancelar" class="grande secundario" type="button">Cancelar</button>
+      </div>
+    </section>
+
+    <!-- Formulario del punto -->
+    <section id="hoja-formulario" class="hoja alta" hidden>
+      <h2 id="form-titulo">Poste</h2>
+      <p id="form-coord" class="nota"></p>
+      <div id="form-subtipo-poste" class="grupo" hidden>
+        <label for="subtipo-poste">Tipo de poste</label>
+        <select id="subtipo-poste">
+          <option value="">Sin indicar</option><option value="ideay">Ideay</option><option value="concreto">Concreto</option>
+          <option value="madera">Madera</option><option value="metal">Metal</option><option value="cliente">Cliente</option>
+        </select>
+      </div>
+      <div id="form-subtipo-mufa" class="grupo" hidden>
+        <label for="mufa-capacidad">Mufa</label>
+        <div class="fila">
+          <select id="mufa-capacidad"><option value="">Capacidad</option><option value="48">48 hilos</option><option value="96">96 hilos</option></select>
+          <select id="mufa-formato"><option value="">Formato</option><option value="domo">Domo</option><option value="horizontal">Horizontal</option></select>
+        </div>
+      </div>
+      <label for="form-nombre">Nombre</label>
+      <input id="form-nombre" type="text" maxlength="160" autocomplete="off">
+      <label for="form-notas">Notas</label>
+      <textarea id="form-notas" rows="2" maxlength="1000"></textarea>
+      <div class="grupo">
+        <label class="boton-archivo grande secundario" for="form-foto">📷 Agregar foto</label>
+        <input id="form-foto" type="file" accept="image/*" capture="environment" multiple hidden>
+        <div id="form-fotos" class="miniaturas"></div>
+      </div>
+      <p id="form-error" class="error" role="alert" hidden></p>
+      <div class="fila">
+        <button id="form-guardar" class="grande primario" type="button">Guardar y enviar</button>
+        <button id="form-cancelar" class="grande secundario" type="button">Cancelar</button>
+      </div>
+    </section>
+
+    <!-- Lista de la jornada -->
+    <section id="hoja-lista" class="hoja alta" hidden>
+      <div class="fila encabezado"><h2>Puntos de la jornada</h2><button id="lista-cerrar" class="barra-btn oscuro" type="button" aria-label="Cerrar">✕</button></div>
+      <ul id="lista-puntos"></ul>
+      <p id="lista-vacio" class="nota" hidden>Todavía no hay puntos en esta jornada.</p>
+    </section>
+
+    <!-- Editar un punto pendiente -->
+    <section id="hoja-editar" class="hoja" hidden>
+      <h2 id="editar-titulo">Punto</h2>
+      <label for="editar-nombre">Nombre</label>
+      <input id="editar-nombre" type="text" maxlength="160" autocomplete="off">
+      <label for="editar-notas">Notas</label>
+      <textarea id="editar-notas" rows="2" maxlength="1000"></textarea>
+      <p id="editar-error" class="error" role="alert" hidden></p>
+      <div class="fila">
+        <button id="editar-guardar" class="grande primario" type="button">Guardar</button>
+        <button id="editar-borrar" class="grande peligro" type="button">Borrar</button>
+      </div>
+      <button id="editar-cerrar" class="grande secundario" type="button">Cerrar</button>
+    </section>
+
+    <!-- Menú -->
+    <section id="hoja-menu" class="hoja" hidden>
+      <h2>Menú</h2>
+      <button id="menu-cerrar-jornada" class="grande" type="button">Cerrar la jornada</button>
+      <button id="menu-salir" class="grande secundario" type="button">Cambiar de clave</button>
+      <button id="menu-volver" class="grande secundario" type="button">Volver al mapa</button>
+    </section>
+
+    <div id="aviso" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  <script src="lib/leaflet/leaflet.js"></script>
+  <script src="api.js"></script>
+  <script src="mapa.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

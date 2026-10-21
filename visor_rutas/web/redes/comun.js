@@ -10,7 +10,7 @@
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const ROLES = { administrador: "Administrador", editor: "Editor", lector: "Lector" };
+  const ROLES = { administrador: "Administrador", editor: "Editor", lector: "Lector", tecnico: "Técnico de campo" };
   const ACCIONES = { crear: "Creó", editar: "Editó", eliminar: "Eliminó / desactivó", restaurar: "Restauró / reactivó",
                      duplicar: "Duplicó", identificar: "Primer ingreso" };
 

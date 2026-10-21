@@ -47,6 +47,12 @@ COLUMNAS = {
     "kmz_estilos": {"clave", "alcance", "carpeta", "nombre", "estilo", "borrado_en"},
     "kmz_importaciones": {"archivo", "md5", "modo", "modo_sugerido", "estado", "conteos", "aplicada_en", "aplicada_por", "revertida_en", "publicada",
                           "publicacion", "publicada_en", "borrado_en"},
+    # app de campo (migración 017)
+    "campo_jornadas": {"usuario_id", "nombre", "notas", "inicio", "fin", "borrado_en"},
+    "campo_puntos": {"uuid_cliente", "jornada_id", "usuario_id", "tipo", "subtipo", "nombre", "notas", "ubicacion", "precision_m", "altitud", "origen_coord",
+                     "capturado_en", "estado", "motivo_rechazo", "revisado_por", "revisado_en", "elemento_red_id", "lugar_id", "borrado_en"},
+    "campo_fotos": {"uuid_cliente", "punto_id", "archivo", "tipo", "tamano", "miniatura", "borrado_en"},
+    "campo_trazos": {"uuid_cliente", "jornada_id", "usuario_id", "geom", "postes", "modo", "tipo_cable", "hilos", "notas", "estado", "capturado_en", "borrado_en"},
     "lugares_elementos": {"carpeta_id", "tipo", "nombre", "descripcion_html", "geom", "estilo", "vista", "propiedades", "orden", "visible",
                           "borrado_en"},
 }
