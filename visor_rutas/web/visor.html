@@ -58,6 +58,7 @@
     <symbol id="i-plegar" viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></symbol>
     <symbol id="i-mapa" viewBox="0 0 24 24"><path d="M15 5.1 9 3 3 5v16l6-2.1 6 2.1 6-2V3l-6 2.1zM9 5.4l6 2.1v11.1l-6-2.1z"/></symbol>
     <symbol id="i-presupuesto" viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5zM7 11v2h10v-2zm0 4v2h10v-2zm0-8v2h5V7z"/></symbol>
+    <symbol id="i-campo" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></symbol>
     <symbol id="i-proyectos" viewBox="0 0 24 24"><path d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z"/></symbol>
     <symbol id="i-problemas" viewBox="0 0 24 24"><path d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></symbol>
     <symbol id="i-pendientes" viewBox="0 0 24 24"><path d="M16 3h-1.2A3 3 0 0 0 9.2 3H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-4 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-1.2 14.4-3.3-3.3 1.4-1.4 1.9 1.9 4.6-4.6 1.4 1.4z"/></symbol>
@@ -87,6 +88,8 @@
       <div class="menu-separador"></div>
       <button type="button" class="menu-item" data-vista="proyectos" data-redes="1" title="Proyectos de red">
         <svg><use href="#i-proyectos"/></svg><span class="menu-texto">Proyectos</span></button>
+      <button type="button" class="menu-item" data-vista="campo" data-redes="1" title="Campo: puntos que levantan los técnicos desde el teléfono">
+        <svg><use href="#i-campo"/></svg><span class="menu-texto">Campo</span><span id="campo-contador" class="menu-insignia" hidden>0</span></button>
       <button type="button" class="menu-item" data-vista="problemas" data-redes="1" title="Problemas">
         <svg><use href="#i-problemas"/></svg><span class="menu-texto">Problemas</span></button>
       <button type="button" class="menu-item" data-vista="pendientes" data-redes="1" title="Pendientes">
@@ -655,6 +658,37 @@
   </section>
 
   <!-- Vista "Pendientes" (redes/pendientes.js, fase 7.2) -->
+  <!-- Vista "Campo" (mapa/campo_visor.js): lo que levantan los técnicos, para revisar, corregir, aprobar o rechazar -->
+  <section id="vista-campo" class="vista vista-modulo" data-vista="campo" hidden aria-label="Campo">
+    <header class="vp-cabecera">
+      <h1>Campo</h1>
+      <div class="vm-filtros">
+        <select id="cm-f-estado" aria-label="Estado"><option value="por_decidir">Por revisar</option><option value="">Todos los estados</option>
+          <option value="aprobado">Aprobados</option><option value="rechazado">Rechazados</option></select>
+        <select id="cm-f-tecnico" aria-label="Técnico"><option value="">Todos los técnicos</option></select>
+        <select id="cm-f-jornada" aria-label="Jornada"><option value="">Todas las jornadas</option></select>
+        <select id="cm-f-tipo" aria-label="Tipo"><option value="">Todos los tipos</option><option value="poste">Postes</option><option value="mufa">Mufas</option>
+          <option value="reserva">Reservas</option><option value="solitaria">Solitarias</option><option value="cliente">Clientes</option><option value="otro">Otros</option></select>
+        <div class="pr-buscar"><svg><use href="#i-lupa"/></svg><input id="cm-f-texto" type="search" autocomplete="off" placeholder="Buscar" aria-label="Buscar"></div>
+      </div>
+      <button id="cm-recargar" type="button" class="btn">Recargar</button>
+    </header>
+    <div id="cm-estado" class="vp-estado vm-estado" role="status"></div>
+    <div id="cm-lote" class="cm-lote" hidden>
+      <span id="cm-lote-texto"></span>
+      <button id="cm-lote-aprobar" type="button" class="btn btn-primario btn-chico">Aprobar…</button>
+      <button id="cm-lote-rechazar" type="button" class="btn btn-chico peligro">Rechazar…</button>
+    </div>
+    <div class="vm-cuerpo">
+      <table class="vm-tabla cm-tabla">
+        <thead><tr><th><input id="cm-todos" type="checkbox" aria-label="Elegir todos"></th><th>Estado</th><th>Punto</th><th>Técnico · jornada</th><th>Precisión</th><th>Notas</th><th>Fotos</th><th></th></tr></thead>
+        <tbody id="cm-filas"></tbody>
+      </table>
+      <p class="vm-ayuda">Los puntos llegan solos en cuanto el técnico los envía. Aprobar un poste o una mufa los crea en la red base o en un proyecto (con historial);
+        reservas, solitarias y otros van a Mis lugares. «Posible duplicado» avisa que ya hay algo a menos de unos metros.</p>
+    </div>
+  </section>
+
   <section id="vista-pendientes" class="vista vista-modulo" data-vista="pendientes" hidden aria-label="Pendientes">
     <header class="vp-cabecera">
       <h1>Pendientes</h1>
@@ -1058,6 +1092,7 @@
   <script src="lib/geoman/leaflet-geoman.js"></script>
   <script src="mapa/modo_dibujo.js"></script>
   <script src="mapa/superpuestos.js"></script>
+  <script src="mapa/campo_visor.js"></script>
   <script src="lib/quill/quill.js"></script>
   <script src="lib/konva/konva.min.js"></script>
   <script src="lugares.js"></script>

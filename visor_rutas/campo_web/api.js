@@ -26,7 +26,7 @@
   /* JSON (o el cuerpo crudo de una foto) con la clave. Lanza ErrorApi: estado 0 = sin conexión. */
   async function pedir(metodo, ruta, cuerpo, opciones) {
     const o = opciones || {};
-    const cabeceras = { "X-Visor-Key": clave() };
+    const cabeceras = { "X-Visor-Key": clave(), "ngrok-skip-browser-warning": "1" };
     let body;
     if (o.crudo) { body = cuerpo; cabeceras["Content-Type"] = o.tipo || "application/octet-stream"; }
     else if (cuerpo !== undefined) { body = JSON.stringify(cuerpo); cabeceras["Content-Type"] = "application/json"; }
@@ -49,6 +49,10 @@
     abrirJornada: (nombre) => pedir("POST", "/visor/campo/jornadas", { accion: "abrir", nombre }),
     cerrarJornada: (id) => pedir("POST", "/visor/campo/jornadas", { accion: "cerrar", id }),
     enviarPuntos: (puntos) => pedir("POST", "/visor/campo/puntos", { puntos }),
+    trazos: (jornada) => pedir("GET", `/visor/campo/trazos?jornada=${encodeURIComponent(jornada)}&limite=100`),
+    borrarTrazo: (id) => pedir("DELETE", `/visor/campo/trazos/${id}`),
+    red: (o, s, e, n) => pedir("GET", `/visor/campo/red?bbox=${o},${s},${e},${n}`),
+    ubicacion: (u) => pedir("POST", "/visor/campo/ubicacion", { lat: u.lat, lon: u.lon, precision_m: u.precision_m, capturado_en: new Date(u.hora || Date.now()).toISOString() }),
     puntos: (jornada) => pedir("GET", `/visor/campo/puntos?jornada=${encodeURIComponent(jornada)}&limite=500`),
     editarPunto: (id, version, cambios) => pedir("PATCH", `/visor/campo/puntos/${id}`, { version, cambios }),
     borrarPunto: (id) => pedir("DELETE", `/visor/campo/puntos/${id}`),

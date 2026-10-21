@@ -25,3 +25,11 @@ visor_rutas/datos_kmz/
 
 # Libro de rutas de fusión de ejemplo (clientes reales)
 EjemploRutaFusiones/
+
+# Tunel de Cloudflare (binario, configuracion con credenciales)
+herramientas/cloudflared.exe
+cloudflared/config.yml
+cloudflared/*.json
+
+# Fotos de la app de campo (datos de ejecucion)
+datos_campo/

@@ -1,0 +1,12 @@
+# Túnel de Cloudflare con archivo de configuración (la otra forma; ver docs/campo/CLOUDFLARE.md).
+# Copie este archivo como config.yml (queda fuera de GitHub), cambie lo que está entre < > y listo: start_service.bat abre el túnel solo
+# cuando existe cloudflared\config.yml. A mano:  cloudflared tunnel --config cloudflared\config.yml run
+tunnel: <ID_DEL_TUNEL>
+credentials-file: C:\Users\<USUARIO_DE_WINDOWS>\.cloudflared\<ID_DEL_TUNEL>.json
+
+ingress:
+  # la dirección oficial de la app de campo y de la API → el servicio de esta PC (API_HOST:API_PORT del .env)
+  - hostname: api.fiberbudget.com
+    service: http://127.0.0.1:8000
+  # todo lo demás: no existe
+  - service: http_status:404

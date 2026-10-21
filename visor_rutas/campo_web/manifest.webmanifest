@@ -1,0 +1,17 @@
+{
+  "name": "Campo – Fiber Budget",
+  "short_name": "Campo",
+  "description": "Registro de postes, mufas y otros puntos en campo",
+  "lang": "es",
+  "start_url": "/campo/",
+  "scope": "/campo/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#0b3d2e",
+  "icons": [
+    {"src": "icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icono-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

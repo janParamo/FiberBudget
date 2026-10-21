@@ -9,6 +9,9 @@
   <meta name="apple-mobile-web-app-title" content="Campo">
   <base href="/campo/">
   <title>Campo – Fiber Budget</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icono-apple.png">
+  <link rel="icon" type="image/png" href="icono-192.png">
   <link rel="stylesheet" href="lib/leaflet/leaflet.css">
   <link rel="stylesheet" href="campo.css">
 </head>
@@ -17,6 +20,7 @@
   <main id="pantalla-clave" class="pantalla" hidden>
     <h1>Campo</h1>
     <p>Escriba la clave que le dio el administrador. Se guarda en este teléfono.</p>
+    <p id="aviso-http" class="error" role="alert" hidden>Esta dirección no es segura (http): el GPS y la instalación no funcionarán. Pida al administrador la dirección que empieza con https://.</p>
     <label for="clave">Clave</label>
     <input id="clave" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <p id="clave-error" class="error" role="alert" hidden></p>
@@ -31,8 +35,19 @@
       <button id="btn-lista" class="barra-btn" type="button" aria-label="Lista de puntos">📋<b id="contador">0</b></button>
     </header>
 
+    <div id="cola-barra" role="status" hidden>
+      <span id="cola-texto"></span>
+      <button id="cola-enviar" type="button">Enviar ahora</button>
+    </div>
+    <div id="ios-barra" hidden>
+      <span>iPhone: instale la app para no perder puntos sin enviar.</span>
+      <button id="ios-como" type="button">Cómo</button>
+      <button id="ios-cerrar" type="button" aria-label="Cerrar el aviso">✕</button>
+    </div>
+
     <div id="mapa" aria-label="Mapa"></div>
     <button id="btn-centrar" class="flotante" type="button" aria-label="Centrar en mi ubicación">◎</button>
+    <button id="btn-red" class="flotante" type="button" aria-label="Mostrar u ocultar la red de referencia" aria-pressed="true">⌁</button>
     <button id="btn-capa" class="flotante" type="button" aria-label="Cambiar entre satélite y calles">🛰</button>
     <div id="mira" hidden><span></span></div>
 
@@ -43,6 +58,7 @@
       <button type="button" data-tipo="solitaria">Solitaria</button>
       <button type="button" data-tipo="cliente">Cliente</button>
       <button type="button" data-tipo="otro">Otro</button>
+      <button type="button" id="btn-cable" class="cable">Trazar cable</button>
     </nav>
 
     <!-- Esperando mejor señal -->
@@ -65,10 +81,46 @@
       </div>
     </section>
 
+    <!-- Trazar un cable -->
+    <section id="hoja-cable" class="hoja corta" hidden>
+      <h2>Trazar cable</h2>
+      <p id="cable-info" class="nota">Toque los postes o puntos del mapa en orden, use «Mi ubicación» o grabe el recorrido caminando.</p>
+      <div class="fila">
+        <button id="cable-ubicacion" class="grande secundario" type="button">📍 Mi ubicación</button>
+        <button id="cable-mira" class="grande secundario" type="button">Centro del mapa</button>
+      </div>
+      <div class="fila">
+        <button id="cable-grabar" class="grande secundario" type="button">● Grabar recorrido</button>
+        <button id="cable-deshacer" class="grande secundario" type="button">Deshacer</button>
+      </div>
+      <div class="fila">
+        <button id="cable-terminar" class="grande primario" type="button" disabled>Terminar</button>
+        <button id="cable-cancelar" class="grande secundario" type="button">Cancelar</button>
+      </div>
+    </section>
+
+    <section id="hoja-cable-form" class="hoja" hidden>
+      <h2>Cable trazado</h2>
+      <p id="cable-resumen" class="nota"></p>
+      <label for="cable-tipo">Tipo de cable</label>
+      <select id="cable-tipo"><option value="">Sin indicar</option><option value="ADSS">ADSS</option><option value="FLAT">FLAT</option></select>
+      <label for="cable-hilos">Hilos</label>
+      <select id="cable-hilos"><option value="">Sin indicar</option><option>2</option><option>4</option><option>6</option><option>8</option><option>12</option><option>24</option>
+        <option>48</option><option>72</option><option>96</option><option>144</option></select>
+      <label for="cable-notas">Notas</label>
+      <textarea id="cable-notas" rows="2" maxlength="1000"></textarea>
+      <p id="cable-error" class="error" role="alert" hidden></p>
+      <div class="fila">
+        <button id="cable-guardar" class="grande primario" type="button">Guardar y enviar</button>
+        <button id="cable-volver" class="grande secundario" type="button">Seguir trazando</button>
+      </div>
+    </section>
+
     <!-- Formulario del punto -->
     <section id="hoja-formulario" class="hoja alta" hidden>
       <h2 id="form-titulo">Poste</h2>
       <p id="form-coord" class="nota"></p>
+      <p id="form-cerca" class="error" hidden></p>
       <div id="form-subtipo-poste" class="grupo" hidden>
         <label for="subtipo-poste">Tipo de poste</label>
         <select id="subtipo-poste">
@@ -121,10 +173,18 @@
       <button id="editar-cerrar" class="grande secundario" type="button">Cerrar</button>
     </section>
 
+    <!-- Ayuda para instalar -->
+    <section id="hoja-ayuda" class="hoja alta" hidden>
+      <div class="fila encabezado"><h2>Instalar la app</h2><button id="ayuda-cerrar" class="barra-btn oscuro" type="button" aria-label="Cerrar">✕</button></div>
+      <div id="ayuda-contenido"></div>
+    </section>
+
     <!-- Menú -->
     <section id="hoja-menu" class="hoja" hidden>
       <h2>Menú</h2>
       <button id="menu-cerrar-jornada" class="grande" type="button">Cerrar la jornada</button>
+      <button id="menu-instalar" class="grande primario" type="button" hidden>Instalar app</button>
+      <button id="menu-ayuda" class="grande secundario" type="button">Cómo instalar la app</button>
       <button id="menu-salir" class="grande secundario" type="button">Cambiar de clave</button>
       <button id="menu-volver" class="grande secundario" type="button">Volver al mapa</button>
     </section>
@@ -134,7 +194,11 @@
 
   <script src="lib/leaflet/leaflet.js"></script>
   <script src="api.js"></script>
+  <script src="cola.js"></script>
+  <script src="ayuda.js"></script>
+  <script src="trazo.js"></script>
   <script src="mapa.js"></script>
+  <script src="red.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

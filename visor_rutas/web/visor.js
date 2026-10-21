@@ -2370,6 +2370,9 @@
         if (window.CapasVisor) {       // "Mapa base" and "Capas del visor": sections of the same tree
           window.CapasVisor.iniciar({ mapa, capas, base: baseMapa, redes: CAPAS_RED, cargarRed, quitarRed, hayRuta: () => !!datos });
         }
+        if (window.CampoVisor) {       // field survey in real time, for who reviews (mapa/campo_visor.js)
+          window.CampoVisor.iniciar({ mapa, api, mensaje, mostrarVista });
+        }
         if (window.MisLugares) {       // "Mis lugares": folders and places of the user (lugares/mis_lugares.js)
           window.MisLugares.iniciar({ mapa, api, mensaje, copiar, midiendo: () => med.activo, agregarPunto: (ll) => agregarPunto(imantar(ll)) })
             .catch((e) => console.error("MisLugares", e));

@@ -90,3 +90,30 @@ body.ocupado #acciones button { opacity: .45; pointer-events: none; }
 .marca.rechazado { background: var(--rechazado); }
 .marca.editado { background: var(--editado); }
 .yo { width: 18px; height: 18px; border: 3px solid #fff; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 2px #1a73e8; }
+
+/* sin señal / cola de envío / instalar */
+#cola-barra, #ios-barra { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--acento); color: #111; font-weight: 700; font-size: 15px; }
+#cola-barra.con-error { background: var(--error); color: #fff; }
+#ios-barra { background: #e8f0ff; color: #0a2a66; font-weight: 600; font-size: 14px; }
+#cola-texto, #ios-barra span { flex: 1; min-width: 0; }
+#cola-barra button, #ios-barra button { flex: none; min-height: 40px; padding: 0 12px; border: 2px solid currentColor; border-radius: 10px; background: transparent; color: inherit; font-weight: 700; }
+.estado.cola { background: #fff; color: #111; border: 2px dashed #111; }
+.estado.error { background: var(--error); color: #fff; }
+.marca.cola { background: #fff; border-style: dashed; }
+.marca.error { background: var(--error); }
+#lista-puntos small.error { color: var(--error); font-weight: 600; white-space: normal; }
+#ayuda-contenido ol { padding-left: 22px; } #ayuda-contenido li { margin: 8px 0; }
+#ayuda-contenido .ok { color: var(--aprobado); }
+
+/* cables y red de referencia (fase 5) */
+#acciones button.cable { grid-column: span 2; background: #fff; color: var(--verde); }
+#acciones { grid-template-columns: repeat(4, 1fr); }
+#acciones button { font-size: 16px; padding: 0 2px; }
+#btn-red { top: calc(var(--alto-barra) + 134px + env(safe-area-inset-top)); }
+#btn-red[aria-pressed="false"] { opacity: .5; text-decoration: line-through; }
+.hoja.corta { max-height: 60%; }
+
+#hoja-cable { padding-top: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+#hoja-cable h2 { font-size: 17px; margin-bottom: 2px; }
+#hoja-cable .grande { min-height: 44px; margin: 4px 0; padding: 6px 10px; font-size: 16px; }
+#hoja-cable .nota { margin: 2px 0 4px; }

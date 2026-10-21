@@ -10,13 +10,17 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import json
+import queue
+
 import psycopg
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from fastapi import HTTPException
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 import visor_api
+from visor_rutas import campo_eventos
 from visor_rutas.redes import campo, db
 
 log = logging.getLogger(__name__)
@@ -26,6 +30,7 @@ pagina = APIRouter(tags=["app de campo (página)"])
 WEB = Path(__file__).resolve().parent / "campo_web"
 LIBS = {"lib/leaflet": Path(__file__).resolve().parent / "web" / "lib" / "leaflet"}      # Leaflet is the viewer's own copy (no CDN)
 TIPOS_ARCHIVO = {".html", ".js", ".css", ".png", ".svg", ".json", ".webmanifest", ".ico"}
+TIPOS_MIME = {".webmanifest": "application/manifest+json", ".js": "text/javascript"}
 limitador = visor_api.Limitador()
 
 
@@ -74,6 +79,17 @@ class PuntosPedido(BaseModel):
     puntos: list[dict[str, Any]] = Field(min_length=1, max_length=500)
 
 
+class UbicacionPedido(BaseModel):
+    lat: float
+    lon: float
+    precision_m: float | None = None
+    capturado_en: str | None = Field(default=None, max_length=40)
+
+
+class TrazosPedido(BaseModel):
+    trazos: list[dict[str, Any]] = Field(min_length=1, max_length=50)
+
+
 class EdicionPedido(BaseModel):
     version: int
     cambios: dict[str, Any]
@@ -114,6 +130,53 @@ def borrar_punto(id_: int, persona: str = Depends(persona_campo)) -> dict[str, A
     return _ejecutar(persona, campo.borrar_punto, "puntos/borrar", id=id_)
 
 
+@router.post("/trazos")
+def guardar_trazos(pedido: TrazosPedido, persona: str = Depends(persona_campo)) -> Any:
+    return _ejecutar(persona, campo.guardar_trazos, "trazos", trazos=pedido.trazos)
+
+
+@router.get("/trazos")
+def lista_trazos(desde: str | None = None, jornada: int | None = None, estado: str | None = None, usuario_id: int | None = None,
+                 limite: int = 100, persona: str = Depends(persona_campo)) -> Any:
+    return _ejecutar(persona, campo.trazos, "trazos/lista", desde=desde, jornada=jornada, estado=estado, usuario_id=usuario_id, limite=limite)
+
+
+@router.patch("/trazos/{id_}")
+def editar_trazo(id_: int, pedido: EdicionPedido, persona: str = Depends(persona_campo)) -> Any:
+    return _ejecutar(persona, campo.editar_trazo, "trazos/editar", id=id_, version=pedido.version, cambios=pedido.cambios)
+
+
+@router.delete("/trazos/{id_}")
+def borrar_trazo(id_: int, persona: str = Depends(persona_campo)) -> Any:
+    return _ejecutar(persona, campo.borrar_trazo, "trazos/borrar", id=id_)
+
+
+@router.get("/red")
+def red_de_referencia(bbox: str, persona: str = Depends(persona_campo)) -> Any:
+    """The network around the technician, light, for the zone `bbox=oeste,sur,este,norte`: the KMZ network of the budget database (red_puntos / red_lineas)
+    and the base network of the network module. If the budget database does not answer, the module's part still goes (`aviso` says so)."""
+    partes = bbox.split(",")
+    try:
+        if len(partes) != 4:
+            raise db.DatosInvalidos({"bbox": "Use bbox=oeste,sur,este,norte"})
+        o, s, e, n = campo.zona(*partes)
+    except db.DatosInvalidos as exc:
+        return _error(422, str(exc), exc.errores)
+    modulo = _ejecutar(persona, campo.red_referencia, "red", oeste=o, sur=s, este=e, norte=n)
+    if isinstance(modulo, JSONResponse):
+        return modulo
+    cfg = campo.configuracion()
+    aviso = None
+    try:
+        import db as presupuesto_db
+        kmz = presupuesto_db.find_red_en_bbox(o, s, e, n, int(cfg["red_max_puntos"]), int(cfg["red_max_lineas"]))
+    except Exception as exc:                                                    # noqa: BLE001 - the module part still serves
+        log.warning("Campo: the KMZ network of the zone could not be read (%s)", type(exc).__name__)
+        kmz, aviso = {"puntos": [], "lineas": [], "truncado": False}, "La red del KMZ no está disponible por ahora"
+    return {"ok": True, "zona": [o, s, e, n], "puntos": kmz["puntos"] + modulo["puntos"], "lineas": kmz["lineas"] + modulo["lineas"],
+            "truncado": kmz["truncado"] or modulo["truncado"], "aviso": aviso}
+
+
 @router.post("/fotos")
 async def subir_foto(request: Request, punto_id: int, uuid_cliente: str | None = None, persona: str = Depends(persona_campo)) -> dict[str, Any]:
     """The photo is the body of the request. Refused before reading it when it is bigger than the limit."""
@@ -137,11 +200,41 @@ def ver_foto(id_: int, miniatura: bool = False, persona: str = Depends(persona_c
     return Response(content=r["datos"], media_type=r["tipo"], headers={"Cache-Control": "private, max-age=3600"})
 
 
+@router.post("/ubicacion")
+def guardar_ubicacion(pedido: UbicacionPedido, persona: str = Depends(persona_campo)) -> Any:
+    """The technician's live position (the app sends it every 20 s while it is open): only the last one is kept."""
+    return _ejecutar(persona, campo.ubicacion, "ubicacion", lat=pedido.lat, lon=pedido.lon, precision_m=pedido.precision_m, capturado_en=pedido.capturado_en)
+
+
+@router.get("/eventos")
+def eventos(persona: str = Depends(persona_campo)) -> Any:
+    """Server-Sent Events with what changes in the field data (for the remote viewer; reviewers only). Each event is the NOTIFY of the database:
+    {tabla, id, cambio, usuario_id}; the viewer then asks for what changed. A comment line goes out every 15 s so a dead connection is noticed."""
+    permiso = _ejecutar(persona, campo.exigir_revisor, "eventos")
+    if isinstance(permiso, JSONResponse):
+        return permiso
+    cola: queue.Queue = queue.Queue(maxsize=500)
+    quitar = campo_eventos.escucha().suscribir(lambda aviso: cola.put_nowait(aviso) if not cola.full() else None)
+
+    def flujo() -> Any:
+        try:
+            yield "retry: 3000\n: conectado\n\n"
+            while True:
+                try:
+                    yield f"data: {json.dumps(cola.get(timeout=15))}\n\n"
+                except queue.Empty:
+                    yield ": latido\n\n"
+        finally:
+            quitar()
+    return StreamingResponse(flujo(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.get("/config")
 def configuracion(persona: str = Depends(persona_campo)) -> dict[str, Any]:
     """What the app needs to know: who the key belongs to and the limits (GPS threshold, photos)."""
     cfg = campo.configuracion()
-    return {"ok": True, "persona": persona, **{k: cfg[k] for k in ("precision_max_m", "duplicado_m", "foto_max_bytes", "fotos_por_punto")}}
+    from config import get_settings
+    return {"ok": True, "persona": persona, "url_publica": get_settings().campo_url_publica, **{k: cfg[k] for k in ("precision_max_m", "duplicado_m", "foto_max_bytes", "fotos_por_punto")}}
 
 
 # --------------------------------------------------------------------------- la página de la app (sin clave: es solo HTML / JS / CSS)
@@ -167,10 +260,18 @@ def _servir(relativa: str) -> FileResponse:
     ruta = _archivo_web(relativa)
     if ruta is None:
         raise HTTPException(status_code=404, detail="Not Found")
-    return FileResponse(ruta, headers={"Cache-Control": "no-cache"})
+    return FileResponse(ruta, media_type=TIPOS_MIME.get(ruta.suffix.lower()), headers={"Cache-Control": "no-cache"})
 
 
 @pagina.get("/campo", include_in_schema=False)
+def pagina_campo_sin_barra(request: Request) -> RedirectResponse:
+    """The service worker controls /campo/ (with the slash): the app lives there."""
+    if not visor_api.claves_visor():
+        raise HTTPException(status_code=404, detail="Not Found")
+    return RedirectResponse("/campo/", status_code=307)
+
+
+@pagina.get("/campo/", include_in_schema=False)
 def pagina_campo() -> FileResponse:
     return _servir("index.html")
 

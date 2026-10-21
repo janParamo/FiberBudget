@@ -87,6 +87,9 @@ def crear_api_prueba(con=None, usuario="jgutierrez") -> object:
                 return {"ok": False, "error": "prueba: sin módulo de redes"}
             return a_json(servicio.llamar(str(metodo or ""), args if args is not None else {}, usuario_windows=usuario))
 
+        def campo_escuchar(self):                     # the real one listens to the database: the tests send the notices to the page themselves
+            return {"ok": True, "ya": False}
+
         def red(self, capa, oeste, sur, este, norte, zoom):
             return {"ok": True, "capa": capa, "elementos": [], "truncado": False, "zoom_min": 12, "debajo_del_zoom": False}
 

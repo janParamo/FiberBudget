@@ -9,8 +9,10 @@ Solo depende de requests, openpyxl (vía excel_html) y la biblioteca estándar: 
 """
 import base64
 import logging
+import json
 import re
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -327,6 +329,42 @@ class ProveedorRemoto:
         return self._seguro(lambda: self._json("POST", f"/visor/redes/{metodo}",
                                                json={"args": args if isinstance(args, dict) else {}},
                                                timeout=TIMEOUT_PRESUPUESTO_S))
+
+    # ----------------------------------------------------------------------- app de campo en tiempo real
+
+    def escuchar_campo(self, alerta: Any, detener: threading.Event, espera_min: float = 1.0, espera_max: float = 30.0) -> None:
+        """Blocks until `detener` is set: GET /visor/campo/eventos (Server-Sent Events) and `alerta(dict)` for every event of the field data
+        ({tabla, id, cambio, usuario_id}). After every (re)connection `alerta({"tabla": "_conectado"})` so the page asks for what it missed. A cut
+        connection is retried with a growing wait; a key that is refused (401), a missing role (403) or no field app (404) ends it with
+        `alerta({"tabla": "_error", "error": ...})`."""
+        if not self.url:
+            alerta({"tabla": "_error", "error": "Falta configurar el servidor"})
+            return
+        espera = espera_min
+        headers = {"X-Visor-Key": self._clave, "ngrok-skip-browser-warning": "1", "User-Agent": AGENTE, "Accept": "text/event-stream"}
+        while not detener.is_set():
+            try:
+                with self._sesion.get(f"{self.url}/visor/campo/eventos", headers=headers, stream=True, timeout=(10, 45)) as r:
+                    if r.status_code in (401, 403, 404):
+                        alerta({"tabla": "_error", "error": {401: "La clave del visor no es válida",
+                                                             403: "Solo un administrador o un editor recibe los avisos de campo"}.get(r.status_code, "El servidor no tiene la app de campo")})
+                        return
+                    if r.status_code == 200:
+                        espera = espera_min
+                        alerta({"tabla": "_conectado"})
+                        for linea in r.iter_lines(decode_unicode=True):
+                            if detener.is_set():
+                                return
+                            if linea and linea.startswith("data: "):
+                                try:
+                                    alerta(json.loads(linea[6:]))
+                                except ValueError:
+                                    log.warning("Remote viewer: campo event that is not JSON ignored")
+            except requests.RequestException as exc:
+                log.info("Remote viewer: campo events cut (%s); retrying in %.0f s", type(exc).__name__, espera)
+            if detener.wait(espera):
+                return
+            espera = min(espera_max, espera * 2)
 
     # ----------------------------------------------------------------------- presupuestos
 

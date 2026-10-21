@@ -1,0 +1,1 @@
+﻿Aqui va cloudflared.exe (el tunel de Cloudflare de la app de campo). No se sube a GitHub. Ver docs\campo\CLOUDFLARE.md, paso 2.

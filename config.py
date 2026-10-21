@@ -38,6 +38,7 @@ class Settings:
     rules_path: Path
     log_file: Path
     ngrok_domain: str = ""
+    campo_url_publica: str = ""   # public HTTPS address of the field app (Cloudflare tunnel), e.g. https://api.fiberbudget.com; only informative (log, /visor/campo/config)
     libreoffice_path: str = ""   # empty: autodetect soffice (recalc.find_soffice)
     red_fibra_db: Path = BASE_DIR / "red_fibra" / "red_fibra.db"   # Visio SQLite (fallback)
     ruta_fusion_xlsx: Path = BASE_DIR / "EjemploRutaFusiones" / "RUTA DE FUSION - Copia.xlsx"   # workbook of fusion routes (the viewer adds a strip)
@@ -118,6 +119,7 @@ def get_settings() -> Settings:
         request_timeout_seconds=_float_setting("REQUEST_TIMEOUT_SECONDS", "60"),
         output_retention_days=_int_setting("OUTPUT_RETENTION_DAYS", "30"),
         ngrok_domain=os.getenv("NGROK_DOMAIN", "").strip(),
+        campo_url_publica=os.getenv("CAMPO_URL_PUBLICA", "").strip().rstrip("/"),
         libreoffice_path=os.getenv("LIBREOFFICE_PATH", "").strip(),
         red_fibra_db=_path("RED_FIBRA_DB", "red_fibra/red_fibra.db"),
         ruta_fusion_xlsx=_path("RUTA_FUSION_XLSX", "EjemploRutaFusiones/RUTA DE FUSION - Copia.xlsx"),

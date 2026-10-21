@@ -48,9 +48,12 @@ def mundo(base_redes, con_redes, entorno, monkeypatch, tmp_path):
 
 def test_the_page_and_its_files_are_served_without_a_key_but_nothing_else(mundo):
     _, c, _ = mundo
-    r = c.get("/campo")
+    redirigida = c.get("/campo", follow_redirects=False)
+    assert redirigida.status_code == 307 and redirigida.headers["location"] == "/campo/"          # the service worker controls /campo/
+    r = c.get("/campo/")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"] and '<base href="/campo/">' in r.text and "Campo" in r.text
-    for archivo, tipo in (("app.js", "javascript"), ("api.js", "javascript"), ("mapa.js", "javascript"), ("campo.css", "css"), ("lib/leaflet/leaflet.js", "javascript"),
+    for archivo, tipo in (("app.js", "javascript"), ("api.js", "javascript"), ("mapa.js", "javascript"), ("cola.js", "javascript"), ("ayuda.js", "javascript"), ("sw.js", "javascript"),
+                          ("manifest.webmanifest", "manifest+json"), ("icono-192.png", "png"), ("icono-512.png", "png"), ("icono-apple.png", "png"), ("campo.css", "css"), ("lib/leaflet/leaflet.js", "javascript"),
                           ("lib/leaflet/leaflet.css", "css"), ("lib/leaflet/images/marker-icon.png", "png")):
         r = c.get(f"/campo/{archivo}")
         assert r.status_code == 200 and tipo in r.headers["content-type"], archivo
@@ -63,7 +66,7 @@ def test_the_page_and_its_files_are_served_without_a_key_but_nothing_else(mundo)
 def test_the_page_is_off_when_the_remote_viewer_is(mundo, monkeypatch):
     main_, c, _ = mundo
     monkeypatch.setenv("VISOR_API_KEYS", "")
-    assert c.get("/campo").status_code == 404 and c.get("/campo/app.js").status_code == 404
+    assert c.get("/campo", follow_redirects=False).status_code == 404 and c.get("/campo/").status_code == 404 and c.get("/campo/app.js").status_code == 404
 
 
 def test_the_config_tells_who_the_key_belongs_to(mundo):
@@ -100,7 +103,7 @@ def servidor_real(app):
 
 
 @contextlib.asynccontextmanager
-async def telefono(puerto, precision=5.0, cdp=9341):
+async def telefono(puerto, precision=5.0, cdp=9341, ua=None):
     """Headless Edge sized like a phone, on /campo, with the GPS at (LAT, LON) with the accuracy given."""
     perfil = tempfile.mkdtemp(prefix="edge_campo_")
     proceso = subprocess.Popen([str(ruta_edge()), "--headless=new", f"--remote-debugging-port={cdp}", "--window-size=390,800", f"--user-data-dir={perfil}",
@@ -120,9 +123,13 @@ async def telefono(puerto, precision=5.0, cdp=9341):
             for dominio in ("Page", "Runtime"):
                 await p.enviar(f"{dominio}.enable")
             await p.enviar("Emulation.setDeviceMetricsOverride", width=390, height=800, deviceScaleFactor=2, mobile=True)
+            await p.enviar("Network.enable")
+            if ua:
+                await p.enviar("Emulation.setUserAgentOverride", userAgent=ua)
+            p.sin_red = lambda si: p.enviar("Network.emulateNetworkConditions", offline=si, latency=0, downloadThroughput=-1, uploadThroughput=-1)
             await p.enviar("Browser.grantPermissions", permissions=["geolocation"], origin=f"http://127.0.0.1:{puerto}")
             await p.enviar("Emulation.setGeolocationOverride", latitude=LAT, longitude=LON, accuracy=precision)
-            await p.enviar("Page.navigate", url=f"http://127.0.0.1:{puerto}/campo")
+            await p.enviar("Page.navigate", url=f"http://127.0.0.1:{puerto}/campo/")
             await p.esperar("document.readyState === 'complete' && window.Campo", 30)
             p.gps = lambda lat, lon, acc: p.enviar("Emulation.setGeolocationOverride", latitude=lat, longitude=lon, accuracy=acc)
             yield p
@@ -134,6 +141,17 @@ async def telefono(puerto, precision=5.0, cdp=9341):
         except Exception:
             proceso.kill()
         shutil.rmtree(perfil, ignore_errors=True)
+
+
+async def esperar_sql(con, consulta, cuantos=1, segundos=30):
+    """Waits until the query returns at least `cuantos` rows (the page saves to its queue first and sends in the background)."""
+    t0 = time.time()
+    while time.time() - t0 < segundos:
+        filas = con.execute(consulta).fetchall()
+        if len(filas) >= cuantos:
+            return filas
+        await asyncio.sleep(0.25)
+    raise TimeoutError(consulta)
 
 
 async def _entrar(p, clave):
@@ -192,12 +210,27 @@ async def _recorrido(puerto, con, tmp_path):
         await p.esperar("document.querySelectorAll('#form-fotos img').length === 1", 20)
         await _tocar(p, "#form-guardar")
         await p.esperar("document.getElementById('hoja-formulario').hidden && document.getElementById('contador').textContent === '1'", 20)
+        await esperar_sql(con, "SELECT 1 FROM redes.campo_fotos")                                   # saved in the phone first, sent in the background
+        await p.esperar("document.getElementById('cola-barra').hidden", 20)
         fila = con.execute("SELECT * FROM redes.campo_puntos").fetchone()
         assert (fila["tipo"], fila["subtipo"], fila["nombre"], fila["notas"], fila["origen_coord"], fila["estado"]) == ("poste", "concreto", "Poste 1", "esquina de la pulpería", "gps", "pendiente")
         assert float(fila["precision_m"]) == pytest.approx(5.0, abs=0.5)
         fotos = con.execute("SELECT tamano FROM redes.campo_fotos WHERE punto_id = %s", (fila["id"],)).fetchall()
         assert len(fotos) == 1 and 0 < fotos[0]["tamano"] < foto.stat().st_size                      # compressed in the phone
         assert (await p.errores()) == []
+
+        # ---- the position goes to the office (the app does it every 20 s; here on demand), and a rejection comes back with its reason
+        assert await p.evaluar("Campo.enviarUbicacion()") is True
+        u = con.execute("SELECT ST_Y(ubicacion) AS lat, precision_m FROM redes.campo_ubicaciones").fetchone()
+        assert float(u["lat"]) == pytest.approx(LAT, abs=1e-5) and float(u["precision_m"]) == pytest.approx(5.0, abs=0.5)
+        con.execute("UPDATE redes.campo_puntos SET estado = 'rechazado', motivo_rechazo = 'Está en un lote privado' WHERE tipo = 'poste'")
+        con.execute("UPDATE redes.campo_puntos SET actualizado_en = now() WHERE tipo = 'poste'")
+        await p.evaluar("Campo.cargarPuntos()")
+        await _tocar(p, "#btn-lista")
+        await p.esperar("document.getElementById('lista-puntos').textContent.includes('Rechazado: Está en un lote privado')", 10)
+        await _tocar(p, "#lista-cerrar")
+        con.execute("UPDATE redes.campo_puntos SET estado = 'pendiente', motivo_rechazo = NULL, actualizado_en = now() WHERE tipo = 'poste'")
+        await p.evaluar("Campo.cargarPuntos()")
 
         # ---- a bad signal: waits, offers to use it anyway or to mark it on the map
         await p.gps(LAT + 0.0003, LON, 60.0)
@@ -214,6 +247,8 @@ async def _recorrido(puerto, con, tmp_path):
         await p.evaluar("document.getElementById('mufa-capacidad').value = '48'; document.getElementById('mufa-formato').value = 'domo'; true")
         await _tocar(p, "#form-guardar")
         await p.esperar("document.getElementById('contador').textContent === '2'", 20)
+        await esperar_sql(con, "SELECT 1 FROM redes.campo_puntos WHERE tipo = 'mufa'")
+        await p.esperar("document.getElementById('cola-barra').hidden", 20)
         mufa = con.execute("SELECT * FROM redes.campo_puntos WHERE tipo = 'mufa'").fetchone()
         assert (mufa["subtipo"], mufa["origen_coord"], mufa["precision_m"], mufa["nombre"]) == ("48 domo", "mapa", None, "Mufa 1")
 

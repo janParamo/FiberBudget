@@ -125,6 +125,8 @@ async def disconnect_ngrok() -> None:
 async def lifespan(app: FastAPI):
     _clean_old_output_files()
     await connect_ngrok()
+    if settings.campo_url_publica:
+        log.info("Field app: %s/campo/ (needs HTTPS: the Cloudflare tunnel, see docs/campo/CLOUDFLARE.md)", settings.campo_url_publica)
     try:
         yield
     finally:

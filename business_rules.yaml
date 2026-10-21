@@ -478,6 +478,13 @@ campo:
   fotos_por_punto: 8
   puntos_por_lote: 50
   peticiones_por_hora: 1200
+  # cables trazados en campo y red de referencia del teléfono (fase 5)
+  trazo_max_puntos: 3000         # puntos de un trazo
+  trazo_extremo_m: 20            # al aprobar un trazo como cable, sus extremos deben estar a esta distancia de un poste o mufa del proyecto
+  trazos_por_lote: 20
+  red_zona_max_grados: 0.03      # lado máximo de la zona que pide el teléfono (≈ 3 km)
+  red_max_puntos: 1500
+  red_max_lineas: 600
 
 # Calibración de la ruta (routing.calibrar): la fibra no necesita una calle por donde pase un auto. Si la ruta de Google (en auto) es más larga que
 # detour_factor veces la línea recta (y min_extra_m más), se pide la ruta a pie (veredas y pasos) y se usa si es claramente más corta (walking_gain);

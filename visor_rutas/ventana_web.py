@@ -22,6 +22,7 @@ import math
 import os
 import shutil
 import subprocess
+import json
 import threading
 import time
 from datetime import date, datetime
@@ -201,6 +202,9 @@ class Api:
         self._lotes = masivas.GestorLotes() if LOCAL_DISPONIBLE else None      # bulk coordinates batches (this process)
         self._redes = None              # ServicioRedes (network design module), created on first use
         self._ventana = None            # pywebview window (save dialogs); set by abrir()
+        self._lock_campo = threading.Lock()
+        self._campo_parar: threading.Event | None = None      # the field-app notices are being forwarded to the page (campo_escuchar)
+        self._campo_quitar: Any = None
         self._forzar_remoto = forzar_remoto or not LOCAL_DISPONIBLE
         self._config = configuracion_visor or config_visor.ConfigVisor(
             modo="remoto" if self._forzar_remoto else "local")
@@ -429,6 +433,44 @@ class Api:
         except Exception as exc:
             log.exception("Visor web: network module call %s failed", metodo)
             return {"ok": False, "error": f"Error inesperado en el módulo de redes ({type(exc).__name__}). Detalle en el log."}
+
+    # ----------------------------------------------------------------------- app de campo: avisos en tiempo real hacia la página
+
+    def campo_escuchar(self) -> dict[str, Any]:
+        """Starts sending the changes of the field data to the page (`window.CampoVisor.evento(aviso)`), once. Local mode: PostgreSQL LISTEN here;
+        remote mode: the server's Server-Sent Events. The page calls it only for an administrator or an editor."""
+        with self._lock_campo:
+            if self._campo_parar is not None:
+                return {"ok": True, "ya": True}
+            if self._modo == "remoto" and self._remoto is None:
+                return {"ok": False, "error": "Falta configurar el servidor"}
+            parar = threading.Event()
+            self._campo_parar = parar
+            if self._modo == "remoto":
+                threading.Thread(target=self._remoto.escuchar_campo, args=(self._avisar_campo, parar), name="campo-sse", daemon=True).start()
+                self._campo_quitar = parar.set
+            else:
+                from visor_rutas import campo_eventos
+                self._campo_quitar = campo_eventos.escucha().suscribir(self._avisar_campo)
+        return {"ok": True, "ya": False}
+
+    def campo_detener(self) -> dict[str, Any]:
+        with self._lock_campo:
+            if self._campo_parar is not None:
+                self._campo_parar.set()
+                if self._campo_quitar is not None:
+                    self._campo_quitar()
+            self._campo_parar = self._campo_quitar = None
+        return {"ok": True}
+
+    def _avisar_campo(self, aviso: dict[str, Any]) -> None:
+        """From the listening thread to the page (the main window; the windows of their own do not need it)."""
+        if self._ventana is None:
+            return
+        try:
+            self._ventana.evaluate_js(f"window.CampoVisor && window.CampoVisor.evento({json.dumps(aviso)})")
+        except Exception:                                           # noqa: BLE001 - the window is closing
+            log.info("Visor web: campo notice could not be delivered")
 
     def _conexion_visio(self) -> Any:
         """Reused connection (None -> the searches read red_fibra.db); reconnects if it broke."""

@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import psycopg
 
-from visor_rutas.redes import (actualizar_red, bandejas, db, diagrama, lugares, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, problemas,
+from visor_rutas.redes import (actualizar_red, bandejas, campo, db, diagrama, lugares, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, problemas,
                                proyectos, red, respaldo, splitters, trazado, usuarios, verificar)
 
 log = logging.getLogger(__name__)
@@ -138,6 +138,18 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "splitters_de_diagrama": splitters.de_diagrama,
     "confirmar_splitter": splitters.confirmar,
     "quitar_confirmacion_splitter": splitters.quitar_confirmacion,
+    # app de campo: lo que ve y decide quien revisa (administrador / editor); el técnico usa /visor/campo/* (visor_rutas/campo_api.py)
+    "campo_puntos": campo.puntos,
+    "campo_jornadas": campo.jornadas,
+    "campo_ubicaciones": campo.ubicaciones,
+    "campo_editar": campo.editar_punto,
+    "campo_aprobar": campo.aprobar,
+    "campo_rechazar": campo.rechazar,
+    "campo_foto": campo.foto_datos,
+    "campo_trazos": campo.trazos,
+    "campo_editar_trazo": campo.editar_trazo,
+    "campo_aprobar_trazos": campo.aprobar_trazos,
+    "campo_rechazar_trazos": campo.rechazar_trazos,
     # sección 8: integridad de los datos
     "verificar_base": verificar.verificar,
 }
