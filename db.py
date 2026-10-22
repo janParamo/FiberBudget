@@ -522,17 +522,20 @@ def find_existing_poles_near_route(route_linestring_wkt: str, buffer_m: float) -
                          route_position_m=float(row[3])) for row in rows]
 
 
-def find_red_en_bbox(oeste: float, sur: float, este: float, norte: float, max_puntos: int = 1500, max_lineas: int = 600) -> dict:
+def find_red_en_bbox(oeste: float, sur: float, este: float, norte: float, max_puntos: int = 1500, max_lineas: int = 600,
+                     prefijos: list[str] | None = None) -> dict:
     """The network of the budget database (red_puntos / red_lineas, a copy of the KMZ) inside a zone, light for the phone of the field app:
-    {"puntos": [{"id", "n", "t", "lat", "lon"}], "lineas": [{"id", "n", "t", "c": [[lat, lon], ...]}], "truncado": bool}. Lines are simplified (about 0.5 m)."""
+    {"puntos": [{"id", "n", "t", "lat", "lon"}], "lineas": [{"id", "n", "t", "c": [[lat, lon], ...]}], "truncado": bool}. Lines are simplified (about 0.5 m).
+    `prefijos`: only the points whose tipo starts with one of them («poste» -> «poste de concreto»…; None = all); `max_lineas` 0: no lines."""
     import json
     s = get_settings()
     caja = {"o": oeste, "s": sur, "e": este, "n": norte}
     try:
         with psycopg.connect(host=s.db_host, port=s.db_port, dbname=s.db_name, user=s.db_user, password=s.db_password, connect_timeout=5) as conn:
-            puntos = conn.execute("SELECT id, nombre, tipo, ST_Y(geom), ST_X(geom) FROM red_puntos WHERE geom IS NOT NULL AND geom && ST_MakeEnvelope(%(o)s, %(s)s, %(e)s, %(n)s, 4326) LIMIT %(l)s",
-                                  {**caja, "l": max_puntos}).fetchall()
-            lineas = conn.execute("SELECT id, nombre, tipo, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.000005), 6) FROM red_lineas WHERE geom IS NOT NULL "
+            puntos = conn.execute("SELECT id, nombre, tipo, ST_Y(geom), ST_X(geom) FROM red_puntos WHERE geom IS NOT NULL AND geom && ST_MakeEnvelope(%(o)s, %(s)s, %(e)s, %(n)s, 4326) "
+                                  "AND (%(pat)s::text[] IS NULL OR tipo ILIKE ANY(%(pat)s::text[])) LIMIT %(l)s",
+                                  {**caja, "l": max_puntos, "pat": None if prefijos is None else [p.replace("%", "") + "%" for p in prefijos]}).fetchall()
+            lineas = [] if max_lineas <= 0 else conn.execute("SELECT id, nombre, tipo, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.000005), 6) FROM red_lineas WHERE geom IS NOT NULL "
                                   "AND geom && ST_MakeEnvelope(%(o)s, %(s)s, %(e)s, %(n)s, 4326) LIMIT %(l)s", {**caja, "l": max_lineas}).fetchall()
     except psycopg.Error as exc:
         log.error("Zone query of the field app failed (%s)", type(exc).__name__)
@@ -544,4 +547,4 @@ def find_red_en_bbox(oeste: float, sur: float, este: float, norte: float, max_pu
         for k, parte in enumerate(partes):
             salida_lineas.append({"id": f"k{id_}" + (f"_{k}" if k else ""), "n": nombre or "", "t": tipo or "", "c": [[c[1], c[0]] for c in parte]})
     return {"puntos": [{"id": f"k{r[0]}", "n": r[1] or "", "t": r[2] or "", "lat": round(float(r[3]), 6), "lon": round(float(r[4]), 6)} for r in puntos],
-            "lineas": salida_lineas, "truncado": len(puntos) >= max_puntos or len(lineas) >= max_lineas}
+            "lineas": salida_lineas, "truncado": len(puntos) >= max_puntos or (max_lineas > 0 and len(lineas) >= max_lineas)}

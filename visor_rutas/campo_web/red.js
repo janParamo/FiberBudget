@@ -69,7 +69,12 @@
         if (vistos.has(p.id) || !grande.contains([p.lat, p.lon])) return; vistos.add(p.id);
         const m = L.circleMarker([p.lat, p.lon], { radius: 6, weight: 2, color: "#fff", fillColor: COLOR(p.t), fillOpacity: 1, renderer: canvas }).addTo(capa);
         m.bindTooltip(`${p.n || "(sin nombre)"}${p.t ? " · " + p.t : ""}`, { direction: "top" });
-        m.on("click", (e) => { if (alTocar) { L.DomEvent.stop(e); alTocar(p); } else m.openTooltip(); });
+        m.on("click", (e) => {
+          const C = window.Campo;
+          if (alTocar) { L.DomEvent.stop(e); alTocar(p); }
+          else if (C && C.tarjeta && !(C.captura && C.captura.activa())) { L.DomEvent.stop(e); C.tarjeta.mostrarRed(p); }
+          else m.openTooltip();
+        });
       });
     });
   }
@@ -94,8 +99,21 @@
     return mejor;
   }
 
+  /* Poles and mufas already loaded whose name contains the text (at most `max`), nearest to the map centre first. */
+  function buscar(texto, max) {
+    const q = String(texto || "").trim().toLowerCase();
+    if (!q) return [];
+    const c = mapa ? mapa.getCenter() : null, vistos = new Set(), r = [];
+    celdas.forEach((d) => d.puntos.forEach((p) => {
+      if (vistos.has(p.id) || !String(p.n || "").toLowerCase().includes(q)) return;
+      vistos.add(p.id);
+      r.push({ ...p, d: c ? window.CampoTrazo.distanciaM({ lat: c.lat, lon: c.lng }, p) : 0 });
+    }));
+    return r.sort((a, b) => a.d - b.d).slice(0, max || 30);
+  }
+
   window.CampoRed = {
-    iniciar, actualizar: programar, cercano,
+    iniciar, actualizar: programar, cercano, buscar,
     alternar() { visible = !visible; programar(); return visible; },
     get visible() { return visible; }, get aviso() { return aviso; },
     alTocar(f) { alTocar = f; }, celdas: () => celdas.size, dibujados: () => (capa ? capa.getLayers().length : 0),

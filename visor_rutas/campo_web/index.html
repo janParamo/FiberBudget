@@ -1,12 +1,13 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-tema="sistema">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b3d2e">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#1f222a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Campo">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <base href="/campo/">
   <title>Campo – Fiber Budget</title>
   <link rel="manifest" href="manifest.webmanifest">
@@ -18,23 +19,35 @@
 <body>
   <!-- Primera vez: la clave del técnico -->
   <main id="pantalla-clave" class="pantalla" hidden>
-    <h1>Campo</h1>
-    <p>Escriba la clave que le dio el administrador. Se guarda en este teléfono.</p>
-    <p id="aviso-http" class="error" role="alert" hidden>Esta dirección no es segura (http): el GPS y la instalación no funcionarán. Pida al administrador la dirección que empieza con https://.</p>
-    <label for="clave">Clave</label>
-    <input id="clave" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <p id="clave-error" class="error" role="alert" hidden></p>
-    <button id="clave-entrar" class="grande primario" type="button">Entrar</button>
+    <div class="clave-caja">
+      <img src="icono-192.png" alt="" width="72" height="72">
+      <h1>Campo</h1>
+      <p>Escriba la clave que le dio el administrador. Se guarda en este teléfono.</p>
+      <p id="aviso-http" class="error" role="alert" hidden>Esta dirección no es segura (http): el GPS y la instalación no funcionarán. Pida al administrador la dirección que empieza con https://.</p>
+      <label for="clave">Clave</label>
+      <input id="clave" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <p id="clave-error" class="error" role="alert" hidden></p>
+      <button id="clave-entrar" class="btn primario" type="button">Entrar</button>
+    </div>
   </main>
 
   <div id="app" hidden>
-    <header id="barra">
-      <button id="btn-menu" class="barra-btn" type="button" aria-label="Menú">☰</button>
-      <div id="titulo"><strong id="jornada-nombre">Jornada</strong><span id="persona"></span></div>
-      <span id="gps-estado" class="chip" title="Precisión del GPS">GPS…</span>
-      <button id="btn-lista" class="barra-btn" type="button" aria-label="Lista de puntos">📋<b id="contador">0</b></button>
-    </header>
+    <div id="mapa" aria-label="Mapa"></div>
+    <div id="mira" hidden><span></span></div>
 
+    <!-- barra de herramientas flotante (arriba a la izquierda) -->
+    <nav id="barra" aria-label="Herramientas">
+      <button id="b-menu" type="button" data-ic="menu" aria-label="Menú"></button>
+      <button id="b-filtro" type="button" data-ic="filtro" aria-label="Filtrar lo que se ve"></button>
+      <button id="b-lista" type="button" data-ic="lista" aria-label="Lista de puntos"><b id="contador">0</b></button>
+      <button id="b-buscar" type="button" data-ic="buscar" aria-label="Buscar"></button>
+      <button id="b-compartir" type="button" data-ic="compartir" aria-label="Compartir o exportar"></button>
+    </nav>
+    <div id="chips">
+      <span id="gps-estado" class="chip" title="Precisión del GPS">GPS…</span>
+      <span id="jornada-nombre" class="chip suave">Jornada</span>
+      <span id="persona" class="chip suave"></span>
+    </div>
     <div id="cola-barra" role="status" hidden>
       <span id="cola-texto"></span>
       <button id="cola-enviar" type="button">Enviar ahora</button>
@@ -45,149 +58,204 @@
       <button id="ios-cerrar" type="button" aria-label="Cerrar el aviso">✕</button>
     </div>
 
-    <div id="mapa" aria-label="Mapa"></div>
-    <button id="btn-centrar" class="flotante" type="button" aria-label="Centrar en mi ubicación">◎</button>
-    <button id="btn-red" class="flotante" type="button" aria-label="Mostrar u ocultar la red de referencia" aria-pressed="true">⌁</button>
-    <button id="btn-capa" class="flotante" type="button" aria-label="Cambiar entre satélite y calles">🛰</button>
-    <div id="mira" hidden><span></span></div>
+    <!-- botones redondos -->
+    <button id="b-ubicacion" class="fab chico" type="button" data-ic="ubicacion" aria-label="Centrar en mi ubicación"></button>
+    <button id="btn-red" class="fab chico" type="button" data-ic="red" aria-label="Mostrar u ocultar los postes y mufas existentes" aria-pressed="true"></button>
+    <button id="b-agregar" class="fab grande" type="button" data-ic="agregar" aria-label="Agregar un punto o un cable"></button>
 
-    <nav id="acciones" aria-label="Registrar">
-      <button type="button" data-tipo="poste">Poste</button>
-      <button type="button" data-tipo="mufa">Mufa</button>
-      <button type="button" data-tipo="reserva">Reserva</button>
-      <button type="button" data-tipo="solitaria">Solitaria</button>
-      <button type="button" data-tipo="cliente">Cliente</button>
-      <button type="button" data-tipo="otro">Otro</button>
-      <button type="button" id="btn-cable" class="cable">Trazar cable</button>
-    </nav>
+    <!-- ubicar un punto / trazar un cable -->
+    <div id="cap-banner" role="status" hidden></div>
+    <div id="cap-tipos" hidden aria-label="Tipo de punto">
+      <button type="button" data-cap-tipo="poste">Poste</button>
+      <button type="button" data-cap-tipo="mufa">Mufa</button>
+      <button type="button" data-cap-tipo="reserva">Reserva</button>
+      <button type="button" data-cap-tipo="solitaria">Solitaria</button>
+      <button type="button" data-cap-tipo="cliente">Cliente</button>
+      <button type="button" data-cap-tipo="otro">Otro</button>
+    </div>
+    <div id="cap-herramientas" hidden>
+      <button id="cap-huellas" type="button" data-ic="huellas" aria-label="Grabar un recorrido caminando"></button>
+      <button id="cap-ruta" type="button" data-ic="ruta" aria-label="Trazar un cable punto por punto"></button>
+    </div>
+    <div id="cap-punto" class="cap-barra" hidden>
+      <button id="cap-cancelar" type="button" class="btn">Cancelar</button>
+      <button id="cap-ok" type="button" class="btn primario">OK</button>
+    </div>
+    <div id="cap-cable" class="cap-barra" hidden>
+      <button id="cap-cable-x" type="button" class="redondo" data-ic="cerrar" aria-label="Cancelar el cable"></button>
+      <div class="cap-grupo">
+        <button id="cap-quitar" type="button" data-ic="menos1" aria-label="Quitar este punto"></button>
+        <button id="cap-prev" type="button" data-ic="izq" aria-label="Punto anterior"></button>
+        <button id="cap-mas" type="button" class="central" data-ic="mas1" aria-label="Agregar un punto"></button>
+        <button id="cap-sig" type="button" data-ic="der" aria-label="Punto siguiente"></button>
+        <button id="cap-guardar" type="button" data-ic="guardar" aria-label="Terminar el cable"></button>
+      </div>
+    </div>
+    <div id="cap-coord" hidden></div>
+    <div id="cap-grab" role="status" hidden>
+      <div><b>Grabando el recorrido</b><span id="cap-grab-texto"></span></div>
+      <button id="cap-grab-parar" type="button" data-ic="parar" aria-label="Detener la grabación"></button>
+    </div>
 
-    <!-- Esperando mejor señal -->
-    <section id="hoja-gps" class="hoja" hidden>
-      <h2 id="gps-titulo">Esperando mejor señal…</h2>
-      <p id="gps-detalle">Buscando el GPS.</p>
-      <div class="fila">
-        <button id="gps-usar" class="grande" type="button">Usar igual</button>
-        <button id="gps-mapa" class="grande" type="button">Marcar en el mapa</button>
-      </div>
-      <button id="gps-cancelar" class="grande secundario" type="button">Cancelar</button>
-    </section>
-
-    <!-- Marcar en el mapa -->
-    <section id="hoja-mira" class="hoja corta" hidden>
-      <p>Mueva el mapa hasta que la mira quede sobre el punto.</p>
-      <div class="fila">
-        <button id="mira-ok" class="grande primario" type="button">Aquí</button>
-        <button id="mira-cancelar" class="grande secundario" type="button">Cancelar</button>
-      </div>
-    </section>
-
-    <!-- Trazar un cable -->
-    <section id="hoja-cable" class="hoja corta" hidden>
-      <h2>Trazar cable</h2>
-      <p id="cable-info" class="nota">Toque los postes o puntos del mapa en orden, use «Mi ubicación» o grabe el recorrido caminando.</p>
-      <div class="fila">
-        <button id="cable-ubicacion" class="grande secundario" type="button">📍 Mi ubicación</button>
-        <button id="cable-mira" class="grande secundario" type="button">Centro del mapa</button>
-      </div>
-      <div class="fila">
-        <button id="cable-grabar" class="grande secundario" type="button">● Grabar recorrido</button>
-        <button id="cable-deshacer" class="grande secundario" type="button">Deshacer</button>
-      </div>
-      <div class="fila">
-        <button id="cable-terminar" class="grande primario" type="button" disabled>Terminar</button>
-        <button id="cable-cancelar" class="grande secundario" type="button">Cancelar</button>
+    <!-- lo que se tocó en el mapa -->
+    <section id="tarjeta" hidden>
+      <div class="t-texto"><b id="t-titulo"></b><small id="t-fecha"></small><small id="t-detalle"></small></div>
+      <div class="t-acciones">
+        <button id="t-editar" type="button" data-ic="lapiz" aria-label="Editar"></button>
+        <button id="t-copiar" type="button" data-ic="copiar" aria-label="Copiar los detalles"></button>
+        <button id="t-navegar" type="button" data-ic="navegar" aria-label="Cómo llegar"></button>
+        <button id="t-mas" type="button" data-ic="mas" aria-label="Más opciones"></button>
       </div>
     </section>
 
-    <section id="hoja-cable-form" class="hoja" hidden>
-      <h2>Cable trazado</h2>
-      <p id="cable-resumen" class="nota"></p>
-      <label for="cable-tipo">Tipo de cable</label>
-      <select id="cable-tipo"><option value="">Sin indicar</option><option value="ADSS">ADSS</option><option value="FLAT">FLAT</option></select>
-      <label for="cable-hilos">Hilos</label>
-      <select id="cable-hilos"><option value="">Sin indicar</option><option>2</option><option>4</option><option>6</option><option>8</option><option>12</option><option>24</option>
-        <option>48</option><option>72</option><option>96</option><option>144</option></select>
-      <label for="cable-notas">Notas</label>
-      <textarea id="cable-notas" rows="2" maxlength="1000"></textarea>
-      <p id="cable-error" class="error" role="alert" hidden></p>
-      <div class="fila">
-        <button id="cable-guardar" class="grande primario" type="button">Guardar y enviar</button>
-        <button id="cable-volver" class="grande secundario" type="button">Seguir trazando</button>
+    <div id="fondo-panel" hidden></div>
+
+    <!-- menú lateral -->
+    <aside id="p-menu" class="panel menu" hidden>
+      <button id="m-respaldo" type="button" class="m-item m-respaldo"><span data-ic="advertencia" class="m-ic"></span><b id="m-respaldo-texto">Respaldo de datos</b></button>
+      <h3>Mapa</h3>
+      <button id="m-jornada" type="button" class="m-item"><span data-ic="carpeta" class="m-ic"></span><span><b id="m-jornada-nombre">Jornada</b><small id="m-jornada-fecha"></small></span></button>
+      <button id="m-tipo-mapa" type="button" class="m-item"><span data-ic="mapa" class="m-ic"></span><span><b>Tipo de mapa</b><small id="m-tipo-mapa-texto"></small></span></button>
+      <h3>Jornadas</h3>
+      <button id="m-todas" type="button" class="m-item"><span data-ic="lista" class="m-ic"></span><span><b>Todas</b><small id="m-todas-texto"></small></span></button>
+      <button id="m-nueva" type="button" class="m-item"><span data-ic="carpeta" class="m-ic"></span><b>Abrir una jornada nueva</b></button>
+      <h3>Ayuda y ajustes</h3>
+      <button id="m-ajustes" type="button" class="m-item"><span data-ic="ajustes" class="m-ic"></span><b>Ajustes</b></button>
+      <button id="m-acerca" type="button" class="m-item"><span data-ic="info" class="m-ic"></span><span><b>Acerca de y ayuda</b><small id="m-version"></small></span></button>
+      <button id="m-instalar" type="button" class="m-item" hidden><span data-ic="instalar" class="m-ic"></span><b>Instalar la app</b></button>
+      <button id="m-salir" type="button" class="m-item"><span data-ic="llave" class="m-ic"></span><b>Cambiar de clave</b></button>
+    </aside>
+
+    <!-- lista de puntos y cables -->
+    <section id="p-lista" class="panel" hidden>
+      <header class="p-cab">
+        <button id="l-atras" type="button" data-ic="atras" aria-label="Volver al mapa"></button>
+        <button id="l-filtro" type="button" data-ic="filtro" aria-label="Filtrar"></button>
+        <button id="l-modo" type="button" class="p-titulo-btn" data-ic="lista"><span id="l-modo-texto">Explorar</span></button>
+        <button id="l-buscar" type="button" data-ic="buscar" aria-label="Buscar"></button>
+      </header>
+      <div id="l-seleccion" class="barra-seleccion" hidden>
+        <button id="l-todo" type="button" data-ic="todo" aria-label="Elegir todos"></button>
+        <span id="l-sel-texto">0 elegidos</span>
+        <button id="l-borrar" type="button" class="btn peligro chico" data-ic="basura">Eliminar</button>
       </div>
+      <div id="l-cuerpo" class="p-cuerpo"></div>
     </section>
 
-    <!-- Formulario del punto -->
-    <section id="hoja-formulario" class="hoja alta" hidden>
-      <h2 id="form-titulo">Poste</h2>
-      <p id="form-coord" class="nota"></p>
-      <p id="form-cerca" class="error" hidden></p>
-      <div id="form-subtipo-poste" class="grupo" hidden>
-        <label for="subtipo-poste">Tipo de poste</label>
-        <select id="subtipo-poste">
-          <option value="">Sin indicar</option><option value="ideay">Ideay</option><option value="concreto">Concreto</option>
-          <option value="madera">Madera</option><option value="metal">Metal</option><option value="cliente">Cliente</option>
-        </select>
-      </div>
-      <div id="form-subtipo-mufa" class="grupo" hidden>
-        <label for="mufa-capacidad">Mufa</label>
-        <div class="fila">
-          <select id="mufa-capacidad"><option value="">Capacidad</option><option value="48">48 hilos</option><option value="96">96 hilos</option></select>
-          <select id="mufa-formato"><option value="">Formato</option><option value="domo">Domo</option><option value="horizontal">Horizontal</option></select>
+    <!-- buscar -->
+    <section id="p-buscar" class="panel" hidden>
+      <header class="p-cab">
+        <button id="bu-atras" type="button" data-ic="atras" aria-label="Volver"></button>
+        <label class="buscador"><span data-ic="buscar"></span><input id="bu-texto" type="search" placeholder="Un punto, un poste o una coordenada" autocomplete="off" autocapitalize="off"></label>
+      </header>
+      <div id="bu-cuerpo" class="p-cuerpo"></div>
+    </section>
+
+    <!-- un punto: nuevo o existente -->
+    <section id="p-editor" class="panel completo" hidden>
+      <header class="p-cab">
+        <button id="ed-atras" type="button" data-ic="atras" aria-label="Volver"></button>
+        <span class="p-titulo"><span id="ed-icono"></span><b id="ed-titulo">Punto</b></span>
+        <button id="ed-mas" type="button" data-ic="mas" aria-label="Más opciones"></button>
+        <button id="ed-guardar" type="button" data-ic="guardar" aria-label="Guardar"></button>
+      </header>
+      <div class="p-cuerpo">
+        <p class="etiqueta">Tipo</p>
+        <div id="ed-tipos" class="chips-tipo">
+          <button type="button" data-ed-tipo="poste">Poste</button><button type="button" data-ed-tipo="mufa">Mufa</button><button type="button" data-ed-tipo="reserva">Reserva</button>
+          <button type="button" data-ed-tipo="solitaria">Solitaria</button><button type="button" data-ed-tipo="cliente">Cliente</button><button type="button" data-ed-tipo="otro">Otro</button>
         </div>
-      </div>
-      <label for="form-nombre">Nombre</label>
-      <input id="form-nombre" type="text" maxlength="160" autocomplete="off">
-      <label for="form-notas">Notas</label>
-      <textarea id="form-notas" rows="2" maxlength="1000"></textarea>
-      <div class="grupo">
-        <label class="boton-archivo grande secundario" for="form-foto">📷 Agregar foto</label>
-        <input id="form-foto" type="file" accept="image/*" capture="environment" multiple hidden>
-        <div id="form-fotos" class="miniaturas"></div>
-      </div>
-      <p id="form-error" class="error" role="alert" hidden></p>
-      <div class="fila">
-        <button id="form-guardar" class="grande primario" type="button">Guardar y enviar</button>
-        <button id="form-cancelar" class="grande secundario" type="button">Cancelar</button>
+        <div id="ed-subtipo-poste" hidden>
+          <label for="ed-poste" class="etiqueta">Tipo de poste</label>
+          <select id="ed-poste">
+            <option value="">Sin indicar</option><option value="ideay_tubular">Ideay tubular</option><option value="ideay_8_120">Ideay 8/120</option>
+            <option value="ideay_9_120">Ideay 9/120</option><option value="madera">Madera</option><option value="concreto">Concreto</option>
+          </select>
+        </div>
+        <div id="ed-subtipo-mufa" hidden>
+          <p class="etiqueta">Mufa</p>
+          <div class="fila">
+            <select id="ed-mufa-capacidad" aria-label="Capacidad"><option value="">Capacidad</option><option value="48">48 hilos</option><option value="96">96 hilos</option></select>
+            <select id="ed-mufa-formato" aria-label="Formato"><option value="">Formato</option><option value="domo">Domo</option><option value="horizontal">Horizontal</option></select>
+          </div>
+        </div>
+        <label for="ed-nombre" class="etiqueta">Nombre</label>
+        <input id="ed-nombre" type="text" maxlength="160" autocomplete="off">
+        <label for="ed-notas" class="etiqueta">Descripción</label>
+        <textarea id="ed-notas" rows="4" maxlength="1000"></textarea>
+        <p id="ed-cerca" class="advertencia" hidden></p>
+        <p class="etiqueta">Fotos</p>
+        <div id="ed-fotos" class="fotos"></div>
+        <div class="fila">
+          <label class="btn con-icono" for="ed-foto" data-ic="foto">Tomar foto</label>
+          <label class="btn con-icono" for="ed-galeria" data-ic="carpeta">De la galería</label>
+        </div>
+        <input id="ed-foto" type="file" accept="image/*" capture="environment" hidden>
+        <input id="ed-galeria" type="file" accept="image/*" multiple hidden>
+        <p class="etiqueta">Coordenadas GPS</p>
+        <div class="fila coord"><output id="ed-coord"></output><button id="ed-coord-editar" type="button" class="btn chico" data-ic="lapiz" aria-label="Cambiar la posición"></button></div>
+        <p class="etiqueta">Fecha de creación</p>
+        <output id="ed-fecha"></output>
+        <p class="etiqueta">Información extra</p>
+        <output id="ed-extra" class="extra"></output>
+        <p id="ed-error" class="error" role="alert" hidden></p>
       </div>
     </section>
 
-    <!-- Lista de la jornada -->
-    <section id="hoja-lista" class="hoja alta" hidden>
-      <div class="fila encabezado"><h2>Puntos de la jornada</h2><button id="lista-cerrar" class="barra-btn oscuro" type="button" aria-label="Cerrar">✕</button></div>
-      <ul id="lista-puntos"></ul>
-      <p id="lista-vacio" class="nota" hidden>Todavía no hay puntos en esta jornada.</p>
-    </section>
-
-    <!-- Editar un punto pendiente -->
-    <section id="hoja-editar" class="hoja" hidden>
-      <h2 id="editar-titulo">Punto</h2>
-      <label for="editar-nombre">Nombre</label>
-      <input id="editar-nombre" type="text" maxlength="160" autocomplete="off">
-      <label for="editar-notas">Notas</label>
-      <textarea id="editar-notas" rows="2" maxlength="1000"></textarea>
-      <p id="editar-error" class="error" role="alert" hidden></p>
-      <div class="fila">
-        <button id="editar-guardar" class="grande primario" type="button">Guardar</button>
-        <button id="editar-borrar" class="grande peligro" type="button">Borrar</button>
+    <!-- un cable -->
+    <section id="p-cable" class="panel completo" hidden>
+      <header class="p-cab">
+        <button id="cb-atras" type="button" data-ic="atras" aria-label="Volver"></button>
+        <span class="p-titulo"><span data-ic="ruta"></span><b id="cb-titulo">Cable</b></span>
+        <button id="cb-mas" type="button" data-ic="mas" aria-label="Más opciones"></button>
+        <button id="cb-guardar" type="button" data-ic="guardar" aria-label="Guardar"></button>
+      </header>
+      <div class="p-cuerpo">
+        <p class="etiqueta">Cable trazado</p>
+        <output id="cb-resumen" class="extra"></output>
+        <p class="etiqueta">Tipo de cable</p>
+        <div id="cb-tipos" class="chips-tipo">
+          <button type="button" data-cb-tipo="">Sin indicar</button><button type="button" data-cb-tipo="ADSS">ADSS</button><button type="button" data-cb-tipo="FLAT">FLAT</button>
+        </div>
+        <label for="cb-hilos" class="etiqueta">Hilos</label>
+        <select id="cb-hilos"><option value="">Sin indicar</option><option>2</option><option>4</option><option>6</option><option>8</option><option>12</option><option>24</option>
+          <option>48</option><option>72</option><option>96</option><option>144</option></select>
+        <label for="cb-notas" class="etiqueta">Descripción</label>
+        <textarea id="cb-notas" rows="4" maxlength="1000"></textarea>
+        <p class="etiqueta">Fecha de creación</p>
+        <output id="cb-fecha"></output>
+        <p class="etiqueta">Información extra</p>
+        <output id="cb-extra" class="extra"></output>
+        <p id="cb-error" class="error" role="alert" hidden></p>
       </div>
-      <button id="editar-cerrar" class="grande secundario" type="button">Cerrar</button>
     </section>
 
-    <!-- Ayuda para instalar -->
-    <section id="hoja-ayuda" class="hoja alta" hidden>
-      <div class="fila encabezado"><h2>Instalar la app</h2><button id="ayuda-cerrar" class="barra-btn oscuro" type="button" aria-label="Cerrar">✕</button></div>
-      <div id="ayuda-contenido"></div>
+    <!-- ajustes -->
+    <section id="p-ajustes" class="panel" hidden>
+      <header class="p-cab">
+        <button id="aj-atras" type="button" data-ic="atras" aria-label="Volver"></button>
+        <span class="p-titulo"><b>Ajustes</b></span>
+      </header>
+      <div id="aj-cuerpo" class="p-cuerpo sin-margen"></div>
     </section>
 
-    <!-- Menú -->
-    <section id="hoja-menu" class="hoja" hidden>
-      <h2>Menú</h2>
-      <button id="menu-cerrar-jornada" class="grande" type="button">Cerrar la jornada</button>
-      <button id="menu-instalar" class="grande primario" type="button" hidden>Instalar app</button>
-      <button id="menu-ayuda" class="grande secundario" type="button">Cómo instalar la app</button>
-      <button id="menu-salir" class="grande secundario" type="button">Cambiar de clave</button>
-      <button id="menu-volver" class="grande secundario" type="button">Volver al mapa</button>
+    <!-- acerca de y ayuda -->
+    <section id="p-acerca" class="panel" hidden>
+      <header class="p-cab">
+        <button id="ac-atras" type="button" data-ic="atras" aria-label="Volver"></button>
+        <span class="p-titulo"><b>Acerca de y ayuda</b></span>
+      </header>
+      <div id="ac-cuerpo" class="p-cuerpo"></div>
     </section>
+
+    <!-- ventanas de diálogo -->
+    <div id="dialogo" hidden role="dialog" aria-modal="true" aria-labelledby="dlg-titulo">
+      <div class="dlg-caja">
+        <h2 id="dlg-titulo"></h2>
+        <div id="dlg-cuerpo"></div>
+        <div id="dlg-botones"></div>
+      </div>
+    </div>
 
     <div id="aviso" role="status" aria-live="polite" hidden></div>
   </div>
@@ -195,10 +263,18 @@
   <script src="lib/leaflet/leaflet.js"></script>
   <script src="api.js"></script>
   <script src="cola.js"></script>
-  <script src="ayuda.js"></script>
   <script src="trazo.js"></script>
+  <script src="iconos.js"></script>
+  <script src="ajustes.js"></script>
+  <script src="base.js"></script>
   <script src="mapa.js"></script>
   <script src="red.js"></script>
+  <script src="ayuda.js"></script>
+  <script src="exportar.js"></script>
+  <script src="captura.js"></script>
+  <script src="editor.js"></script>
+  <script src="lista.js"></script>
+  <script src="menu.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

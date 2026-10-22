@@ -23,7 +23,14 @@ from visor_rutas.redes.db import DatosInvalidos, NoEncontrado, SinPermiso
 
 TIPOS = ("poste", "mufa", "reserva", "solitaria", "cliente", "otro")
 ESTADOS = ("pendiente", "aprobado", "rechazado", "editado")
-SUBTIPOS_POSTE = ("ideay", "concreto", "madera", "metal", "cliente")
+# The types of pole of the crews (list of Jan, 2026-10-21): stored as the slug, shown with the label. The text typed by hand («Ideay 8/120») is also accepted.
+POSTES = {"ideay_tubular": "Ideay tubular", "ideay_8_120": "Ideay 8/120", "ideay_9_120": "Ideay 9/120", "madera": "Madera", "concreto": "Concreto"}
+SUBTIPOS_POSTE = tuple(POSTES)
+
+
+def clave_poste(texto: Any) -> str:
+    """«Ideay 8/120» -> «ideay_8_120»."""
+    return re.sub(r"[^a-z0-9]+", "_", str(texto or "").strip().lower()).strip("_")
 _MUFA = re.compile(r"^(48|96)(?:\s+(domo|horizontal))?$", re.I)
 _UUID = re.compile(r"^[0-9a-fA-F-]{8,64}$")
 _TIPOS_FOTO = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG\r\n\x1a\n": "image/png"}
@@ -32,7 +39,7 @@ LIMITE_PUNTOS = 500
 MINIATURA_PX = 320
 RAIZ = Path(__file__).resolve().parents[2]
 POR_DEFECTO = {"precision_max_m": 10, "duplicado_m": 5, "foto_max_bytes": 3145728, "fotos_por_punto": 8, "puntos_por_lote": 50, "peticiones_por_hora": 1200,
-               "trazo_max_puntos": 3000, "trazo_extremo_m": 20, "trazos_por_lote": 20, "red_zona_max_grados": 0.03, "red_max_puntos": 1500, "red_max_lineas": 600}
+               "trazo_max_puntos": 3000, "trazo_extremo_m": 20, "trazos_por_lote": 20, "red_zona_max_grados": 0.03, "red_max_puntos": 1500, "red_max_lineas": 600, "red_tipos": ["poste", "mufa"], "red_lineas": False}
 
 
 def configuracion() -> dict[str, Any]:
@@ -90,8 +97,10 @@ def _subtipo(tipo: str, valor: Any) -> str | None:
     s = _texto(valor, 40).lower()
     if not s:
         return None
-    if tipo == "poste" and s not in SUBTIPOS_POSTE:
-        raise DatosInvalidos({"subtipo": "Poste: " + ", ".join(SUBTIPOS_POSTE)})
+    if tipo == "poste":
+        if clave_poste(s) not in POSTES:
+            raise DatosInvalidos({"subtipo": "Poste: " + ", ".join(POSTES.values())})
+        return clave_poste(s)
     if tipo == "mufa":
         m = _MUFA.match(s)
         if not m:
@@ -904,9 +913,10 @@ def red_referencia(con: Any, actor: dict[str, Any], *, oeste: float, sur: float,
     caja = {"o": o, "s": s, "e": e, "n": n}
     puntos = con.execute(
         "SELECT el.id, el.nombre, el.tipo, ST_Y(el.ubicacion) AS lat, ST_X(el.ubicacion) AS lon FROM redes.elementos el JOIN redes.proyectos p ON p.id = el.proyecto_id "
-        "WHERE p.es_red_base AND p.borrado_en IS NULL AND el.borrado_en IS NULL AND el.ubicacion IS NOT NULL AND el.tipo IN ('poste', 'mufa', 'nodo', 'odf') "
-        "AND el.ubicacion && ST_MakeEnvelope(%(o)s, %(s)s, %(e)s, %(n)s, 4326) LIMIT %(l)s", {**caja, "l": int(cfg["red_max_puntos"])}).fetchall()
-    lineas = con.execute(
+        "WHERE p.es_red_base AND p.borrado_en IS NULL AND el.borrado_en IS NULL AND el.ubicacion IS NOT NULL AND el.tipo = ANY(%(t)s) "
+        "AND el.ubicacion && ST_MakeEnvelope(%(o)s, %(s)s, %(e)s, %(n)s, 4326) LIMIT %(l)s",
+        {**caja, "l": int(cfg["red_max_puntos"]), "t": [t for t in cfg["red_tipos"] if t in ("poste", "mufa", "nodo", "odf")]}).fetchall()
+    lineas = [] if not cfg["red_lineas"] else con.execute(
         "SELECT c.id, c.nombre, ST_AsGeoJSON(ST_SimplifyPreserveTopology(c.geom, 0.000005), 6) AS g FROM redes.cables c JOIN redes.proyectos p ON p.id = c.proyecto_id "
         "WHERE p.es_red_base AND p.borrado_en IS NULL AND c.borrado_en IS NULL AND c.geom && ST_MakeEnvelope(%(o)s, %(s)s, %(e)s, %(n)s, 4326) LIMIT %(l)s",
         {**caja, "l": int(cfg["red_max_lineas"])}).fetchall()

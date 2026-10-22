@@ -26,7 +26,7 @@ from psycopg.types.json import Jsonb
 from visor_rutas.redes import metraje, mufa, proyectos, repositorio, texto, usuarios
 from visor_rutas.redes.db import ConflictoVersion, DatosInvalidos, NoEncontrado, SinPermiso
 
-SUBTIPOS = {"poste": ("ideay", "concreto", "madera", "metal", "cliente"),
+SUBTIPOS = {"poste": ("ideay_tubular", "ideay_8_120", "ideay_9_120", "madera", "concreto", "ideay", "metal", "cliente"),      # the first five are the ones offered (the first is the default); the rest are legacy and stay valid
             "mufa": ("empalme", "distribucion", "terminal", "reserva"),
             "cliente": (None,), "nodo": ("olt", "nodo", "mini_nodo"), "odf": (None,)}
 HILOS = (2, 4, 6, 8, 12, 24, 48, 72, 96, 144)        # 2-8: cables of the existing network (Visio)

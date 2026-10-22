@@ -154,6 +154,8 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "verificar_base": verificar.verificar,
 }
 # Methods that call Google: in remote mode they count for the person's hourly limit.
+# What the role «tecnico» (the crews) may call here: who it is. Everything else of the network module is closed to it; the field app has its own endpoints.
+PERMITIDOS_TECNICO = {"estado"}
 CON_LIMITE = {"geocodificar"}
 
 
@@ -208,6 +210,8 @@ class ServicioRedes:
             with self._lock:
                 con = self._conexion()
                 actor = usuarios.identificar(con, persona_visor=persona_visor, usuario_windows=usuario_windows)
+                if actor.get("rol") == "tecnico" and metodo not in PERMITIDOS_TECNICO:       # a crew only uses the field app (/visor/campo/*): nothing of the network module
+                    return {"ok": False, "error": "Su rol (técnico de campo) solo usa la app de campo: ve los postes y mufas existentes, no la red ni los proyectos"}
                 try:
                     resultado = funcion(con, actor, **(args or {}))
                 except TypeError as exc:

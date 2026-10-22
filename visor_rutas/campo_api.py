@@ -169,7 +169,7 @@ def red_de_referencia(bbox: str, persona: str = Depends(persona_campo)) -> Any:
     aviso = None
     try:
         import db as presupuesto_db
-        kmz = presupuesto_db.find_red_en_bbox(o, s, e, n, int(cfg["red_max_puntos"]), int(cfg["red_max_lineas"]))
+        kmz = presupuesto_db.find_red_en_bbox(o, s, e, n, int(cfg["red_max_puntos"]), int(cfg["red_max_lineas"]) if cfg["red_lineas"] else 0, list(cfg["red_tipos"]))
     except Exception as exc:                                                    # noqa: BLE001 - the module part still serves
         log.warning("Campo: the KMZ network of the zone could not be read (%s)", type(exc).__name__)
         kmz, aviso = {"puntos": [], "lineas": [], "truncado": False}, "La red del KMZ no está disponible por ahora"

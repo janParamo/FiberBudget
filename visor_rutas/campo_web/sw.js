@@ -2,10 +2,11 @@
  * envía la cola cuando vuelve la señal aunque la app esté cerrada (Background Sync; iPhone no lo tiene: ahí se envía al abrir la app). */
 importScripts("cola.js");
 
-const VERSION = "campo-v6";
+const VERSION = "campo-v7";
 const TILES = "campo-mosaicos";
 const MAX_MOSAICOS = 900;
-const ARCHIVOS = ["./", "index.html", "campo.css", "api.js", "cola.js", "mapa.js", "red.js", "trazo.js", "ayuda.js", "app.js", "manifest.webmanifest", "icono-192.png", "icono-512.png",
+const ARCHIVOS = ["./", "index.html", "campo.css", "api.js", "cola.js", "trazo.js", "iconos.js", "ajustes.js", "base.js", "mapa.js", "red.js", "ayuda.js",
+                  "exportar.js", "captura.js", "editor.js", "lista.js", "menu.js", "app.js", "manifest.webmanifest", "icono-192.png", "icono-512.png",
                   "icono-apple.png", "lib/leaflet/leaflet.js", "lib/leaflet/leaflet.css", "lib/leaflet/images/marker-icon.png", "lib/leaflet/images/marker-icon-2x.png",
                   "lib/leaflet/images/marker-shadow.png", "lib/leaflet/images/layers.png", "lib/leaflet/images/layers-2x.png"];
 const HOSTS_MOSAICOS = ["server.arcgisonline.com", "tile.openstreetmap.org"];

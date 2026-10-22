@@ -50,6 +50,8 @@
     cerrarJornada: (id) => pedir("POST", "/visor/campo/jornadas", { accion: "cerrar", id }),
     enviarPuntos: (puntos) => pedir("POST", "/visor/campo/puntos", { puntos }),
     trazos: (jornada) => pedir("GET", `/visor/campo/trazos?jornada=${encodeURIComponent(jornada)}&limite=100`),
+    editarTrazo: (id, version, cambios) => pedir("PATCH", `/visor/campo/trazos/${id}`, { version, cambios }),
+    foto: (id, miniatura) => pedir("GET", `/visor/campo/foto/${id}${miniatura ? "?miniatura=true" : ""}`, undefined, { blob: true }),
     borrarTrazo: (id) => pedir("DELETE", `/visor/campo/trazos/${id}`),
     red: (o, s, e, n) => pedir("GET", `/visor/campo/red?bbox=${o},${s},${e},${n}`),
     ubicacion: (u) => pedir("POST", "/visor/campo/ubicacion", { lat: u.lat, lon: u.lon, precision_m: u.precision_m, capturado_en: new Date(u.hora || Date.now()).toISOString() }),
@@ -61,19 +63,22 @@
   };
 
   /* Foto del teléfono -> JPEG de máximo ~1600 px y calidad 0.7 (una foto de cámara pesa varios MB). */
-  async function comprimir(archivo) {
+  async function comprimir(archivo, lado, calidad) {
+    const ajustes = (window.Campo && window.Campo.ajustes && window.Campo.ajustes.obtener()) || {};
+    lado = lado || ajustes.foto_lado || FOTO_LADO;
+    calidad = calidad || (ajustes.foto_calidad ? ajustes.foto_calidad / 100 : FOTO_CALIDAD);
     let img;
     try { img = await createImageBitmap(archivo, { imageOrientation: "from-image" }); }
     catch (e) {
       img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => mal(new Error("No se pudo leer la foto")); i.src = URL.createObjectURL(archivo); });
     }
     const ancho = img.width || img.naturalWidth, alto = img.height || img.naturalHeight;
-    const escala = Math.min(1, FOTO_LADO / Math.max(ancho, alto));
+    const escala = Math.min(1, lado / Math.max(ancho, alto));
     const lienzo = document.createElement("canvas");
     lienzo.width = Math.max(1, Math.round(ancho * escala)); lienzo.height = Math.max(1, Math.round(alto * escala));
     lienzo.getContext("2d").drawImage(img, 0, 0, lienzo.width, lienzo.height);
     if (img.close) img.close();
-    return new Promise((ok, mal) => lienzo.toBlob((b) => (b ? ok(b) : mal(new Error("No se pudo comprimir la foto"))), "image/jpeg", FOTO_CALIDAD));
+    return new Promise((ok, mal) => lienzo.toBlob((b) => (b ? ok(b) : mal(new Error("No se pudo comprimir la foto"))), "image/jpeg", calidad));
   }
 
   window.CampoApi = { api, ErrorApi, clave, ponerClave, uuid, comprimir };

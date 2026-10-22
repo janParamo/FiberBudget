@@ -27,6 +27,7 @@ except ImportError:                                             # the browser te
     websockets = None
 
 LAT, LON = 12.1364, -86.2514
+ANCHO, ALTO = int(os.environ.get("CAMPO_ANCHO", 390)), int(os.environ.get("CAMPO_ALTO", 800))          # a tablet: CAMPO_ANCHO=1024 CAMPO_ALTO=768
 
 
 @pytest.fixture
@@ -106,7 +107,7 @@ def servidor_real(app):
 async def telefono(puerto, precision=5.0, cdp=9341, ua=None):
     """Headless Edge sized like a phone, on /campo, with the GPS at (LAT, LON) with the accuracy given."""
     perfil = tempfile.mkdtemp(prefix="edge_campo_")
-    proceso = subprocess.Popen([str(ruta_edge()), "--headless=new", f"--remote-debugging-port={cdp}", "--window-size=390,800", f"--user-data-dir={perfil}",
+    proceso = subprocess.Popen([str(ruta_edge()), "--headless=new", f"--remote-debugging-port={cdp}", f"--window-size={ANCHO},{ALTO}", f"--user-data-dir={perfil}",
                                 "--no-first-run", "--disable-gpu", "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(60):
@@ -122,7 +123,7 @@ async def telefono(puerto, precision=5.0, cdp=9341, ua=None):
             tarea = asyncio.create_task(p._leer())
             for dominio in ("Page", "Runtime"):
                 await p.enviar(f"{dominio}.enable")
-            await p.enviar("Emulation.setDeviceMetricsOverride", width=390, height=800, deviceScaleFactor=2, mobile=True)
+            await p.enviar("Emulation.setDeviceMetricsOverride", width=ANCHO, height=ALTO, deviceScaleFactor=2, mobile=True)
             await p.enviar("Network.enable")
             if ua:
                 await p.enviar("Emulation.setUserAgentOverride", userAgent=ua)
@@ -178,6 +179,23 @@ async def _captura(p, nombre):
         await p.captura(Path(carpeta) / f"{nombre}.png")
 
 
+async def _dialogo(p, texto):
+    """Taps the button of the open dialog whose text contains `texto`."""
+    await p.esperar("!document.getElementById('dialogo').hidden", 5)
+    await p.evaluar(f"[...document.querySelectorAll('#dialogo button')].find((b) => b.textContent.includes({json.dumps(texto)})).click(); true")
+    await asyncio.sleep(0.4)
+
+
+async def _capturar_punto(p, tipo=None):
+    """The + button, the type chip (if any) and OK: the point editor opens."""
+    await _tocar(p, "#b-agregar")
+    await p.esperar("document.body.classList.contains('capturando')", 5)
+    if tipo:
+        await _tocar(p, f"#cap-tipos [data-cap-tipo={tipo}]")
+    await _tocar(p, "#cap-ok")
+    await p.esperar("!document.getElementById('p-editor').hidden", 5)
+
+
 async def _recorrido(puerto, con, tmp_path):
     foto = tmp_path / "foto.jpg"
     foto.write_bytes(jpeg(3000, 2000))                                       # a 3000 x 2000 photo, as a camera takes it
@@ -197,19 +215,24 @@ async def _recorrido(puerto, con, tmp_path):
         # ---- the GPS shows its accuracy and is good enough (5 m <= 10 m)
         await p.esperar("document.getElementById('gps-estado').textContent.includes('±5')", 15)
         assert "buena" in await p.evaluar("document.getElementById('gps-estado').className")
+        await _captura(p, "2_mapa")
 
-        # ---- a pole with GPS and a photo
-        await _tocar(p, "#acciones [data-tipo=poste]")
-        await p.esperar("!document.getElementById('hoja-formulario').hidden", 5)
-        assert await p.evaluar("document.getElementById('form-nombre').value") == "Poste 1"          # suggested name
-        assert "GPS ±5 m" in await p.evaluar("document.getElementById('form-coord').textContent")
-        await p.evaluar("document.getElementById('subtipo-poste').value = 'concreto'; true")
-        await _escribir(p, "form-notas", "esquina de la pulpería")
-        await _captura(p, "2_formulario")
-        await p.subir_archivo("#form-foto", foto)
-        await p.esperar("document.querySelectorAll('#form-fotos img').length === 1", 20)
-        await _tocar(p, "#form-guardar")
-        await p.esperar("document.getElementById('hoja-formulario').hidden && document.getElementById('contador').textContent === '1'", 20)
+        # ---- a pole with GPS and a photo: + , the crosshair on the GPS fix, OK
+        await _tocar(p, "#b-agregar")
+        await p.esperar("document.body.classList.contains('capturando') && !document.getElementById('mira').hidden", 5)
+        assert "GPS ±5" in await p.evaluar("document.getElementById('cap-banner').textContent")
+        await _captura(p, "3_capturando")
+        await _tocar(p, "#cap-ok")
+        await p.esperar("!document.getElementById('p-editor').hidden", 5)
+        assert await p.evaluar("document.getElementById('ed-nombre').value") == "Poste 1"          # suggested name
+        assert "GPS ±5 m" in await p.evaluar("document.getElementById('ed-coord').textContent")
+        await p.evaluar("document.getElementById('ed-poste').value = 'concreto'; true")
+        await _escribir(p, "ed-notas", "esquina de la pulpería")
+        await p.subir_archivo("#ed-foto", foto)
+        await p.esperar("document.querySelectorAll('#ed-fotos img').length === 1", 20)
+        await _captura(p, "4_editor")
+        await _tocar(p, "#ed-guardar")
+        await p.esperar("document.getElementById('p-editor').hidden && document.getElementById('contador').textContent === '1'", 20)
         await esperar_sql(con, "SELECT 1 FROM redes.campo_fotos")                                   # saved in the phone first, sent in the background
         await p.esperar("document.getElementById('cola-barra').hidden", 20)
         fila = con.execute("SELECT * FROM redes.campo_puntos").fetchone()
@@ -226,67 +249,79 @@ async def _recorrido(puerto, con, tmp_path):
         con.execute("UPDATE redes.campo_puntos SET estado = 'rechazado', motivo_rechazo = 'Está en un lote privado' WHERE tipo = 'poste'")
         con.execute("UPDATE redes.campo_puntos SET actualizado_en = now() WHERE tipo = 'poste'")
         await p.evaluar("Campo.cargarPuntos()")
-        await _tocar(p, "#btn-lista")
-        await p.esperar("document.getElementById('lista-puntos').textContent.includes('Rechazado: Está en un lote privado')", 10)
-        await _tocar(p, "#lista-cerrar")
+        await _tocar(p, "#b-lista")
+        await p.esperar("document.getElementById('l-cuerpo').textContent.includes('Rechazado: Está en un lote privado')", 10)
+        await _tocar(p, "#l-atras")
         con.execute("UPDATE redes.campo_puntos SET estado = 'pendiente', motivo_rechazo = NULL, actualizado_en = now() WHERE tipo = 'poste'")
         await p.evaluar("Campo.cargarPuntos()")
 
-        # ---- a bad signal: waits, offers to use it anyway or to mark it on the map
+        # ---- a bad signal: the banner warns; the crosshair is moved by hand, so the point is «marcado en el mapa»
         await p.gps(LAT + 0.0003, LON, 60.0)
         await p.esperar("document.getElementById('gps-estado').textContent.includes('±60')", 15)
-        await _tocar(p, "#acciones [data-tipo=mufa]")
-        await p.esperar("!document.getElementById('hoja-gps').hidden", 5)
-        assert "±60" in await p.evaluar("document.getElementById('gps-detalle').textContent")
-        await _captura(p, "3_gps_debil")
-        await _tocar(p, "#gps-mapa")
-        await p.esperar("!document.getElementById('hoja-mira').hidden && !document.getElementById('mira').hidden", 5)
-        await _tocar(p, "#mira-ok")
-        await p.esperar("!document.getElementById('hoja-formulario').hidden", 5)
-        assert "marcado en el mapa" in await p.evaluar("document.getElementById('form-coord').textContent")
-        await p.evaluar("document.getElementById('mufa-capacidad').value = '48'; document.getElementById('mufa-formato').value = 'domo'; true")
-        await _tocar(p, "#form-guardar")
+        await _tocar(p, "#b-agregar")
+        await p.esperar("document.body.classList.contains('capturando')", 5)
+        await p.esperar("document.getElementById('cap-banner').textContent.includes('poco preciso') || document.getElementById('cap-banner').textContent.includes('±60')", 10)
+        await _captura(p, "5_gps_debil")
+        await _tocar(p, "#cap-tipos [data-cap-tipo=mufa]")
+        await p.evaluar(f"CampoMapa.leaflet().setView([{LAT + 0.0009}, {LON}], 19, {{animate: false}}); true")
+        await _tocar(p, "#cap-ok")
+        await p.esperar("!document.getElementById('p-editor').hidden", 5)
+        assert "marcado en el mapa" in await p.evaluar("document.getElementById('ed-coord').textContent")
+        assert await p.evaluar("document.getElementById('ed-nombre').value") == "Mufa 1"
+        await p.evaluar("document.getElementById('ed-mufa-capacidad').value = '48'; document.getElementById('ed-mufa-formato').value = 'domo'; true")
+        await _tocar(p, "#ed-guardar")
         await p.esperar("document.getElementById('contador').textContent === '2'", 20)
         await esperar_sql(con, "SELECT 1 FROM redes.campo_puntos WHERE tipo = 'mufa'")
         await p.esperar("document.getElementById('cola-barra').hidden", 20)
         mufa = con.execute("SELECT * FROM redes.campo_puntos WHERE tipo = 'mufa'").fetchone()
         assert (mufa["subtipo"], mufa["origen_coord"], mufa["precision_m"], mufa["nombre"]) == ("48 domo", "mapa", None, "Mufa 1")
 
-        # ---- "use it anyway" with the poor signal
-        await _tocar(p, "#acciones [data-tipo=reserva]")
-        await p.esperar("!document.getElementById('hoja-gps').hidden", 5)
-        await _tocar(p, "#gps-usar")
-        await p.esperar("!document.getElementById('hoja-formulario').hidden", 5)
-        assert "GPS ±60 m" in await p.evaluar("document.getElementById('form-coord').textContent")
-        await _tocar(p, "#form-cancelar")
-        assert await p.evaluar("document.getElementById('hoja-formulario').hidden") is True
-        assert con.execute("SELECT count(*) AS n FROM redes.campo_puntos").fetchone()["n"] == 2          # cancelling saves nothing
+        # ---- cancelling the capture saves nothing
+        await _tocar(p, "#b-agregar")
+        await p.esperar("document.body.classList.contains('capturando')", 5)
+        await _tocar(p, "#cap-cancelar")
+        await p.esperar("!document.body.classList.contains('capturando')", 5)
+        assert con.execute("SELECT count(*) AS n FROM redes.campo_puntos").fetchone()["n"] == 2
 
         # ---- the list: both points, edit the name of the pending pole, delete the mufa
-        await _tocar(p, "#btn-lista")
-        await p.esperar("document.querySelectorAll('#lista-puntos li').length === 2", 5)
-        await _captura(p, "4_lista")
-        assert await p.evaluar("[...document.querySelectorAll('#lista-puntos .estado')].every((e) => e.textContent === 'Pendiente')") is True
-        await p.evaluar("[...document.querySelectorAll('#lista-puntos li')].find((li) => li.textContent.includes('Poste 1')).querySelector('button').click(); true")
-        await p.esperar("!document.getElementById('hoja-editar').hidden", 5)
-        await _escribir(p, "editar-nombre", "Poste esquina")
-        await _tocar(p, "#editar-guardar")
-        await p.esperar("document.getElementById('hoja-editar').hidden", 10)
+        await _tocar(p, "#b-lista")
+        await p.esperar("document.querySelectorAll('#l-cuerpo .fila-item').length === 2", 5)
+        await _captura(p, "6_lista")
+        assert await p.evaluar("[...document.querySelectorAll('#l-cuerpo .estado')].every((e) => e.textContent === 'Pendiente')") is True
+        await p.evaluar("[...document.querySelectorAll('#l-cuerpo .fila-item')].find((li) => li.textContent.includes('Poste 1')).click(); true")
+        await p.esperar("!document.getElementById('tarjeta').hidden && document.getElementById('t-titulo').textContent === 'Poste 1'", 5)
+        await _captura(p, "7_tarjeta")
+        await _tocar(p, "#t-editar")
+        await p.esperar("!document.getElementById('p-editor').hidden", 5)
+        await _escribir(p, "ed-nombre", "Poste esquina")
+        await _tocar(p, "#ed-guardar")
+        await p.esperar("document.getElementById('p-editor').hidden", 10)
         assert con.execute("SELECT nombre FROM redes.campo_puntos WHERE tipo = 'poste'").fetchone()["nombre"] == "Poste esquina"
-        await p.evaluar("window.confirm = () => true; true")
-        await _tocar(p, "#btn-lista")
-        await p.evaluar("[...document.querySelectorAll('#lista-puntos li')].find((li) => li.textContent.includes('Mufa 1')).querySelector('button').click(); true")
-        await p.esperar("!document.getElementById('hoja-editar').hidden", 5)
-        await _tocar(p, "#editar-borrar")
+        await _tocar(p, "#b-lista")
+        await p.evaluar("[...document.querySelectorAll('#l-cuerpo .fila-item')].find((li) => li.textContent.includes('Mufa 1')).click(); true")
+        await p.esperar("!document.getElementById('tarjeta').hidden", 5)
+        await _tocar(p, "#t-mas")
+        await _dialogo(p, "Eliminar")
+        await _dialogo(p, "Eliminar")
         await p.esperar("document.getElementById('contador').textContent === '1'", 10)
         assert con.execute("SELECT count(*) AS n FROM redes.campo_puntos WHERE borrado_en IS NULL").fetchone()["n"] == 1
 
         # ---- closing the jornada
-        await _tocar(p, "#btn-menu")
-        await _tocar(p, "#menu-cerrar-jornada")
+        await _tocar(p, "#b-menu")
+        await p.esperar("!document.getElementById('p-menu').hidden", 5)
+        await _captura(p, "8_menu")
+        await _tocar(p, "#m-ajustes")
+        await p.esperar("!document.getElementById('p-ajustes').hidden && document.querySelectorAll('#aj-cuerpo .aj-fila').length >= 15", 5)
+        await _captura(p, "9_ajustes")
+        await _tocar(p, "#aj-atras")
+        await p.esperar("!document.getElementById('p-menu').hidden", 5)
+        await _tocar(p, "#m-jornada")
+        await _dialogo(p, "Cerrar la jornada")
+        await _dialogo(p, "Cerrar jornada")
         await p.esperar("document.getElementById('jornada-nombre').textContent === 'Sin jornada abierta'", 10)
         assert con.execute("SELECT count(*) AS n FROM redes.campo_jornadas WHERE fin IS NOT NULL").fetchone()["n"] == 1
         assert (await p.errores()) == []
+
 
 
 @pytest.mark.skipif(not hay_edge() or websockets is None, reason="necesita Edge y la librería websockets")

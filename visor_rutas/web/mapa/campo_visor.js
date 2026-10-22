@@ -15,6 +15,8 @@
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const TIPOS = { poste: "Poste", mufa: "Mufa", reserva: "Reserva", solitaria: "Solitaria", cliente: "Cliente", otro: "Otro" };
   const LETRA = { poste: "P", mufa: "M", reserva: "R", solitaria: "S", cliente: "C", otro: "O" };
+  const POSTE_ETIQUETA = { ideay_tubular: "Ideay tubular", ideay_8_120: "Ideay 8/120", ideay_9_120: "Ideay 9/120", madera: "Madera", concreto: "Concreto" };
+  const subEtq = (p) => (p.subtipo && (p.tipo === "poste" ? POSTE_ETIQUETA[p.subtipo] : null)) || p.subtipo || "";       // «ideay_8_120» -> «Ideay 8/120»
   const ARTICULO = { poste: "un poste", mufa: "una mufa", reserva: "una reserva", solitaria: "una solitaria", cliente: "un cliente", otro: "un punto" };
   const ESTADO = { pendiente: "Pendiente", editado: "Corregido", aprobado: "Aprobado", rechazado: "Rechazado" };
   const DIAS_INICIALES = 14, ESPERA_AVISOS_MS = 400, REFRESCO_VIVO_MS = 30000, REFRESCO_SEGURO_MS = 120000;
@@ -143,7 +145,7 @@
     const acciones = porDecidir(p) ? `<div class="acciones"><button type="button" class="btn btn-primario btn-chico" data-cm-p="aprobar" data-k="p${p.id}">Aprobar…</button>
       <button type="button" class="btn btn-chico" data-cm-p="editar" data-k="p${p.id}">Editar</button>
       <button type="button" class="btn btn-chico peligro" data-cm-p="rechazar" data-k="p${p.id}">Rechazar…</button></div>` : "";
-    return `<div class="campo-popup"><b>${esc(p.nombre)}</b><br>${esc(TIPOS[p.tipo])}${p.subtipo ? " · " + esc(p.subtipo) : ""} · <span class="cm-est ${esc(p.estado)}">${esc(ESTADO[p.estado])}</span>
+    return `<div class="campo-popup"><b>${esc(p.nombre)}</b><br>${esc(TIPOS[p.tipo])}${subEtq(p) ? " · " + esc(subEtq(p)) : ""} · <span class="cm-est ${esc(p.estado)}">${esc(ESTADO[p.estado])}</span>
       <br>${esc(p.usuario)} · ${esc(fechaHora(p.capturado_en))}<br>${p.precision_m != null ? `GPS ±${Math.round(p.precision_m)} m` : "Marcado en el mapa"}
       ${p.notas ? `<br>${esc(p.notas)}` : ""}${p.motivo_rechazo ? `<br><i>Motivo: ${esc(p.motivo_rechazo)}</i>` : ""}${dup}${fotos ? `<div class="cm-miniaturas">${fotos}</div>` : ""}${acciones}</div>`;
   }
@@ -344,8 +346,8 @@
       titulo: `Editar «${p.nombre}»`, aceptar: "Guardar",
       html: `<label for="cm-e-nombre">Nombre</label><input id="cm-e-nombre" maxlength="160" value="${esc(p.nombre)}">
         <label for="cm-e-tipo">Tipo</label><select id="cm-e-tipo">${opciones}</select>
-        <label for="cm-e-subtipo">Subtipo (poste: ideay, concreto, madera, metal, cliente; mufa: 48 o 96 y domo u horizontal)</label>
-        <input id="cm-e-subtipo" maxlength="40" value="${esc(p.subtipo || "")}">
+        <label for="cm-e-subtipo">Subtipo (poste: Ideay tubular, Ideay 8/120, Ideay 9/120, Madera o Concreto; mufa: 48 o 96 y domo u horizontal)</label>
+        <input id="cm-e-subtipo" maxlength="40" value="${esc(subEtq(p))}">
         <label for="cm-e-notas">Notas</label><textarea id="cm-e-notas" rows="3" maxlength="1000">${esc(p.notas || "")}</textarea>`,
       leer: async (f) => {
         const x = await llamar("campo_editar", { id, version: p.version, cambios: {
@@ -410,7 +412,7 @@
     const k = llave(p), n = (p.fotos || []).length;
     return `<tr data-k="${k}"><td>${porDecidir(p) ? `<input type="checkbox" data-cm-sel="${k}" ${st.seleccion.has(k) ? "checked" : ""} aria-label="Elegir">` : ""}</td>
         <td><span class="cm-est ${esc(p.estado)}">${esc(ESTADO[p.estado])}</span>${p.motivo_rechazo ? `<div class="nota">${esc(p.motivo_rechazo)}</div>` : ""}</td>
-        <td><b>${esc(p.nombre)}</b><div class="nota">${esc(TIPOS[p.tipo])}${p.subtipo ? " · " + esc(p.subtipo) : ""}</div>${p.duplicado ? `<div class="cm-dup">Posible duplicado: ${esc(p.duplicado.nombre)} a ${p.duplicado.distancia_m} m</div>` : ""}</td>
+        <td><b>${esc(p.nombre)}</b><div class="nota">${esc(TIPOS[p.tipo])}${subEtq(p) ? " · " + esc(subEtq(p)) : ""}</div>${p.duplicado ? `<div class="cm-dup">Posible duplicado: ${esc(p.duplicado.nombre)} a ${p.duplicado.distancia_m} m</div>` : ""}</td>
         <td>${esc(p.usuario)}<div class="nota">${esc((st.jornadas.get(p.jornada_id) || {}).nombre || "sin jornada")} · ${esc(fechaHora(p.capturado_en))}</div></td>
         <td>${p.precision_m != null ? `±${Math.round(p.precision_m)} m` : "mapa"}</td><td class="cm-notas">${esc(p.notas || "")}</td>
         <td>${n ? `<div class="cm-miniaturas">${p.fotos.map((f) => `<img data-cm-foto="${f.id}" alt="Foto" data-cm-grande="${f.id}">`).join("")}</div>` : "—"}</td>

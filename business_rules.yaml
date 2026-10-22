@@ -485,6 +485,10 @@ campo:
   red_zona_max_grados: 0.03      # lado máximo de la zona que pide el teléfono (≈ 3 km)
   red_max_puntos: 1500
   red_max_lineas: 600
+  # lo que ven las cuadrillas de la red existente (solo ver, nunca editar): únicamente postes y mufas (los tipos que EMPIEZAN con estas palabras: «poste de concreto»,
+  # «mufa de corte»…); sin reservas, pozos, nodos ni líneas. red_lineas: true vuelve a mostrar las líneas de fibra.
+  red_tipos: ["poste", "mufa"]
+  red_lineas: false
 
 # Calibración de la ruta (routing.calibrar): la fibra no necesita una calle por donde pase un auto. Si la ruta de Google (en auto) es más larga que
 # detour_factor veces la línea recta (y min_extra_m más), se pide la ruta a pie (veredas y pasos) y se usa si es claramente más corta (walking_gain);

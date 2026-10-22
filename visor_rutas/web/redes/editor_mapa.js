@@ -23,14 +23,16 @@
   const esc = (v) => Redes.esc(v);
   const IMAN_PX = 18;
   const TIPOS = {
-    poste: { titulo: "Poste", subtipos: [["concreto", "Concreto"], ["ideay", "IDEAY"], ["madera", "Madera"], ["metal", "Metal"], ["cliente", "Cliente"]] },
+    poste: { titulo: "Poste", subtipos: [["ideay_tubular", "Ideay tubular"], ["ideay_8_120", "Ideay 8/120"], ["ideay_9_120", "Ideay 9/120"], ["madera", "Madera"], ["concreto", "Concreto"]] },
     mufa: { titulo: "Mufa", subtipos: [["empalme", "Empalme"], ["distribucion", "Distribución (FDT)"], ["terminal", "Terminal (FAT)"], ["reserva", "Reserva"]] },
     cliente: { titulo: "Casa de cliente", subtipos: [] },
     nodo: { titulo: "Nodo / OLT", subtipos: [["olt", "OLT"], ["nodo", "Nodo"], ["mini_nodo", "Mini nodo"]] },
     odf: { titulo: "ODF", subtipos: [] },
   };
   const textoHilos = (c) => (c.hilos == null ? "hilos desconocidos" : `${c.hilos} hilos`);
-  const COLOR_POSTE = { concreto: "#9aa3ad", ideay: "#2f6fdb", madera: "#8b5a2b", metal: "#c0c7cf", cliente: "#f08c00" };
+  const COLOR_POSTE = { concreto: "#9aa3ad", ideay_tubular: "#1e4fa8", ideay_8_120: "#2f6fdb", ideay_9_120: "#6aa0ff", madera: "#8b5a2b", ideay: "#2f6fdb", metal: "#c0c7cf", cliente: "#f08c00" };
+  // poles drawn before the list changed keep their type: shown (and kept when edited) but no longer offered for new ones
+  const POSTE_LEGADO = [["ideay", "IDEAY"], ["metal", "Metal"], ["cliente", "Cliente"]];
   const CLASES = { troncal: "Troncal", distribucion: "Distribución", acometida: "Acometida" };
 
   const ed = {
@@ -214,7 +216,7 @@
   }
 
   function etiquetaTipo(e) {
-    const sub = (TIPOS[e.tipo].subtipos.find(([v]) => v === e.subtipo) || [])[1];
+    const sub = ([...TIPOS[e.tipo].subtipos, ...(e.tipo === "poste" ? POSTE_LEGADO : [])].find(([v]) => v === e.subtipo) || [])[1];
     return TIPOS[e.tipo].titulo + (sub ? ` ${sub}` : "") + (e.codigo ? ` · ${e.codigo}` : "");
   }
 
@@ -391,6 +393,8 @@
     $("er-el-nombre").value = objeto ? objeto.nombre : sugerido;
     $("er-el-subtipo-campo").hidden = !t.subtipos.length;
     $("er-el-subtipo").innerHTML = t.subtipos.map(([v, txt]) => `<option value="${v}">${esc(txt)}</option>`).join("");
+    const legado = tipo === "poste" && objeto && POSTE_LEGADO.find(([v]) => v === objeto.subtipo);
+    if (legado) $("er-el-subtipo").insertAdjacentHTML("beforeend", `<option value="${legado[0]}">${esc(legado[1])} (anterior)</option>`);
     if (objeto && objeto.subtipo) $("er-el-subtipo").value = objeto.subtipo;
     const prop = (objeto && objeto.propiedades) || {};
     $("er-el-mufa").hidden = tipo !== "mufa";

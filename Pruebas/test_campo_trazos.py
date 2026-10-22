@@ -166,8 +166,9 @@ def test_the_trace_methods_are_in_the_remote_list(mundo):
 
 # ------------------------------------------------------------------ reference network
 
-def test_the_reference_network_of_a_zone_is_light_and_limited(mundo):
+def test_the_reference_network_of_a_zone_is_light_and_limited(mundo, monkeypatch):
     con, g = mundo
+    monkeypatch.setattr(campo, "configuracion", lambda: {**campo.POR_DEFECTO, "red_lineas": True})          # the crews see no lines by default (test_campo_cuadrillas.py)
     base = crear_proyecto(con, "RB", base=True)
     otra = crear_proyecto(con, "PROY")                                           # a project that is not a base network is not reference
     a, b = poste_en(con, base, "PT-1", LAT, LON), poste_en(con, base, "MF-1", LAT + 0.001, LON, tipo="mufa")
@@ -234,10 +235,11 @@ def test_the_rest_api_of_the_reference_network(api, monkeypatch):
     import db as presupuesto
     llamadas = []
 
-    def falso(o, s, e, n, mp, ml):
+    def falso(o, s, e, n, mp, ml, prefijos=None):
         llamadas.append((o, s, e, n, mp, ml))
         return {"puntos": [{"id": "k1", "n": "MF KMZ", "t": "mufa", "lat": LAT, "lon": LON + 0.0001}], "lineas": [{"id": "k2", "n": "FO", "t": "fibra", "c": [[LAT, LON], [LAT + 0.001, LON]]}], "truncado": False}
     monkeypatch.setattr(presupuesto, "find_red_en_bbox", falso)
+    monkeypatch.setattr(campo, "configuracion", lambda: {**campo.POR_DEFECTO, "red_lineas": True})          # with the lines on (by default the crews do not get them)
     caja = f"{LON - 0.005},{LAT - 0.005},{LON + 0.005},{LAT + 0.005}"
     assert c.get(f"/visor/campo/red?bbox={caja}").status_code == 401
     r = c.get(f"/visor/campo/red?bbox={caja}", headers=JAN).json()

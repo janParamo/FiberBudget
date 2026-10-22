@@ -9,7 +9,7 @@ import pytest
 from arnes_pagina import hay_edge
 from redes_base import base_redes, con_redes  # noqa: F401  (fixtures)
 from test_campo import jpeg
-from test_campo_pwa import (_captura, _entrar, _escribir, _tocar, _visible, esperar_sql, mundo, servidor_real, telefono, websockets)  # noqa: F401
+from test_campo_pwa import (_capturar_punto, _captura, _dialogo, _entrar, _escribir, _tocar, _visible, esperar_sql, mundo, servidor_real, telefono, websockets)  # noqa: F401
 from test_visor_api import entorno  # noqa: F401  (fixture of the /visor/* API)
 
 pytestmark = pytest.mark.skipif(not hay_edge() or websockets is None, reason="necesita Edge y la librería websockets")
@@ -38,20 +38,19 @@ async def _recorrido_sin_senal(puerto, con, tmp_path):
         await p.esperar("!document.getElementById('app').hidden && document.getElementById('gps-estado').textContent.includes('±5')", 20)
         # the service worker is up and has the app's files (that is what lets the app open with no signal)
         await p.esperar("navigator.serviceWorker.ready.then(() => true)", 20)
-        await p.esperar("caches.keys().then((k) => k.includes('campo-v6'))", 20)
-        await p.esperar("caches.open('campo-v6').then((c) => c.keys()).then((k) => k.length >= 10)", 20)
+        await p.esperar("caches.keys().then((k) => k.includes('campo-v7'))", 20)
+        await p.esperar("caches.open('campo-v7').then((c) => c.keys()).then((k) => k.length >= 10)", 20)
         assert await p.evaluar("CampoCola.meta('clave')") == "clave-jan"          # the service worker sends with it
 
         # ---- no signal: a pole with a photo is kept in the phone, not lost
         await p.sin_red(True)
         await p.esperar("navigator.onLine === false", 10)
         assert "sin conexión" in await p.evaluar("document.getElementById('persona').textContent")
-        await _tocar(p, "#acciones [data-tipo=poste]")
-        await p.esperar("!document.getElementById('hoja-formulario').hidden", 5)
-        await p.subir_archivo("#form-foto", foto)
-        await p.esperar("document.querySelectorAll('#form-fotos img').length === 1", 20)
-        await _tocar(p, "#form-guardar")
-        await p.esperar("document.getElementById('hoja-formulario').hidden && !document.getElementById('cola-barra').hidden", 10)
+        await _capturar_punto(p, "poste")
+        await p.subir_archivo("#ed-foto", foto)
+        await p.esperar("document.querySelectorAll('#ed-fotos img').length === 1", 20)
+        await _tocar(p, "#ed-guardar")
+        await p.esperar("document.getElementById('p-editor').hidden && !document.getElementById('cola-barra').hidden", 10)
         assert "1 pendiente de enviar" in await p.evaluar("document.getElementById('cola-texto').textContent")
         assert con.execute("SELECT count(*) AS n FROM redes.campo_puntos").fetchone()["n"] == 0
         await _captura(p, "5_sin_senal")
@@ -59,22 +58,25 @@ async def _recorrido_sin_senal(puerto, con, tmp_path):
         assert len(cola) == 1 and cola[0]["estado"] == "cola" and cola[0]["puntoId"] is None and cola[0]["fotos"] == [{"enviada": False, "descartada": False}]
 
         # a second point, then change its name while it is still in the phone, and drop it
-        await _tocar(p, "#acciones [data-tipo=reserva]")
-        await p.esperar("!document.getElementById('hoja-formulario').hidden", 5)
-        await _tocar(p, "#form-guardar")
-        await p.esperar("document.getElementById('contador').textContent === '2'", 10)
-        await _tocar(p, "#btn-lista")
-        assert await p.evaluar("[...document.querySelectorAll('#lista-puntos .estado')].map((e) => e.textContent).join()") == "Sin enviar,Sin enviar"
-        await p.evaluar("window.confirm = () => true; [...document.querySelectorAll('#lista-puntos li')].find((li) => li.textContent.includes('Reserva 1')).querySelector('button').click(); true")
-        await p.esperar("!document.getElementById('hoja-editar').hidden", 5)
-        await _tocar(p, "#editar-borrar")
+        await _capturar_punto(p, "reserva")
+        await _tocar(p, "#ed-guardar")
+        await p.esperar("document.getElementById('p-editor').hidden && document.getElementById('contador').textContent === '2'", 10)
+        await _tocar(p, "#b-lista")
+        assert await p.evaluar("[...document.querySelectorAll('#l-cuerpo .estado')].map((e) => e.textContent).join()") == "Sin enviar,Sin enviar"
+        await p.evaluar("[...document.querySelectorAll('#l-cuerpo .fila-item')].find((li) => li.textContent.includes('Reserva 1')).click(); true")
+        await p.esperar("!document.getElementById('tarjeta').hidden", 5)
+        await _tocar(p, "#t-mas")
+        await _dialogo(p, "Eliminar")
+        await _dialogo(p, "Eliminar")
         await p.esperar("document.getElementById('contador').textContent === '1'", 10)
-        await _tocar(p, "#btn-lista")
-        await p.evaluar("document.querySelector('#lista-puntos li button').click(); true")
-        await p.esperar("!document.getElementById('hoja-editar').hidden", 5)
-        await _escribir(p, "editar-nombre", "Poste sin señal")
-        await _tocar(p, "#editar-guardar")
-        await p.esperar("document.getElementById('hoja-editar').hidden", 5)
+        await _tocar(p, "#b-lista")
+        await p.evaluar("document.querySelector('#l-cuerpo .fila-item').click(); true")
+        await p.esperar("!document.getElementById('tarjeta').hidden", 5)
+        await _tocar(p, "#t-editar")
+        await p.esperar("!document.getElementById('p-editor').hidden", 5)
+        await _escribir(p, "ed-nombre", "Poste sin señal")
+        await _tocar(p, "#ed-guardar")
+        await p.esperar("document.getElementById('p-editor').hidden", 5)
         assert [e["nombre"] for e in await _ver_cola(p)] == ["Poste sin señal"]
 
         # ---- the app is closed and opened again with no signal: it opens (service worker) and the queue is still there
@@ -105,7 +107,7 @@ def test_points_taken_without_signal_survive_a_restart_and_are_sent_once_when_it
 async def _recorrido_reintentos(puerto, con):
     async with telefono(puerto, cdp=9342) as p:
         await _entrar(p, "clave-jan")
-        await p.esperar("window.Campo.lista", 20)
+        await p.esperar("window.Campo.listo", 20)
         await _escribir_cola(p, "Poste A", fotos=2)
 
         # a cut in the middle of sending: the point is in the server, the first photo too, the second one not; the entry stays
@@ -146,9 +148,9 @@ async def _recorrido_reintentos(puerto, con):
         await p.evaluar("Campo.leerCola()")
         assert "con error" in await p.evaluar("document.getElementById('cola-texto').textContent")
         assert "con-error" in await p.evaluar("document.getElementById('cola-barra').className")
-        await _tocar(p, "#btn-lista")
-        assert "Con error" in await p.evaluar("document.querySelector('#lista-puntos .estado.error').textContent")
-        assert "subtipo" in await p.evaluar("document.querySelector('#lista-puntos small.error').textContent")
+        await _tocar(p, "#b-lista")
+        assert "Con error" in await p.evaluar("document.querySelector('#l-cuerpo .estado.error').textContent")
+        assert "subtipo" in await p.evaluar("document.querySelector('#l-cuerpo small.error').textContent")
         await _captura(p, "6_con_error")
 
         # a key that stopped working stops the sending without losing anything
@@ -187,11 +189,11 @@ async def _recorrido_instalar(puerto):
         await p.esperar("!document.getElementById('app').hidden", 20)
         await p.esperar("!document.getElementById('ios-barra').hidden", 5)
         await _tocar(p, "#ios-como")
-        await p.esperar("!document.getElementById('hoja-ayuda').hidden", 5)
-        texto = await p.evaluar("document.getElementById('ayuda-contenido').textContent")
+        await p.esperar("!document.getElementById('p-acerca').hidden", 5)
+        texto = await p.evaluar("document.getElementById('ac-cuerpo').textContent")
         assert "Compartir" in texto and "Agregar a pantalla de inicio" in texto and "puede borrar los puntos" in texto and "segundo plano" in texto
         await _captura(p, "7_ayuda_iphone")
-        await _tocar(p, "#ayuda-cerrar")
+        await _tocar(p, "#ac-atras")
         await _tocar(p, "#ios-cerrar")
         assert await p.evaluar("document.getElementById('ios-barra').hidden") is True
     # Android: the install button appears when Chrome offers to install and starts it
@@ -202,14 +204,14 @@ async def _recorrido_instalar(puerto):
         assert await p.evaluar("document.getElementById('ios-barra').hidden") is True            # the iPhone warning is only for iPhone
         await p.evaluar("""(() => { const e = new Event('beforeinstallprompt', {cancelable: true}); window.__instalo = 0;
           e.prompt = () => { window.__instalo += 1; }; e.userChoice = Promise.resolve({outcome: 'accepted'}); window.dispatchEvent(e); return true; })()""")
-        await _tocar(p, "#btn-menu")
-        await p.esperar("!document.getElementById('menu-instalar').hidden", 5)
-        await _tocar(p, "#menu-instalar")
+        await _tocar(p, "#b-menu")
+        await p.esperar("!document.getElementById('m-instalar').hidden", 5)
+        await _tocar(p, "#m-instalar")
         await p.esperar("window.__instalo === 1", 5)
-        await p.esperar("document.getElementById('menu-instalar').hidden", 5)                        # once installed (or answered) the button goes away
-        await _tocar(p, "#btn-menu")
-        await _tocar(p, "#menu-ayuda")
-        assert "Instalar app" in await p.evaluar("document.getElementById('ayuda-contenido').textContent")
+        await p.esperar("document.getElementById('m-instalar').hidden", 5)                        # once installed (or answered) the button goes away
+        await _tocar(p, "#b-menu")
+        await _tocar(p, "#m-acerca")
+        assert "Instalar app" in await p.evaluar("document.getElementById('ac-cuerpo').textContent")
 
 
 def test_install_help_by_platform(mundo):

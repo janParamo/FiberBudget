@@ -1,4 +1,4 @@
-﻿"""Visor v2, fase 4: red dibujada en una carpeta de Mis lugares (visor_rutas/redes/lugares_red.py) — datos y estilo de cada tipo,
+"""Visor v2, fase 4: red dibujada en una carpeta de Mis lugares (visor_rutas/redes/lugares_red.py) — datos y estilo de cada tipo,
 cables unidos a sus elementos con metraje, cables que siguen al elemento, borrar con cables y "Guardar como proyecto"."""
 import pytest
 
@@ -39,8 +39,8 @@ def test_each_type_gets_its_data_and_the_icon_of_its_subtype(mundo):
     m = _red(con, admin, f, "mufa", "MF-1", -86.25, 12.13, subtipo="terminal", capacidad="48", bandejas=4, basura=1)
     assert m["propiedades"] == {"subtipo": "terminal", "capacidad": 48, "bandejas": 4}
     assert m["estilo"]["icono"]["id"] == "anillo" and m["estilo"]["icono"]["color"] == "#d6249f"
-    p = _red(con, admin, f, "poste", "P-1", -86.251, 12.13, subtipo="raro")                      # unknown subtype -> the first one
-    assert p["propiedades"] == {"subtipo": "ideay"} and p["estilo"]["etiqueta"]["visible"] is False        # posts: no label
+    p = _red(con, admin, f, "poste", "P-1", -86.251, 12.13, subtipo="raro")                      # unknown subtype -> the first one (Ideay tubular)
+    assert p["propiedades"] == {"subtipo": "ideay_tubular"} and p["estilo"]["etiqueta"]["visible"] is False        # posts: no label
     c = _red(con, admin, f, "cliente", "Casa", -86.252, 12.13, codigo="c12345", id_servicio="  S 9 ")
     assert c["propiedades"] == {"codigo": "C12345", "id_servicio": "S 9"} and c["estilo"]["icono"]["id"] == "rombo"
     assert _red(con, admin, f, "nodo", "OLT", -86.26, 12.13, subtipo="olt")["estilo"]["icono"]["id"] == "triangulo"

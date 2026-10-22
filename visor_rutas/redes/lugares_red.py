@@ -27,7 +27,8 @@ _ICONOS = {
     ("mufa", "terminal"): ("anillo", "#d6249f", 1.0), ("mufa", "reserva"): ("anillo", "#ff8c00", 1.0),
     ("poste", "concreto"): ("circulo", "#9aa3ad", 0.55), ("poste", "ideay"): ("circulo", "#2f6fdb", 0.55),
     ("poste", "madera"): ("circulo", "#8b5a2b", 0.55), ("poste", "metal"): ("circulo", "#c0c7cf", 0.55),
-    ("poste", "cliente"): ("circulo", "#f08c00", 0.55),
+    ("poste", "cliente"): ("circulo", "#f08c00", 0.55), ("poste", "ideay_tubular"): ("circulo", "#1e4fa8", 0.55),
+    ("poste", "ideay_8_120"): ("circulo", "#2f6fdb", 0.55), ("poste", "ideay_9_120"): ("circulo", "#6aa0ff", 0.55),
     ("cliente", None): ("rombo", "#0a9d57", 0.9), ("nodo", None): ("triangulo", "#f5b400", 1.0), ("odf", None): ("cuadrado", "#4a5568", 0.9),
 }
 
