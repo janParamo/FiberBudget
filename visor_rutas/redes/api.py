@@ -186,12 +186,12 @@ class ServicioRedes:
             self._con = None
 
     def ejecutar(self, funcion: Callable[..., dict[str, Any]], args: dict[str, Any] | None = None, *, persona_visor: str | None = None,
-                 usuario_windows: str | None = None) -> dict[str, Any]:
+                 usuario_windows: str | None = None, rol_inicial: str | None = None) -> dict[str, Any]:
         """Like `llamar` for a function that is not in METODOS (the REST endpoints of the field app): same connection, lock and identification, but
         the errors are raised (ErrorRedes and its subclasses, psycopg.Error) for the caller to turn into an HTTP status."""
         with self._lock:
             con = self._conexion()
-            actor = usuarios.identificar(con, persona_visor=persona_visor, usuario_windows=usuario_windows)
+            actor = usuarios.identificar(con, persona_visor=persona_visor, usuario_windows=usuario_windows, rol_inicial=rol_inicial)
             try:
                 return funcion(con, actor, **(args or {}))
             except psycopg.Error:

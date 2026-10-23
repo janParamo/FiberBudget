@@ -16,6 +16,7 @@
     $("m-jornada-nombre").textContent = e.jornada ? e.jornada.nombre : "Sin jornada abierta";
     $("m-jornada-fecha").textContent = e.jornada && e.jornada.abierta_en ? C.fecha(e.jornada.abierta_en) : "Toque para cerrarla";
     $("m-tipo-mapa-texto").textContent = M().CAPAS[M().capaActual()].titulo;
+    $("m-zona-texto").textContent = C.zona ? C.zona.resumen() : "";
     $("m-todas-texto").textContent = `${C.lista.items(false).length} en total`;
     $("m-instalar").hidden = !Ayuda().estado().puedeInstalar;
     $("m-version").textContent = "Fiber Budget · app de campo";
@@ -94,6 +95,7 @@
     $("m-respaldo").onclick = () => { C.panel.cerrar(); C.app.enviarCola(true); };
     $("m-jornada").onclick = menuJornada;
     $("m-tipo-mapa").onclick = tipoMapa;
+    $("m-zona").onclick = () => { C.panel.cerrar(); C.zona.abrir(); };
     $("m-todas").onclick = () => { C.estado.filtro = { tipos: null, estados: null, jornadas: null }; C.lista.pintar(); C.lista.abrir(); };
     $("m-nueva").onclick = jornadaNueva;
     $("m-ajustes").onclick = () => { pintarAjustes(); C.panel.abrir("p-ajustes"); };

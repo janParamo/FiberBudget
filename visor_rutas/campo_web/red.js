@@ -112,8 +112,32 @@
     return r.sort((a, b) => a.d - b.d).slice(0, max || 30);
   }
 
+  /* The reference network of an area, loaded and kept in the phone (for «Descargar esta zona»): every cell that covers `limites` (at most 80;
+   * a bigger area is cut), three at a time. `avanzar(hechas, total)`; `cancelado()` stops it. Returns {celdas, total}: how many cells have data. */
+  async function precargar(limites, avanzar, cancelado) {
+    if (!api) return { celdas: 0, total: 0 };
+    const lista = [];
+    for (let i = Math.floor(limites.getSouth() / CELDA); i <= Math.floor(limites.getNorth() / CELDA); i++) {
+      for (let j = Math.floor(limites.getWest() / CELDA); j <= Math.floor(limites.getEast() / CELDA); j++) lista.push([i, j]);
+    }
+    const cuadros = lista.slice(0, 80);
+    let hechas = 0, con = 0, k = 0;
+    const obedecer = cancelado || (() => false);
+    async function trabajador() {
+      while (!obedecer()) {
+        const n = k++;
+        if (n >= cuadros.length) return;
+        const d = await zona(cuadros[n][0], cuadros[n][1]);
+        if (d) con++;
+        avanzar && avanzar(++hechas, cuadros.length);
+      }
+    }
+    await Promise.all([trabajador(), trabajador(), trabajador()]);
+    return { celdas: con, total: cuadros.length };
+  }
+
   window.CampoRed = {
-    iniciar, actualizar: programar, cercano, buscar,
+    iniciar, actualizar: programar, cercano, buscar, precargar,
     alternar() { visible = !visible; programar(); return visible; },
     get visible() { return visible; }, get aviso() { return aviso; },
     alTocar(f) { alTocar = f; }, celdas: () => celdas.size, dibujados: () => (capa ? capa.getLayers().length : 0),

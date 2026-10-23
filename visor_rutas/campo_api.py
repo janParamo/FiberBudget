@@ -34,10 +34,16 @@ TIPOS_MIME = {".webmanifest": "application/manifest+json", ".js": "text/javascri
 limitador = visor_api.Limitador()
 
 
-def persona_campo(persona: str = Depends(visor_api.persona_visor)) -> str:
-    """The person of the key, with the per-technician request limit of the field app."""
+def persona_campo(persona: str = Depends(visor_api.persona_de_campo)) -> str:
+    """The person of the key (a technician's own key or a viewer key), with the per-technician request limit of the field app."""
     limitador.registrar(persona, int(campo.configuracion()["peticiones_por_hora"]))
     return persona
+
+
+def _rol_inicial(persona: str) -> str | None:
+    """"tecnico" for a person who only has a technician key (CAMPO_API_KEYS): created the first time with that role, no administrator needed.
+    Someone who also has a viewer key (VISOR_API_KEYS) is created as usual."""
+    return "tecnico" if persona in visor_api.claves_campo().values() and persona not in visor_api.claves_visor().values() else None
 
 
 def _error(codigo: int, mensaje: str, errores: dict[str, str] | None = None) -> JSONResponse:
@@ -48,7 +54,7 @@ def _error(codigo: int, mensaje: str, errores: dict[str, str] | None = None) -> 
 def _ejecutar(persona: str, funcion: Any, endpoint: str, **args: Any) -> Any:
     with visor_api._registro(persona, f"campo/{endpoint}") as estado:
         try:
-            return {"ok": True, **visor_api.servicio_redes().ejecutar(funcion, args, persona_visor=persona)}
+            return {"ok": True, **visor_api.servicio_redes().ejecutar(funcion, args, persona_visor=persona, rol_inicial=_rol_inicial(persona))}
         except db.SinPermiso as exc:
             codigo, detalle, errores = 403, str(exc), None
         except db.NoEncontrado as exc:
@@ -255,7 +261,7 @@ def _archivo_web(relativa: str) -> Path | None:
 
 
 def _servir(relativa: str) -> FileResponse:
-    if not visor_api.claves_visor():                                   # the field app is part of the remote viewer: off when it is
+    if not (visor_api.claves_visor() or visor_api.claves_campo()):      # off when there is no key of any kind
         raise HTTPException(status_code=404, detail="Not Found")
     ruta = _archivo_web(relativa)
     if ruta is None:
@@ -266,7 +272,7 @@ def _servir(relativa: str) -> FileResponse:
 @pagina.get("/campo", include_in_schema=False)
 def pagina_campo_sin_barra(request: Request) -> RedirectResponse:
     """The service worker controls /campo/ (with the slash): the app lives there."""
-    if not visor_api.claves_visor():
+    if not (visor_api.claves_visor() or visor_api.claves_campo()):
         raise HTTPException(status_code=404, detail="Not Found")
     return RedirectResponse("/campo/", status_code=307)
 

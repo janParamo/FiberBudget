@@ -1,7 +1,7 @@
 # App de campo — guía para técnicos
 
 Con la app registra desde el teléfono los **postes, mufas, reservas, solitarias, clientes y cables** que encuentra en campo. El supervisor los ve en su pantalla en cuanto usted los envía.
-Funciona en **Android (Chrome)** y en **iPhone (Safari, iOS 16.4 o más nuevo)**. Le deben dar: la **dirección** (empieza con `https://`) y **su clave**.
+Funciona en **Android (Chrome)** y en **iPhone (Safari, iOS 16.4 o más nuevo)**. Le deben dar: la **dirección** (empieza con `https://`) y **su clave de técnico** (una propia, de `CAMPO_API_KEYS`; no es la del visor).
 
 > **Por ahora la dirección es de ngrok** (`https://….ngrok-free.dev/campo/`). **La primera vez** que la abra, ngrok muestra una página con un botón azul **«Visit Site»**: tóquelo y siga. Es normal, no es un virus, y solo aparece una vez por teléfono (vuelve a salir si borra los datos del navegador).
 
@@ -54,6 +54,15 @@ No pasa nada: todo queda **guardado en el teléfono**. Arriba aparece una franja
 - **Android:** salen solos cuando vuelve la señal, aunque la app esté cerrada.
 - **iPhone:** salen cuando **abre la app** con señal (o toque **Enviar ahora**). No cierre la sesión ni borre la app con puntos pendientes.
 - Un punto que el supervisor no pueda aceptar por sus datos aparece en rojo **«Con error»**: tóquelo, corríjalo o bórrelo.
+
+### Descargar la zona antes de salir (para ver el mapa sin señal)
+Sin señal el teléfono solo muestra el mapa de lugares que ya había visto. Para no quedarse con el mapa en gris:
+1. **Con buena señal o Wi-Fi**, antes de salir, acerque el mapa a la zona donde va a trabajar (se necesita un acercamiento medio: si está muy lejos la app se lo pide).
+2. Menú ☰ → **Descargar esta zona**. Elija **Calles y postes** (menos mapa, más rápido) o **Con todo el detalle**; la app dice cuántos mosaicos son y cuánto pesa (de unos 5 a 60 MB).
+3. Deje marcada **Incluir mufas y postes existentes** para ver también la red de esa zona sin señal, y toque **Descargar**. No cierre la app hasta que termine; si la cancela, se conserva lo ya bajado.
+4. En el mismo menú aparecen las **zonas descargadas**: tóquelas para borrarlas y liberar espacio.
+- Solo se descarga el mapa **Satélite** (con o sin calles) y **Calles (Esri)**; el de OpenStreetMap no permite descargas.
+- Lo descargado sirve para ver el mapa; los puntos y cables nuevos se guardan en el teléfono y salen cuando vuelve la señal, como siempre.
 
 ## 6. Su lista, buscar, compartir y terminar el día
 - **Lista** (el icono de lista de la barra): muestra lo de hoy con su estado: **Pendiente** (esperando revisión), **Aprobado**, **Corregido** o **Rechazado** (con el motivo). **Explorar** lleva al punto en el mapa; **Organizar** permite elegir varios y **eliminar** los que siguen pendientes. El filtro (embudo) muestra solo ciertos tipos o estados.

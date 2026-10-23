@@ -38,8 +38,8 @@ async def _recorrido_sin_senal(puerto, con, tmp_path):
         await p.esperar("!document.getElementById('app').hidden && document.getElementById('gps-estado').textContent.includes('±5')", 20)
         # the service worker is up and has the app's files (that is what lets the app open with no signal)
         await p.esperar("navigator.serviceWorker.ready.then(() => true)", 20)
-        await p.esperar("caches.keys().then((k) => k.includes('campo-v7'))", 20)
-        await p.esperar("caches.open('campo-v7').then((c) => c.keys()).then((k) => k.length >= 10)", 20)
+        await p.esperar("caches.keys().then((k) => k.includes('campo-v8'))", 20)
+        await p.esperar("caches.open('campo-v8').then((c) => c.keys()).then((k) => k.length >= 10)", 20)
         assert await p.evaluar("CampoCola.meta('clave')") == "clave-jan"          # the service worker sends with it
 
         # ---- no signal: a pole with a photo is kept in the phone, not lost

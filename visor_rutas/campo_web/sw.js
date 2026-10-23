@@ -2,11 +2,12 @@
  * envía la cola cuando vuelve la señal aunque la app esté cerrada (Background Sync; iPhone no lo tiene: ahí se envía al abrir la app). */
 importScripts("cola.js");
 
-const VERSION = "campo-v7";
+const VERSION = "campo-v8";
 const TILES = "campo-mosaicos";
+const ZONAS = "campo-zonas";               // lo que bajó «Descargar esta zona»: se consulta primero y nunca se recorta
 const MAX_MOSAICOS = 900;
 const ARCHIVOS = ["./", "index.html", "campo.css", "api.js", "cola.js", "trazo.js", "iconos.js", "ajustes.js", "base.js", "mapa.js", "red.js", "ayuda.js",
-                  "exportar.js", "captura.js", "editor.js", "lista.js", "menu.js", "app.js", "manifest.webmanifest", "icono-192.png", "icono-512.png",
+                  "exportar.js", "zona.js", "captura.js", "editor.js", "lista.js", "menu.js", "app.js", "manifest.webmanifest", "icono-192.png", "icono-512.png",
                   "icono-apple.png", "lib/leaflet/leaflet.js", "lib/leaflet/leaflet.css", "lib/leaflet/images/marker-icon.png", "lib/leaflet/images/marker-icon-2x.png",
                   "lib/leaflet/images/marker-shadow.png", "lib/leaflet/images/layers.png", "lib/leaflet/images/layers-2x.png"];
 const HOSTS_MOSAICOS = ["server.arcgisonline.com", "tile.openstreetmap.org"];
@@ -16,7 +17,7 @@ self.addEventListener("install", (e) => {
 });
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((n) => n !== VERSION && n !== TILES).map((n) => caches.delete(n)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((n) => n !== VERSION && n !== TILES && n !== ZONAS).map((n) => caches.delete(n)))).then(() => self.clients.claim()));
 });
 
 async function recortar(cache) {
@@ -24,13 +25,18 @@ async function recortar(cache) {
   for (let i = 0; i < claves.length - MAX_MOSAICOS; i++) await cache.delete(claves[i]);
 }
 
+let descargandoZona = false;              // la página avisa mientras baja una zona: esos mosaicos van a ZONAS (los guarda ella), no a la cache que se recorta
+
 async function mosaico(req) {
+  const zonas = await caches.open(ZONAS);
+  const deZona = await zonas.match(req, { ignoreVary: true });
+  if (deZona) return deZona;
   const cache = await caches.open(TILES);
   const guardado = await cache.match(req);
   if (guardado) return guardado;
   try {
     const r = await fetch(req);
-    if (r && (r.ok || r.type === "opaque")) { cache.put(req, r.clone()).then(() => recortar(cache)).catch(() => {}); }
+    if (r && (r.ok || r.type === "opaque") && !descargandoZona) { cache.put(req, r.clone()).then(() => recortar(cache)).catch(() => {}); }
     return r;
   } catch (e) {
     return new Response("", { status: 504 });
@@ -55,6 +61,10 @@ self.addEventListener("fetch", (e) => {
   if (HOSTS_MOSAICOS.includes(url.hostname)) { e.respondWith(mosaico(req)); return; }
   if (url.origin === self.location.origin && url.pathname.startsWith("/campo/")) e.respondWith(archivo(req));
   // the API (/visor/...) always goes to the network: it is never answered from a cache
+});
+
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.tipo === "zona") descargandoZona = !!e.data.activa;
 });
 
 self.addEventListener("sync", (e) => {

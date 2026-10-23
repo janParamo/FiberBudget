@@ -45,7 +45,7 @@ router = APIRouter(prefix="/visor", tags=["visor de rutas (remoto)"])
 
 _ENV = Path(__file__).resolve().parent / ".env"
 # Values the process started with (config.py loaded .env into os.environ at import time).
-_AL_INICIO = {nombre: os.environ.get(nombre) for nombre in ("VISOR_API_KEYS", "VISOR_RATE_LIMIT_PER_HOUR")}
+_AL_INICIO = {nombre: os.environ.get(nombre) for nombre in ("VISOR_API_KEYS", "CAMPO_API_KEYS", "VISOR_RATE_LIMIT_PER_HOUR")}
 _cache_env: dict[str, Any] = {"mtime": None, "valores": {}}
 _cache_lock = threading.Lock()
 
@@ -70,14 +70,25 @@ def _valor(nombre: str, defecto: str) -> str:
     return valores.get(nombre) or defecto
 
 
-def claves_visor() -> dict[str, str]:
-    """{key: person} from VISOR_API_KEYS="jan:clave1,maria:clave2" (entries without ':' are ignored)."""
+def _claves(variable: str) -> dict[str, str]:
+    """{key: person} from "jan:clave1,maria:clave2" (entries without ':' are ignored)."""
     claves: dict[str, str] = {}
-    for entrada in _valor("VISOR_API_KEYS", "").split(","):
+    for entrada in _valor(variable, "").split(","):
         nombre, separador, clave = entrada.strip().partition(":")
         if separador and nombre.strip() and clave.strip():
             claves[clave.strip()] = nombre.strip()
     return claves
+
+
+def claves_visor() -> dict[str, str]:
+    """{key: person} from VISOR_API_KEYS="jan:clave1,maria:clave2": the viewer and every /visor/* endpoint."""
+    return _claves("VISOR_API_KEYS")
+
+
+def claves_campo() -> dict[str, str]:
+    """{key: person} from CAMPO_API_KEYS="juan:clave1,pedro:clave2": the technicians' own keys. They open only the field app
+    (/campo and /visor/campo/*); everything else of /visor/* (routes with Google, budgets, KMZ, networks) answers 401 to them."""
+    return _claves("CAMPO_API_KEYS")
 
 
 def limite_por_hora() -> int:
@@ -125,6 +136,27 @@ def persona_visor(x_visor_key: str | None = Header(default=None)) -> str:
             if secrets.compare_digest(x_visor_key.encode("utf-8"), clave.encode("utf-8")):
                 return nombre
     log.warning("Visor API: rejected request (bad or missing X-Visor-Key)")
+    raise HTTPException(status_code=401, detail="X-Visor-Key no válida o ausente")
+
+
+def _dueno(clave: str | None, claves: dict[str, str]) -> str | None:
+    if clave:
+        for esperada, nombre in claves.items():
+            if secrets.compare_digest(clave.encode("utf-8"), esperada.encode("utf-8")):
+                return nombre
+    return None
+
+
+def persona_de_campo(x_visor_key: str | None = Header(default=None)) -> str:
+    """The person of the key for the FIELD app: a technician's key (CAMPO_API_KEYS) or a viewer key (VISOR_API_KEYS: whoever reviews the
+    field work from the desktop viewer). 404 when neither list has keys; 401 for a wrong or missing key."""
+    visor, campo = claves_visor(), claves_campo()
+    if not visor and not campo:
+        raise HTTPException(status_code=404, detail="Not Found")
+    persona = _dueno(x_visor_key, campo) or _dueno(x_visor_key, visor)
+    if persona:
+        return persona
+    log.warning("Visor API: rejected field request (bad or missing X-Visor-Key)")
     raise HTTPException(status_code=401, detail="X-Visor-Key no válida o ausente")
 
 

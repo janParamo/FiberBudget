@@ -43,8 +43,10 @@ def exigir_admin(actor: dict[str, Any]) -> None:
 
 # --------------------------------------------------------------------------- identificación
 
-def identificar(con: Any, *, persona_visor: str | None = None, usuario_windows: str | None = None) -> dict[str, Any]:
-    """The user making the call (created the first time). SinPermiso if deactivated."""
+def identificar(con: Any, *, persona_visor: str | None = None, usuario_windows: str | None = None, rol_inicial: str | None = None) -> dict[str, Any]:
+    """The user making the call (created the first time). SinPermiso if deactivated.
+    `rol_inicial`: the role of a NEW remote person (a technician's own key creates «tecnico»); never changes an existing user and never
+    makes a remote person an administrator."""
     if persona_visor:
         campo, valor, origen = "persona_visor", str(persona_visor).strip(), "visor"
     elif usuario_windows:
@@ -61,6 +63,8 @@ def identificar(con: Any, *, persona_visor: str | None = None, usuario_windows: 
                 # Only this PC (Windows user) can become the first administrator, never a remote key
                 # (even if the remote person came first, the server PC still gets the admin).
                 rol = "administrador" if (origen == "windows" and not _admins_activos(con)) else "lector"
+                if origen == "visor" and rol_inicial == "tecnico":
+                    rol = "tecnico"
                 fila = repositorio.insertar(con, "usuarios", {"nombre": valor, campo: valor, "rol": rol}, None)
                 repositorio.registrar(con, fila["id"], "usuario", fila["id"], "identificar",
                                       {"origen": origen, "rol": rol, campo: valor})
