@@ -374,7 +374,41 @@ def respaldar(con: Any, creado_por: str, usuario_id: int | None = None, motivo: 
     if motivo:
         cambio["motivo"] = [None, motivo]
     repositorio.registrar(con, usuario_id, "respaldo", None, "crear", cambio)
+    podar()
     return base.with_suffix(".json").name, aviso
+
+
+def conservar() -> int:
+    """How many backups to keep (REDES_RESPALDOS_CONSERVAR; 0 or empty: all of them)."""
+    valor = os.environ.get("REDES_RESPALDOS_CONSERVAR")
+    if not valor:
+        try:
+            from dotenv import dotenv_values
+            valor = dotenv_values(RAIZ / ".env").get("REDES_RESPALDOS_CONSERVAR")
+        except Exception:
+            valor = None
+    try:
+        return max(0, int(valor)) if valor else 0
+    except ValueError:
+        return 0
+
+
+def podar() -> int:
+    """Removes the oldest backups (.json and its .sql) beyond `conservar()`; returns how many were removed."""
+    limite = conservar()
+    if not limite:
+        return 0
+    destino = carpeta()
+    jsons = sorted((p for p in destino.glob("respaldo_redes_*.json") if _NOMBRE.match(p.name)), reverse=True)
+    borrados = 0
+    for viejo in jsons[limite:]:
+        for archivo in (viejo, viejo.with_suffix(".sql")):
+            try:
+                archivo.unlink(missing_ok=True)
+            except OSError:
+                continue
+        borrados += 1
+    return borrados
 
 
 def _archivo(nombre: Any, sufijo: str = ".json") -> Path:

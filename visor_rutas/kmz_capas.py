@@ -1,7 +1,7 @@
 """Capas del KMZ de la red para el panel "Lugares" del visor (como en Google Earth).
 
 Convierte el KMZ (KMZ_PATH del .env: el archivo, o la carpeta donde está) en una caché que el
-visor dibuja sin internet, en visor_rutas/datos_kmz/:
+visor dibuja sin internet, en datos/cache/kmz/:
 
   arbol.json            carpetas (id estable, nombre, ruta, hijos, conteos, geometría, bbox,
                         estilo para la leyenda, troncal, familia...) + md5 del KMZ
@@ -36,10 +36,12 @@ from typing import Any, Callable
 from lxml import etree
 from lxml import html as lhtml
 
+from visor_rutas import almacen_archivos
+
 log = logging.getLogger(__name__)
 
 RAIZ = Path(__file__).resolve().parent.parent
-CARPETA_DATOS = Path(__file__).resolve().parent / "datos_kmz"
+CARPETA_DATOS = Path(__file__).resolve().parent.parent / "datos" / "cache" / "kmz"
 VERSION_FORMATO = 2
 Progreso = Callable[[float, str], None]
 
@@ -119,20 +121,43 @@ def md5_archivo(ruta: Path) -> str:
     return h.hexdigest()
 
 
-def ruta_kmz(valor: str | os.PathLike | None = None) -> Path:
-    """The KMZ: KMZ_PATH (a .kmz file, or a folder: its newest .kmz), default red_kmz/."""
-    texto = str(valor or os.getenv("KMZ_PATH") or "red_kmz").strip().strip('"')
+def _kmz_del_almacen(carpeta: Path | None, archivo: Path | None) -> Path | None:
+    """The newest KMZ of the database store, written to `archivo` (or into `carpeta`) when it is not on disk; None if the store has none."""
+    guardados = almacen_archivos.listar("kmz")
+    if not guardados:
+        return None
+    clave = guardados[0]["clave"]
+    destino = archivo if archivo is not None else (carpeta / Path(clave).name)
+    if not almacen_archivos.restaurar("kmz", clave, destino):
+        return None
+    log.info("KMZ %s restored from the database store", destino.name)
+    return destino
+
+
+def ruta_kmz(valor: str | os.PathLike | None = None, restaurar: bool = True) -> Path:
+    """The KMZ: KMZ_PATH (a .kmz file, or a folder: its newest .kmz), default datos/kmz/.
+
+    When it is not on disk, the newest KMZ of the database store is written there first (`restaurar`); only for the configured
+    path, never for a path the caller passed.
+    """
+    texto = str(valor or os.getenv("KMZ_PATH") or "datos/kmz").strip().strip('"')
     ruta = Path(texto)
     if not ruta.is_absolute():
         ruta = RAIZ / ruta
+    es_carpeta = ruta.is_dir() or (not ruta.exists() and ruta.suffix.lower() != ".kmz")
     if ruta.is_dir():
         candidatos = sorted(ruta.glob("*.kmz"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if not candidatos:
-            raise KmzNoEncontrado(f"No hay ningún .kmz en {ruta}")
-        return candidatos[0]
-    if not ruta.is_file():
-        raise KmzNoEncontrado(f"No se encontró el KMZ: {ruta}")
-    return ruta
+        if candidatos:
+            return candidatos[0]
+    elif ruta.is_file():
+        return ruta
+    if restaurar and not valor:
+        restaurado = _kmz_del_almacen(ruta if es_carpeta else None, None if es_carpeta else ruta)
+        if restaurado is not None:
+            return restaurado
+    if ruta.is_dir() or es_carpeta:
+        raise KmzNoEncontrado(f"No hay ningún .kmz en {ruta}")
+    raise KmzNoEncontrado(f"No se encontró el KMZ: {ruta}")
 
 
 def _longitud_km(coords: list[list[float]]) -> float:
@@ -594,7 +619,7 @@ def _escribir_json(ruta: Path, datos: Any) -> None:
 
 def importar(kmz: Path, destino: Path | None = None, progreso: Progreso | None = None,
              descargar_iconos: bool = True) -> dict[str, Any]:
-    """Builds the cache for `kmz` in `destino` (default visor_rutas/datos_kmz) and returns the tree."""
+    """Builds the cache for `kmz` in `destino` (default datos/cache/kmz) and returns the tree."""
     destino = Path(destino or CARPETA_DATOS)
     avisar = progreso or (lambda f, t: None)
     inicio = time.monotonic()
@@ -616,7 +641,7 @@ def importar(kmz: Path, destino: Path | None = None, progreso: Progreso | None =
         if raiz is None:
             raise ValueError(f"No se pudo leer {kml} del KMZ")
         estilos = Estilos(raiz)
-        iconos = Iconos(z, temporal / "iconos", destino.parent / "datos_kmz_iconos_google", descargar_iconos)
+        iconos = Iconos(z, temporal / "iconos", destino.parent / "iconos_google", descargar_iconos)
         documento = next((e for e in raiz.iter() if _local(e) == "Document"), raiz)
         total_pm = sum(1 for e in raiz.iter() if _local(e) == "Placemark") or 1
         hechos = [0]
@@ -757,6 +782,9 @@ def importar(kmz: Path, destino: Path | None = None, progreso: Progreso | None =
         _renombrar(destino, viejo)
     _renombrar(temporal, destino)
     shutil.rmtree(viejo, ignore_errors=True)
+    if Path(destino).resolve() == CARPETA_DATOS.resolve():
+        avisar(0.98, "Guardando la red en la base…")
+        almacen_archivos.subir_carpeta("datos_kmz", destino, borrar_sobrantes=True, conservar=("sincronizaciones",))
     avisar(1.0, f"Red KMZ lista: {arbol['elementos']:,} elementos")
     log.info("KMZ imported: %s (%d elements, %d folders, %d icons, %d SVG, %.1fs)", kmz.name, arbol["elementos"],
              len(carpetas), len(arbol["iconos"]), iconos.svg, time.monotonic() - inicio)
@@ -778,11 +806,20 @@ def progreso_actual() -> dict[str, Any]:
     return dict(_progreso)
 
 
+def _guardar_kmz_en_almacen(archivo: Path, md5: str) -> None:
+    """The KMZ in force is kept in the database too (once per version)."""
+    guardado = almacen_archivos.info("kmz", archivo.name)
+    if guardado is None or guardado["md5"] != md5:
+        if almacen_archivos.guardar_archivo("kmz", archivo.name, archivo):
+            log.info("KMZ %s stored in the database", archivo.name)
+
+
 def asegurar(kmz: Path | str | None = None, destino: Path | None = None,
              progreso: Progreso | None = None) -> dict[str, Any]:
     """The tree of the current cache, importing first when it is missing or the KMZ changed.
 
-    Without a KMZ the existing cache is used (with "aviso"); KmzNoEncontrado if there is neither.
+    The database store is the source: a missing local cache is written from it, and so is a missing KMZ file (only when the cache is
+    out of date). Without a KMZ the existing cache is used (with "aviso"); KmzNoEncontrado if there is neither.
     """
     destino = Path(destino or CARPETA_DATOS)
 
@@ -793,18 +830,36 @@ def asegurar(kmz: Path | str | None = None, destino: Path | None = None,
 
     with _lock:
         arbol = leer_arbol(destino)
+        if arbol is None and destino.resolve() == CARPETA_DATOS.resolve() and almacen_archivos.restaurar_espacio("datos_kmz", destino):
+            arbol = leer_arbol(destino)
+        archivo = None
+        md5_actual = None
         try:
-            archivo = ruta_kmz(kmz)
+            archivo = ruta_kmz(kmz, restaurar=False)
+            md5_actual = md5_archivo(archivo)
+            _guardar_kmz_en_almacen(archivo, md5_actual) if not kmz else None
         except KmzNoEncontrado as exc:
-            if arbol is not None:
+            guardados = [] if kmz else almacen_archivos.listar("kmz")
+            if guardados:
+                md5_actual = guardados[0]["md5"]
+            elif arbol is not None:
                 return {**arbol, "aviso": f"{exc}: se muestra la última red importada ({arbol.get('importado')})"}
-            raise
-        if arbol is not None and arbol.get("md5") == md5_archivo(archivo):
+            else:
+                raise
+        if arbol is not None and arbol.get("md5") == md5_actual:
             return arbol
+        if archivo is None:
+            archivo = ruta_kmz(kmz)                        # restores the stored KMZ to disk
         try:
             return importar(archivo, destino, avisar)
         finally:
             _progreso.update(activo=False)
+
+
+def _de_la_base(destino: Path, relativa: str) -> None:
+    """Writes one cache file from the database store when the local copy is missing (only for the real cache folder)."""
+    if destino.resolve() == CARPETA_DATOS.resolve():
+        almacen_archivos.restaurar("datos_kmz", relativa, destino / relativa)
 
 
 def archivo_seguro(relativa: str, destino: Path | None = None) -> Path:
@@ -813,13 +868,17 @@ def archivo_seguro(relativa: str, destino: Path | None = None) -> Path:
     if not re.fullmatch(r"(iconos|fotos)/[\w .()-]{1,160}\.(png|svg|jpe?g|gif|webp|bmp)", relativa or "", re.I):
         raise FileNotFoundError("Archivo no válido")
     ruta = (destino / relativa).resolve()
-    if destino not in ruta.parents or not ruta.is_file():
+    if destino not in ruta.parents:
+        raise FileNotFoundError("Archivo no encontrado")
+    _de_la_base(destino, relativa)
+    if not ruta.is_file():
         raise FileNotFoundError("Archivo no encontrado")
     return ruta
 
 
 def archivo_indice(destino: Path | None = None) -> Path:
     ruta = Path(destino or CARPETA_DATOS) / "indice.json"
+    _de_la_base(Path(destino or CARPETA_DATOS), "indice.json")
     if not ruta.is_file():
         raise FileNotFoundError("Índice de búsqueda no encontrado")
     return ruta
@@ -829,6 +888,7 @@ def archivo_capa(cid: str, destino: Path | None = None) -> Path:
     if not re.fullmatch(r"[0-9a-f]{12}", cid or ""):
         raise FileNotFoundError("Capa no válida")
     ruta = Path(destino or CARPETA_DATOS) / "capas" / f"{cid}.geojson"
+    _de_la_base(Path(destino or CARPETA_DATOS), f"capas/{cid}.geojson")
     if not ruta.is_file():
         raise FileNotFoundError("Capa no encontrada")
     return ruta

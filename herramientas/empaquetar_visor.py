@@ -1,6 +1,6 @@
 """Genera dist\\VisorRutas\\VisorRutas.exe (modo remoto) y VisorRutas.zip para compartir.
 
-Lo llama build_visor.bat:  .venv\\Scripts\\python.exe empaquetar_visor.py
+Lo llama herramientas\\build_visor.bat:  .venv\\Scripts\\python.exe herramientas\\empaquetar_visor.py
 
 Empaqueta SOLO lo del modo remoto: pywebview (WebView2), requests, openpyxl/Pillow (dibujar las
 hojas del Excel descargado) y el código del visor (ventana_web, remoto, config_visor, excel_html,
@@ -14,7 +14,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent
+RAIZ = Path(__file__).resolve().parents[1]          # la carpeta del proyecto (este script vive en herramientas/)
 NOMBRE = "VisorRutas"
 DIST = RAIZ / "dist"
 BUILD = RAIZ / "build" / "visor"
@@ -35,7 +35,7 @@ EXCLUIR = [
 ]
 # Names that must not appear among the files of dist\VisorRutas, nor as bundled modules.
 PROHIBIDOS_ARCHIVO = (".env", ".db", ".sqlite", "business_rules.yaml", "budget_index.json")
-PROHIBIDAS_CARPETAS = ("red_fibra", "templates", "output", "visiomapas", "logs", "pruebas",
+PROHIBIDAS_CARPETAS = ("red_fibra", "templates", "output", "visiomapas", "logs", "pruebas", "datos", "herramientas",
                        "red_kmz", "datos_kmz", "datos_kmz_iconos_google", "kmz_cache", "respaldos_redes")
 PROHIBIDOS_MODULO = ("main", "db", "config", "routing", "psycopg", "fastapi", "visor_rutas.calculo",
                      "visor_rutas.presupuesto_visor", "red_fibra_pg", "visor_api", "visor_rutas.kmz_capas",
@@ -149,9 +149,9 @@ def instalador() -> None:
                   os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe")]
     iscc = next((c for c in candidatos if c and Path(c).is_file()), None)
     if iscc is None:
-        print("Instalador: Inno Setup no está instalado; se omite (opcional). Con él: instalador_visor.iss -> InstaladorVisorRutas.exe")
+        print("Instalador: Inno Setup no está instalado; se omite (opcional). Con él: herramientas\instalador_visor.iss -> InstaladorVisorRutas.exe")
         return
-    subprocess.run([iscc, "/Q", str(RAIZ / "instalador_visor.iss")], cwd=RAIZ, check=True)
+    subprocess.run([iscc, "/Q", str(RAIZ / "herramientas" / "instalador_visor.iss")], cwd=RAIZ, check=True)
     print(f"Instalador: {RAIZ / 'InstaladorVisorRutas.exe'}")
 
 

@@ -16,9 +16,11 @@ from typing import Any, Callable
 
 from lxml import etree
 
+from visor_rutas import almacen_archivos
+
 log = logging.getLogger(__name__)
 
-CACHE_ODG = Path(__file__).resolve().parents[1] / "red_fibra" / "cache_odg"
+CACHE_ODG = Path(__file__).resolve().parents[1] / "datos" / "cache" / "odg"
 MORADO = frozenset({"#7030a0"})
 DORADO = frozenset({"#d26d19", "#ea700d", "#966115", "#ea9651", "#ffc000", "#c55a11"})
 RADIO_PUERTOS_CM = 8.0            # the frame of port numbers of a splitter is within this distance of its label
@@ -56,6 +58,8 @@ def _colores(raiz: Any) -> dict[str, str]:
 def textos_odg(md5: str, carpeta: Path | None = None) -> list[dict[str, Any]]:
     """The text frames of a converted diagram in absolute cm: {x, y, w, h, texto, color} (x, y = the centre of the frame)."""
     archivo = (carpeta or CACHE_ODG) / f"{md5}.odg"
+    if carpeta is None and not archivo.is_file() and re.fullmatch(r"[0-9a-f]{32}", str(md5)):
+        almacen_archivos.restaurar("odg", archivo.name, archivo)     # the database store holds the converted diagrams
     if not archivo.is_file():
         return []
     z = zipfile.ZipFile(archivo)

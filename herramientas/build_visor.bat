@@ -2,10 +2,10 @@
 rem Genera dist\VisorRutas\VisorRutas.exe (visor en modo remoto, para otras computadoras)
 rem y VisorRutas.zip listo para compartir. No incluye .env, claves, bases ni plantillas.
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 if not exist ".venv\Scripts\python.exe" (
-    echo No se encontro .venv\Scripts\python.exe en "%~dp0"
+    echo No se encontro .venv\Scripts\python.exe en "%CD%"
     pause
     exit /b 1
 )
@@ -21,7 +21,7 @@ if errorlevel 1 (
     )
 )
 
-".venv\Scripts\python.exe" empaquetar_visor.py
+".venv\Scripts\python.exe" herramientas\empaquetar_visor.py
 if errorlevel 1 (
     echo.
     echo El empaquetado fallo. Revise los mensajes de arriba.

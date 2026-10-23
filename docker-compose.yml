@@ -1,0 +1,86 @@
+# Servicio de presupuestos. Guia completa: docker/LEEME.md
+#
+#   Solo el servicio (la base ya existe en otro lado):   docker compose up -d --build
+#   Servicio + PostgreSQL/PostGIS en esta misma VM:      docker compose --profile db up -d --build
+#   ...ademas HTTPS con un subdominio de la empresa:     docker compose --profile db --profile https up -d --build
+#
+# Todo se configura con el archivo `.env` de esta carpeta (plantilla: docker/env.ejemplo). Se monta dentro del contenedor, asi que las claves de
+# VISOR_API_KEYS / CAMPO_API_KEYS se pueden agregar o quitar sin reiniciar. Evite el signo $ en las contrasenas (compose lo interpreta).
+name: presupuestos
+
+services:
+  app:
+    build: .
+    image: presupuestos:${VERSION:-local}
+    container_name: presupuestos-app
+    restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      TZ: America/Managua
+      REDES_RESPALDOS_DIR: /respaldos
+    volumes:
+      - ./.env:/app/.env:ro
+      # Reglas de negocio: se leen en cada peticion; editar este archivo cambia el comportamiento sin reiniciar ni reconstruir.
+      - ./business_rules.yaml:/app/business_rules.yaml:ro
+      # Lo que NO se puede perder (carpetas de la VM, fuera del contenedor). Crear antes: mkdir -p volumenes/{datos,output,logs,respaldos}
+      - ${DIR_DATOS:-./volumenes/datos}:/app/datos
+      - ${DIR_OUTPUT:-./volumenes/output}:/app/output
+      - ${DIR_LOGS:-./volumenes/logs}:/app/logs
+      - ${DIR_RESPALDOS:-./volumenes/respaldos}:/respaldos
+    # Solo escucha en la propia VM (127.0.0.1): hacia afuera se sale por ngrok (lo abre el servicio) o por el proxy HTTPS de abajo.
+    ports:
+      - "127.0.0.1:${PUERTO:-8000}:8000"
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # PostgreSQL + PostGIS propio (opcional). Con una base externa se omite: no se enciende sin --profile db.
+  # Con este servicio, en .env:  DB_HOST=db  y  VISIO_DB_HOST=db
+  db:
+    profiles: ["db"]
+    image: ${POSTGIS_IMAGE:-postgis/postgis:18-3.6}
+    container_name: presupuestos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en el .env}
+      TZ: America/Managua
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    # Sin puertos publicados: solo el servicio la alcanza. Para entrar desde la VM, descomente:
+    # ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # HTTPS con un subdominio propio (opcional): Caddy pide y renueva el certificado solo. Necesita el DNS del subdominio apuntando a la VM
+  # y los puertos 80 y 443 abiertos. En .env:  DOMINIO=presupuestos.sudominio.com
+  caddy:
+    profiles: ["https"]
+    image: caddy:2
+    container_name: presupuestos-https
+    restart: unless-stopped
+    environment:
+      DOMINIO: ${DOMINIO:-}      # solo se usa con --profile https; sin DOMINIO ese perfil no arranca (Caddy lo avisa)
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

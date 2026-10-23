@@ -12,8 +12,8 @@ Solo datos que ya están en la base de diagramas (red_fibra), sin adivinar fusio
 Lee la copia PostgreSQL (esquema red_fibra) cuando hay conexión, si no el SQLite red_fibra.db, con
 las mismas consultas (estilo sqlite "?", adaptadas por origen._PgAdapter).
 
-diagrama_png(md5) convierte el .odg de red_fibra/cache_odg a PNG con LibreOffice (headless, perfil
-temporal) y lo guarda en red_fibra/cache_diagramas/<md5>_<pagina>.png.
+diagrama_png(md5) convierte el .odg de datos/cache/odg a PNG con LibreOffice (headless, perfil
+temporal) y lo guarda en datos/cache/diagramas/<md5>_<pagina>.png.
 """
 import logging
 import math
@@ -34,11 +34,12 @@ import psycopg
 import recalc
 from config import BASE_DIR, get_settings
 from origen import _PgAdapter, _distance_m
+from visor_rutas import almacen_archivos
 
 log = logging.getLogger(__name__)
 
-CACHE_ODG = BASE_DIR / "red_fibra" / "cache_odg"
-CACHE_DIAGRAMAS = BASE_DIR / "red_fibra" / "cache_diagramas"
+CACHE_ODG = BASE_DIR / "datos" / "cache" / "odg"
+CACHE_DIAGRAMAS = BASE_DIR / "datos" / "cache" / "diagramas"
 ANCHO_PNG_PX = 6000             # 2048 px (LibreOffice's default) is unreadable for subred diagrams
 ALTO_MAX_PX = 9000
 TIMEOUT_CONVERSION_S = 180
@@ -321,7 +322,7 @@ def _ancla_por_nombre(filas: list[tuple], nombre: str) -> tuple | None:
 def _ancla_en_diagrama(fuente: _Fuente, archivo: dict[str, Any], nombre: str) -> dict[str, float] | None:
     """Where this mufa is drawn in the diagram: its label's position and the page size (cm), so
     the viewer can zoom to it and circle it. None when the label or the .odg is not found."""
-    odg = CACHE_ODG / f"{archivo['md5']}.odg"
+    odg = ruta_odg(archivo["md5"])
     if not odg.is_file():
         return None
     filas, ancla = _textos_con_ancla(fuente, archivo)
@@ -371,7 +372,7 @@ def _detalle_por_nombre(fuente: _Fuente, emparejado: dict[str, Any]) -> dict[str
     archivo = {"archivo_id": archivo_id, "rol": "por_nombre", "ruta_relativa": ruta, "md5": md5,
                "tipo_diagrama": tipo, "nombre": Path(ruta).name, "diagrama": formato != "xlsx", "ancla": None}
     pagina, x0, y0 = emparejado.get("pagina"), emparejado.get("x_cm"), emparejado.get("y_cm")
-    odg = CACHE_ODG / f"{md5}.odg"
+    odg = ruta_odg(md5)
     if x0 is not None and y0 is not None and odg.is_file():
         ancho_cm, alto_cm = _tamano_pagina_cm(odg)
         archivo["ancla"] = {"x_cm": float(x0), "y_cm": float(y0), "ancho_cm": ancho_cm, "alto_cm": alto_cm}
@@ -571,7 +572,7 @@ def buscar_en_diagrama(md5: str, texto: str, visio_con: Any = None, archivo_sqli
     vacio: dict[str, Any] = {"modo": "texto", "resultados": [], "total": 0}
     if len(consulta) < 2:
         return vacio
-    odg = CACHE_ODG / f"{md5}.odg"
+    odg = ruta_odg(md5)
     if not odg.is_file():
         raise FileNotFoundError("diagrama no convertido")
     ancho_cm, alto_cm = _tamano_pagina_cm(odg)
@@ -686,6 +687,15 @@ def _validar(md5: str, pagina: int) -> tuple[str, int]:
     return md5, pagina
 
 
+def ruta_odg(md5: str) -> Path:
+    """Local path of the converted diagram `<md5>.odg`; if the local copy is missing it is written from the database store first.
+    The path may still not exist (a diagram that was never converted)."""
+    ruta = CACHE_ODG / f"{md5}.odg"
+    if not ruta.is_file() and RE_MD5.match(str(md5)):
+        almacen_archivos.restaurar("odg", ruta.name, ruta)
+    return ruta
+
+
 def diagrama_svg(md5: str) -> Path | None:
     """SVG (vector) of a cached diagram, converted once with LibreOffice.
 
@@ -698,7 +708,7 @@ def diagrama_svg(md5: str) -> Path | None:
 
 
 def diagrama_png(md5: str, pagina: int = 0) -> Path | None:
-    """PNG of a cached diagram (red_fibra/cache_odg/<md5>.odg), converted once with LibreOffice.
+    """PNG of a cached diagram (datos/cache/odg/<md5>.odg), converted once with LibreOffice.
 
     Returns None when LibreOffice is not installed. Raises ValueError for a malformed md5 or page,
     FileNotFoundError when the .odg is not in the cache and RuntimeError when the conversion fails.
@@ -719,12 +729,14 @@ def diagrama_png(md5: str, pagina: int = 0) -> Path | None:
 
 
 def _convertir(md5: str, pagina: int, destino: Path, extension: str, filtro_de: Any) -> Path | None:
-    """Convert red_fibra/cache_odg/<md5>.odg with LibreOffice (headless, temporary profile) once."""
+    """Convert datos/cache/odg/<md5>.odg with LibreOffice (headless, temporary profile) once."""
     if destino.is_file() and destino.stat().st_size > 0:
         return destino
-    odg = CACHE_ODG / f"{md5}.odg"
+    if almacen_archivos.restaurar("diagramas", destino.name, destino) and destino.stat().st_size > 0:
+        return destino
+    odg = ruta_odg(md5)
     if not odg.is_file():
-        raise FileNotFoundError(f"El diagrama {md5} no está en red_fibra/cache_odg")
+        raise FileNotFoundError(f"El diagrama {md5} no está en la base ni en datos/cache/odg")
     soffice = recalc.find_soffice(get_settings().libreoffice_path)
     if soffice is None:
         return None
@@ -752,6 +764,7 @@ def _convertir(md5: str, pagina: int, destino: Path, extension: str, filtro_de: 
             temporal = destino.with_suffix(".tmp")
             shutil.copyfile(generado, temporal)
             os.replace(temporal, destino)
+            almacen_archivos.guardar_archivo("diagramas", destino.name, destino)
         finally:
             shutil.rmtree(trabajo, ignore_errors=True)
             shutil.rmtree(perfil, ignore_errors=True)

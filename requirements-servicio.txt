@@ -1,0 +1,17 @@
+# Lo que necesita el CONTENEDOR (el servicio, el visor remoto y la app de campo). Mismas versiones que requirements.txt.
+# Sin pytest, sin pywebview / tkinter (visor de escritorio) ni pyinstaller: eso es de Windows.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+psycopg[binary]==3.2.3
+python-dotenv==1.0.1
+requests==2.32.3
+tenacity==9.0.0
+polyline==2.0.2
+openpyxl==3.1.5
+PyYAML==6.0.2
+ngrok==1.7.0
+staticmap==0.5.7
+Pillow==12.3.0
+lxml==6.1.3                 # kmz_capas y el modulo de redes leen el KMZ
+psycopg2-binary==2.9.13     # solo red_fibra/importador.py (publica los Visio en PostgreSQL)

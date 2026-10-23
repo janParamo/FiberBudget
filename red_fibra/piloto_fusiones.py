@@ -219,10 +219,10 @@ def generar(args):
             print('  %2d. %-50s NO ENCONTRADA' % (n, entrada[:50]))
             continue
         archivo_id, md5, ruta, nombre = archivo
-        odg = os.path.join(AQUI, 'cache_odg', md5 + '.odg')
+        odg = os.path.join(os.path.dirname(AQUI), 'datos', 'cache', 'odg', md5 + '.odg')
         if not os.path.exists(odg):
             faltantes.append(entrada)
-            print('  %2d. %-50s sin .odg en cache_odg' % (n, entrada[:50]))
+            print('  %2d. %-50s sin .odg en datos/cache/odg' % (n, entrada[:50]))
             continue
         detectadas = fusiones.extraer_fusiones(odg)
         fusiones.guardar(con, archivo_id, detectadas)

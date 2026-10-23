@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from visor_rutas import config_visor, excel_html
+from visor_rutas import almacen_archivos, config_visor, excel_html
 from visor_rutas.remoto import ErrorRemoto, ProveedorRemoto
 
 log = logging.getLogger(__name__)
@@ -587,7 +587,7 @@ class Api:
         """Real Visio diagram as a data URL (the page must not read local files itself).
 
         SVG (vector, sharp at any zoom); PNG only if the SVG export fails. The first time a
-        diagram is converted with LibreOffice (~5-15 s); then it comes from red_fibra/cache_diagramas.
+        diagram is converted with LibreOffice (~5-15 s); then it comes from datos/cache/diagramas.
         """
         if self._modo == "remoto":
             return self._remota("diagrama", md5, pagina)
@@ -596,7 +596,7 @@ class Api:
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         except FileNotFoundError:
-            return {"ok": False, "error": "Diagrama no disponible (no está convertido en red_fibra/cache_odg)"}
+            return {"ok": False, "error": "Diagrama no disponible (no está convertido: ni en la base ni en datos/cache/odg)"}
         except Exception as exc:
             log.exception("Visor web: diagram %s failed", md5)
             return {"ok": False, "error": f"Diagrama no disponible ({exc})"}
@@ -836,7 +836,14 @@ class Api:
         soffice = recalc.find_soffice(get_settings().libreoffice_path)
         if soffice is None:
             raise pdf_export.PdfExportError("LibreOffice no disponible")
-        return pdf_export.xlsx_a_pdf(xlsx, soffice)
+        pdf_previo = xlsx.with_suffix(".pdf")
+        try:                                                   # a PDF already made is kept in the database: no need to convert again
+            almacen_archivos.restaurar("visor", pdf_previo.relative_to(presupuesto_visor.carpeta_visor().resolve()).as_posix(), pdf_previo)
+        except ValueError:
+            pass
+        pdf = pdf_export.xlsx_a_pdf(xlsx, soffice)
+        presupuesto_visor.subir_a_la_base()
+        return pdf
 
     def pdf_presupuesto(self, archivo: str) -> dict[str, Any]:
         """PDF of a visor budget (same pdf_export as the API) as base64, for the PDF tab."""

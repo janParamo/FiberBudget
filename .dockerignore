@@ -1,0 +1,23 @@
+# Lista blanca: la imagen lleva SOLO el codigo. Nada de datos de la empresa, claves, bases ni salidas.
+*
+
+!requirements-servicio.txt
+!*.py
+!business_rules.yaml
+!templates/
+!visor_rutas/
+!red_fibra/
+!herramientas/
+
+# ...y de lo anterior, fuera esto:
+**/__pycache__
+**/*.pyc
+red_fibra/*.db
+red_fibra/cache_odg
+red_fibra/cache_diagramas
+visor_rutas/datos_kmz
+visor_rutas/datos_kmz_iconos_google
+herramientas/cloudflared
+herramientas/*.bat
+herramientas/*.iss
+herramientas/*.exe

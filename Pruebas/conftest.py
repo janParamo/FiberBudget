@@ -24,3 +24,22 @@ def _sin_guardar_splitters(monkeypatch, request):
     except Exception:                                               # noqa: BLE001
         return
     monkeypatch.setattr(splitters_diagrama, "guardar_en_redes", lambda splitters: {})
+
+
+@pytest.fixture(autouse=True)
+def _respaldos_en_carpeta_temporal(monkeypatch, tmp_path_factory):
+    """The .env points the backups to a real folder (the user's Respaldos): no test writes there (a test can still set its own folder)."""
+    monkeypatch.setenv("REDES_RESPALDOS_DIR", str(tmp_path_factory.mktemp("respaldos_pruebas")))
+    monkeypatch.delenv("REDES_RESPALDOS_CONSERVAR", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _sin_almacen_real(monkeypatch, request):
+    """The files store (redes.almacen_archivos) lives in the real Presupuesto_visio: no test writes there. Tests of the store use the `almacen_pruebas` fixture."""
+    if "almacen_pruebas" in request.fixturenames:
+        return
+    try:
+        from visor_rutas import almacen_archivos
+    except Exception:                                               # noqa: BLE001
+        return
+    monkeypatch.setattr(almacen_archivos, "ACTIVO", False)

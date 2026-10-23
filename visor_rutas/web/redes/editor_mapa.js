@@ -1046,11 +1046,12 @@
   if (document.readyState !== "loading") conectar();
 
   /** Cola de corrección (migración Visio, fase 6): open the project and place an element that has no coordinate. */
-  async function ubicar(proyectoId, elementoId) {
+  async function ubicar(proyectoId, elementoId, sugerencia) {
     if (!(await abrir(proyectoId))) return false;
     const el = ed.elementos.get(elementoId);
     if (!el) { mensaje("El elemento ya no está en el proyecto", "error"); return false; }
     if (!ed.puedeEditar) { mensaje("Solo un editor puede ubicarla", "error"); return false; }
+    if (sugerencia && Number.isFinite(sugerencia.lat) && Number.isFinite(sugerencia.lon)) ed.mapa.setView([sugerencia.lat, sugerencia.lon], sugerencia.zoom || 16);   // near where its neighbours are
     ed.ubicando = elementoId;
     cambiarModo("ubicar", `${el.nombre}: clic en el mapa donde está la mufa · Esc cancela`);
     return true;

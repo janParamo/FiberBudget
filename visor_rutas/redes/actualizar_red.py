@@ -22,7 +22,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from visor_rutas import kmz_capas, subidas
+from visor_rutas import almacen_archivos, kmz_capas, subidas
 from visor_rutas.redes import importar_kmz
 from visor_rutas.redes.db import DatosInvalidos, NoEncontrado, SinPermiso
 
@@ -70,7 +70,7 @@ def _validar_kmz(crudo: bytes) -> int:
 def _carpeta_kmz() -> tuple[Path, Path | None]:
     """(folder where the KMZ lives, the KMZ file itself when KMZ_PATH points to a file)."""
     import os
-    texto = str(os.getenv("KMZ_PATH") or "red_kmz").strip().strip('"')
+    texto = str(os.getenv("KMZ_PATH") or "datos/kmz").strip().strip('"')
     ruta = Path(texto)
     if not ruta.is_absolute():
         ruta = kmz_capas.RAIZ / ruta
@@ -302,15 +302,25 @@ def sincronizar(con: Any, actor: dict[str, Any], *, quitar: bool = False) -> dic
     carpeta.mkdir(parents=True, exist_ok=True)
     registro = {"id": id_, "archivo": archivo, "md5": md5, "por": actor.get("nombre") or actor.get("id"), "quitar": bool(quitar), "revertida": False,
                 "resumen": _resumen(d, archivo), **guardado}
-    (carpeta / f"{id_}.json").write_text(json.dumps(registro, ensure_ascii=False, default=str), encoding="utf-8")
+    _guardar_registro(carpeta, registro)
     log.info("Budget network synchronized with %s: +%d points, +%d lines, -%d points, -%d lines", archivo, len(guardado["insertados"]["puntos"]),
              len(guardado["insertados"]["lineas"]), len(guardado["eliminados"]["puntos"]), len(guardado["eliminados"]["lineas"]))
     return {"id": id_, "resumen": registro["resumen"], "insertados": {k: len(v) for k, v in guardado["insertados"].items()},
             "eliminados": {k: len(v) for k, v in guardado["eliminados"].items()}}
 
 
+def _guardar_registro(carpeta: Path, registro: dict[str, Any]) -> None:
+    """A synchronization record (what it inserted / removed, to undo it): on disk and in the database store (that one survives a KMZ re-import)."""
+    texto = json.dumps(registro, ensure_ascii=False, default=str)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    (carpeta / f"{registro['id']}.json").write_text(texto, encoding="utf-8")
+    if carpeta.resolve() == _carpeta_sincronizaciones().resolve():
+        almacen_archivos.guardar("datos_kmz", f"sincronizaciones/{registro['id']}.json", texto.encode("utf-8"))
+
+
 def _registros() -> list[dict[str, Any]]:
     carpeta = _carpeta_sincronizaciones()
+    almacen_archivos.restaurar_espacio("datos_kmz", kmz_capas.CARPETA_DATOS, "sincronizaciones/")   # records lost with a rebuilt cache
     if not carpeta.is_dir():
         return []
     salida = []
@@ -354,5 +364,5 @@ def revertir_sincronizacion(con: Any, actor: dict[str, Any], *, id: str) -> dict
     finally:
         pg.close()
     r["revertida"] = True
-    (_carpeta_sincronizaciones() / f"{r['id']}.json").write_text(json.dumps(r, ensure_ascii=False, default=str), encoding="utf-8")
+    _guardar_registro(_carpeta_sincronizaciones(), r)
     return {"id": r["id"], "revertida": True}

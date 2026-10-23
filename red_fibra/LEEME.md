@@ -50,7 +50,9 @@ Vistas: `v_nodos_ubicados`, `v_enlaces_detalle`, `v_revision` (nodos que convien
 python importador.py --origen "C:\Users\jgutierrez\Downloads\DIAGRAMAS ACTUALIZADOS" --db red_fibra.db --soffice "C:\Users\jgutierrez\LibreOfficePortable\App\libreoffice\program\soffice.exe"
 ```
 
-La primera vez convierte todos los Visio (unos 10 minutos). Las conversiones quedan en la carpeta `cache_odg`, así que en las siguientes cargas solo se convierten los archivos nuevos o modificados. La base se reconstruye completa en cada ejecución, de modo que siempre refleja el estado actual de la carpeta.
+**Con PostgreSQL configurado (`VISIO_DB_*` en el `.env` del proyecto) basta esto, sin `--db` ni `--pg`:** el importador trabaja en un SQLite temporal, publica en `Presupuesto_visio`, guarda los `.odg` convertidos en la base (almacén de archivos) y borra el temporal. Ya no queda un `red_fibra.db` suelto; `--db archivo.db` lo conserva si se necesita.
+
+La primera vez convierte todos los Visio (unos 10 minutos). Las conversiones quedan en la carpeta `datos/cache/odg` (en la raíz del proyecto), así que en las siguientes cargas solo se convierten los archivos nuevos o modificados. La base se reconstruye completa en cada ejecución, de modo que siempre refleja el estado actual de la carpeta.
 
 ## Consultas útiles
 

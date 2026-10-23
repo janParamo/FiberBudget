@@ -1,6 +1,6 @@
 r"""Revisa que la app de campo responda bien desde una dirección (la pública del túnel de Cloudflare, o http://localhost:8000).
 
-    .\.venv\Scripts\python.exe verificar_campo.py https://api.fiberbudget.com  CLAVE_DE_UN_TECNICO
+    .\.venv\Scripts\python.exe herramientas\verificar_campo.py https://api.fiberbudget.com  CLAVE_DE_UN_TECNICO
 
 Sin dirección usa CAMPO_URL_PUBLICA del .env. La clave es opcional: con ella también se prueba el acceso de la persona (rol de técnico) y, si es de
 un administrador o editor, el canal de avisos en tiempo real. Termina con código 0 si todo lo necesario está bien, 1 si algo falla.
@@ -8,9 +8,12 @@ un administrador o editor, el canal de avisos en tiempo real. Termina con códig
 import json
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))        # `config` (el .env del proyecto) vive en la raiz, no en herramientas/
 
 ARCHIVOS = (("/campo/", "text/html"), ("/campo/app.js", "javascript"), ("/campo/sw.js", "javascript"), ("/campo/manifest.webmanifest", "json"),
             ("/campo/icono-192.png", "image/png"), ("/campo/icono-512.png", "image/png"), ("/campo/lib/leaflet/leaflet.js", "javascript"))
@@ -45,7 +48,7 @@ def verificar(base: str, clave: str | None = None, sesion: Any = None, con_event
             r = sesion.get(base + "/visor/campo/config", headers=cabeceras, timeout=espera_s)
             datos = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
             hecho("La clave entra", r.status_code == 200, f"persona {datos.get('persona')}" if r.status_code == 200 else
-                  {401: "clave no válida", 403: "sin el rol de técnico", 404: "VISOR_API_KEYS vacío en el servidor"}.get(r.status_code, str(r.status_code)))
+                  {401: "clave no válida", 403: "sin el rol de técnico", 404: "VISOR_API_KEYS y CAMPO_API_KEYS vacíos en el servidor"}.get(r.status_code, str(r.status_code)))
             if r.status_code == 200:
                 hecho("La dirección pública del servidor coincide", not datos.get("url_publica") or base == datos["url_publica"].rstrip("/"),
                       f"CAMPO_URL_PUBLICA={datos.get('url_publica') or '(vacía)'}")
@@ -73,7 +76,7 @@ def main(argv: list[str]) -> int:
         except Exception:                                                    # noqa: BLE001
             base = ""
     if not base:
-        print("Indique la dirección: verificar_campo.py https://api.fiberbudget.com [clave]  (o ponga CAMPO_URL_PUBLICA en .env)")
+        print("Indique la dirección: herramientas\verificar_campo.py https://api.fiberbudget.com [clave]  (o ponga CAMPO_URL_PUBLICA en .env)")
         return 2
     filas = verificar(base, argv[2] if len(argv) > 2 else None)
     for nombre, ok, detalle in filas:

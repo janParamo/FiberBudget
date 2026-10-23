@@ -11,10 +11,10 @@ y no muestra la página de advertencia que ngrok enseña al abrir el enlace por 
 ## Qué trae el proyecto
 | Archivo | Para qué |
 |---|---|
-| `iniciar_tunel_cloudflare.bat` | Abre el túnel (lee `CLOUDFLARE_TUNNEL_TOKEN` del `.env`; el token no se escribe en pantalla ni en la línea de comandos) |
+| `herramientas\iniciar_tunel_cloudflare.bat` | Abre el túnel (lee `CLOUDFLARE_TUNNEL_TOKEN` del `.env`; el token no se escribe en pantalla ni en la línea de comandos) |
 | `start_service.bat` | Si `CLOUDFLARE_TUNNEL_TOKEN` está en `.env`, abre el túnel solo (otra ventana, minimizada) antes de arrancar el servicio |
-| `verificar_campo.py` | Prueba la dirección pública: archivos de la app, manifest, clave, avisos en tiempo real |
-| `cloudflared/config.yml.ejemplo` | Para la otra forma de crear el túnel (con archivo de configuración) |
+| `herramientas\verificar_campo.py` | Prueba la dirección pública: archivos de la app, manifest, clave, avisos en tiempo real |
+| `herramientas\cloudflared\config.yml.ejemplo` | Para la otra forma de crear el túnel (con archivo de configuración) |
 | `CAMPO_URL_PUBLICA` (`.env`) | La dirección oficial; solo informativa: sale en el log al arrancar y en `/visor/campo/config` |
 
 ## Pasos (con el token del panel: lo más simple)
@@ -30,10 +30,10 @@ y no muestra la página de advertencia que ngrok enseña al abrir el enlace por 
    ```
 4. **Apuntar la dirección al servicio.** En el panel, dentro del túnel → *Public Hostname* → *Add*: *Subdomain* `api`, *Domain* `fiberbudget.com`, *Service* tipo `HTTP`, URL `127.0.0.1:8000`
    (el `API_HOST:API_PORT` del `.env`). Cloudflare crea solo el registro DNS.
-5. **Encender.** Reinicie `start_service.bat` (abre el túnel por sí solo) o, sin reiniciar el servicio, ejecute `iniciar_tunel_cloudflare.bat`. En el panel el túnel debe verse *Healthy*.
+5. **Encender.** Reinicie `start_service.bat` (abre el túnel por sí solo) o, sin reiniciar el servicio, ejecute `herramientas\iniciar_tunel_cloudflare.bat`. En el panel el túnel debe verse *Healthy*.
 6. **Comprobar.**
    ```powershell
-   .\.venv\Scripts\python.exe verificar_campo.py https://api.fiberbudget.com CLAVE_DE_UN_TECNICO
+   .\.venv\Scripts\python.exe herramientas\verificar_campo.py https://api.fiberbudget.com CLAVE_DE_UN_TECNICO
    ```
    Todas las líneas deben salir `[OK]`. Luego abra `https://api.fiberbudget.com/campo/` en un teléfono.
 
@@ -41,24 +41,24 @@ Para que el túnel quede encendido siempre, deje `start_service.bat` en la carpe
 Windows (`cloudflared.exe service install <token>`), pero no es necesario.
 
 ## Otra forma: con archivo de configuración (la que ya está hecha en esta PC)
-Si el túnel se crea desde la línea de comandos (`cloudflared tunnel login`, `tunnel create fiber-budget`, `tunnel route dns fiber-budget api.fiberbudget.com`), `cloudflared\config.yml` (copia de `config.yml.ejemplo`, fuera de GitHub)
-dice cuál túnel y a dónde apunta. **Si ese archivo existe, `iniciar_tunel_cloudflare.bat` lo usa** (y no hace falta `CLOUDFLARE_TUNNEL_TOKEN`); `start_service.bat` lo abre solo cuando `.env` tiene `CLOUDFLARE_ACTIVAR=1`. cloudflared puede estar en `herramientas\` o instalado en el PATH
+Si el túnel se crea desde la línea de comandos (`cloudflared tunnel login`, `tunnel create fiber-budget`, `tunnel route dns fiber-budget api.fiberbudget.com`), `herramientas\cloudflared\config.yml` (copia de `config.yml.ejemplo`, fuera de GitHub)
+dice cuál túnel y a dónde apunta. **Si ese archivo existe, `herramientas\iniciar_tunel_cloudflare.bat` lo usa** (y no hace falta `CLOUDFLARE_TUNNEL_TOKEN`); `start_service.bat` lo abre solo cuando `.env` tiene `CLOUDFLARE_ACTIVAR=1`. cloudflared puede estar en `herramientas\` o instalado en el PATH
 (en esta PC está en `C:\Program Files (x86)\cloudflared\`). **El paso `tunnel route dns` (o el *Public Hostname* del panel) es el que hace que el nombre `api.fiberbudget.com` llegue al túnel**: sin él el túnel está encendido pero nadie lo encuentra.
 
 ## Quién entra por esa dirección
 Es la misma dirección de toda la API de la PC (la usan también n8n y el visor remoto):
 - `/campo/…` (la página de la app) es pública, pero solo contiene HTML, JavaScript e imágenes; no muestra datos.
-- `/visor/*` (incluido `/visor/campo/*`) exige la `X-Visor-Key` de una persona de `VISOR_API_KEYS`; `/presupuesto` exige `SERVICE_API_KEY`.
+- `/visor/*` exige la `X-Visor-Key` de una persona de `VISOR_API_KEYS`; `/visor/campo/*` y la app `/campo` aceptan también las claves de técnicos de `CAMPO_API_KEYS`, que **no abren nada más** de `/visor/*`; `/presupuesto` exige `SERVICE_API_KEY`.
 - Para limitar quién puede abrir la dirección, Cloudflare ofrece *Access* (Zero Trust → *Access* → *Applications*), pero **no lo active sobre `/visor/*` ni `/presupuesto`**: n8n y el visor remoto no pueden iniciar sesión.
 - Si se pasa del ngrok actual a Cloudflare, la URL que lleva el visor remoto (☰ → Configuración) cambia a la nueva; hay que avisarle a cada persona.
 
 ## Si algo falla
 | Síntoma | Qué mirar |
 |---|---|
-| `iniciar_tunel_cloudflare.bat` dice «No se encontró cloudflared.exe» | El paso 2: el archivo debe llamarse `herramientas\cloudflared.exe` |
+| `herramientas\iniciar_tunel_cloudflare.bat` dice «No se encontró cloudflared.exe» | El paso 2: el archivo debe llamarse `herramientas\cloudflared.exe` |
 | Dice «Falta CLOUDFLARE_TUNNEL_TOKEN» | El paso 3: la línea del `.env`, sin comillas ni espacios |
 | El panel muestra el túnel *Down* | La ventana «Tunel Cloudflare» cerrada, sin internet o token mal copiado |
 | La dirección da error 502 / 1033 | El servicio no está encendido (`start_service.bat`) o el puerto de *Service* no es el del `.env` |
-| `verificar_campo.py` da `[FALLA] … ¿página de aviso del túnel?` | Todavía pasa por ngrok u otro intermediario que cambia la respuesta |
+| `herramientas\verificar_campo.py` da `[FALLA] … ¿página de aviso del túnel?` | Todavía pasa por ngrok u otro intermediario que cambia la respuesta |
 | El teléfono dice «dirección no segura» | Está abriendo `http://`; use la dirección que empieza con `https://` |
 | «sin el rol de técnico» | En el visor → Usuarios → rol «Técnico de campo» para esa persona |

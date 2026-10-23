@@ -29,11 +29,13 @@ import red_fibra_pg
 import routing
 from excel_generator import _normalized, _safe_file_stem
 from presupuesto import seleccionar_tecnologia
+from visor_rutas import almacen_archivos
 from visor_rutas.calculo import CoordenadaInvalida, parsear_coordenadas
 
 log = logging.getLogger(__name__)
 
 CARPETA = "visor"                       # output/visor
+LOCAL_HORAS = 24                        # a file already in the database is kept on disk this long (it is only a cache)
 SERVICIOS = ("Residencial", "Empresarial", "Corporativo")
 MEDIOS = ("FO",)
 TECNOLOGIAS = {"": None, "auto": None, "automatico": None, "gpon": "gpon", "metro": "metro"}
@@ -100,30 +102,57 @@ def carpeta_visor() -> Path:
     return main.settings.output_dir / CARPETA
 
 
+def subir_a_la_base(carpeta: Path | None = None) -> dict[str, int]:
+    """Sends to the database store the Excel / PDF files of output/visor that are not there yet (the maps are not kept)."""
+    return almacen_archivos.subir_carpeta("visor", carpeta or carpeta_visor(), excluir=("mapas",))
+
+
 def limpiar_archivos_viejos(carpeta: Path | None = None) -> int:
-    """Borra los archivos de output/visor (y su carpeta mapas) más viejos que OUTPUT_RETENTION_DAYS.
+    """Cleans output/visor (a cache: the database store holds the budgets) and the store itself. Returns how many local files were removed.
+
+    - a file the database already has (same name and size) is removed after LOCAL_HORAS hours;
+    - any other file, once it is older than OUTPUT_RETENTION_DAYS (the same rule as before);
+    - the maps (mapas/) after LOCAL_HORAS hours: they are inside the Excel and are not kept;
+    - in the database, the budgets older than OUTPUT_RETENTION_DAYS.
     No toca output/ ni budget_index.json."""
     carpeta = carpeta or carpeta_visor()
-    limite = time.time() - main.settings.output_retention_days * 24 * 60 * 60
+    ahora = time.time()
+    limite = ahora - main.settings.output_retention_days * 24 * 60 * 60
+    limite_local = ahora - LOCAL_HORAS * 60 * 60
+    if carpeta.is_dir():
+        subir_a_la_base(carpeta)
+    guardados = {f["clave"]: f["tamano"] for f in almacen_archivos.listar("visor")}
     borrados = 0
-    for sub in (carpeta, carpeta / "mapas"):
-        if not sub.is_dir():
-            continue
-        for archivo in sub.iterdir():
+    if carpeta.is_dir():
+        for archivo in sorted(p for p in carpeta.rglob("*") if p.is_file()):
             try:
-                if archivo.is_file() and archivo.stat().st_mtime < limite:
+                relativa = archivo.relative_to(carpeta)
+                mtime, tamano = archivo.stat().st_mtime, archivo.stat().st_size
+                en_base = guardados.get(relativa.as_posix()) == tamano
+                vencido = (mtime < limite_local if relativa.parts[0] == "mapas"
+                           else mtime < limite or (en_base and mtime < limite_local))
+                if vencido:
                     archivo.unlink()
                     borrados += 1
             except OSError as exc:
                 log.warning("Visor: could not remove expired file %s (%s)", archivo.name, type(exc).__name__)
+        for sub in sorted((p for p in carpeta.rglob("*") if p.is_dir()), reverse=True):   # old empty folders (never one a batch is filling now)
+            try:
+                if sub.stat().st_mtime < limite_local:
+                    sub.rmdir()
+            except OSError:
+                pass
+    almacen_archivos.borrar_viejos("visor", main.settings.output_retention_days)
     return borrados
 
 
 def archivo_del_visor(ruta: str | Path, sufijos: tuple[str, ...] = (".xlsx", ".pdf")) -> Path:
-    """La ruta, solo si es un archivo existente dentro de output/visor (lo que pide la página)."""
+    """La ruta, solo si es un archivo dentro de output/visor (lo que pide la página); si ya no está en el disco pero sí en la base, se escribe de nuevo."""
     archivo = Path(str(ruta or "")).resolve()
     carpeta = carpeta_visor().resolve()
-    if carpeta not in archivo.parents or archivo.suffix.lower() not in sufijos or not archivo.is_file():
+    if carpeta not in archivo.parents or archivo.suffix.lower() not in sufijos:
+        raise FileNotFoundError("El archivo ya no está en output/visor")
+    if not archivo.is_file() and not almacen_archivos.restaurar("visor", archivo.relative_to(carpeta).as_posix(), archivo):
         raise FileNotFoundError("El archivo ya no está en output/visor")
     return archivo
 
@@ -136,25 +165,31 @@ _NOMBRE_VISOR = re.compile(r"^(?P<base>.+)_(?P<lat>-?\d{1,3}\.\d{6})_(?P<lon>-?\
 
 
 def historial(carpeta: Path | None = None, limite: int = 500) -> list[dict[str, Any]]:
-    """Budgets saved by the viewer in output/visor, newest first (menu "Presupuestos" > Historial).
+    """Budgets saved by the viewer (the database store plus whatever is still on disk), newest first (menu "Presupuestos" > Historial).
 
     Client, coordinate and date come from the file name (<cliente>_<lat>_<lon>_<AAAAMMDD-HHMMSS>.xlsx);
     the totals are read only when one is opened (abrir_guardado)."""
     carpeta = carpeta or carpeta_visor()
-    if not carpeta.is_dir():
-        return []
-    archivos = sorted((p for p in carpeta.glob("*.xlsx") if p.is_file() and not p.name.startswith("~$")),
-                      key=lambda p: p.stat().st_mtime, reverse=True)[:limite]
+    datos: dict[str, dict[str, Any]] = {}
+    for f in almacen_archivos.listar("visor"):
+        if "/" not in f["clave"] and f["clave"].lower().endswith(".xlsx") and not f["clave"].startswith("~$"):
+            datos[f["clave"]] = {"mtime": f["creado_en"].timestamp(), "bytes": f["tamano"]}
+    if carpeta.is_dir():
+        for p in carpeta.glob("*.xlsx"):
+            if p.is_file() and not p.name.startswith("~$"):
+                datos[p.name] = {"mtime": p.stat().st_mtime, "bytes": p.stat().st_size}
+    pdfs = {f["clave"] for f in almacen_archivos.listar("visor") if f["clave"].endswith(".pdf")}
     salida = []
-    for p in archivos:
-        m = _NOMBRE_VISOR.match(p.stem)
+    for nombre, d in sorted(datos.items(), key=lambda kv: kv[1]["mtime"], reverse=True)[:limite]:
+        stem = nombre[:-5]
+        m = _NOMBRE_VISOR.match(stem)
         fecha = (datetime.strptime(m["fecha"], "%Y%m%d-%H%M%S") if m
-                 else datetime.fromtimestamp(p.stat().st_mtime)).isoformat(timespec="seconds")
-        base = (m["base"] if m else p.stem).replace("_", " ").strip()
-        salida.append({"archivo": str(p), "nombre": p.name, "cliente": base, "fecha": fecha,
+                 else datetime.fromtimestamp(d["mtime"])).isoformat(timespec="seconds")
+        base = (m["base"] if m else stem).replace("_", " ").strip()
+        salida.append({"archivo": str(carpeta / nombre), "nombre": nombre, "cliente": base, "fecha": fecha,
                        "coordenada": f"{m['lat']}, {m['lon']}" if m else None,
-                       "estimacion": base.casefold() == "estimacion", "kb": round(p.stat().st_size / 1024),
-                       "tiene_pdf": p.with_suffix(".pdf").is_file()})
+                       "estimacion": base.casefold() == "estimacion", "kb": round(d["bytes"] / 1024),
+                       "tiene_pdf": stem + ".pdf" in pdfs or (carpeta / (stem + ".pdf")).is_file()})
     return salida
 
 
@@ -306,6 +341,7 @@ def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: s
         destino.unlink()
     generado.replace(destino)
     respuesta["excel_path"] = str(destino)
+    almacen_archivos.guardar_archivo("visor", destino.name, destino)
     log.info("Visor: budget %s saved as %s", respuesta["budget_id"], destino.name)
     return respuesta
 

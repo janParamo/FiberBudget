@@ -53,7 +53,7 @@
 
   async function abrirFila(f) {
     if (f.motivo === "sin_ubicar") {
-      if (window.EditorRed) window.EditorRed.ubicar(f.proyecto_id, f.mufa_id);
+      if (window.EditorRed) window.EditorRed.ubicar(f.proyecto_id, f.mufa_id, f.sugerencia);
       return;
     }
     if (window.EditorMufa) window.EditorMufa.abrir(f.mufa_id, f.mufa);

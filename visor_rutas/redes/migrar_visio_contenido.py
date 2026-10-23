@@ -421,7 +421,12 @@ def _cable_hacia(con: Any, mufa_id: int, otro: dict[str, Any]) -> dict[str, Any]
 def _empalmar(con: Any, e: dict[str, Any], x: dict[str, Any], usuario_id: int | None) -> tuple[str, str]:
     entra, sale = _cable_hacia(con, e["id"], x["de"]), _cable_hacia(con, e["id"], x["hacia"])
     if entra is None or sale is None:
-        return "sin_cable", f"no hay cable migrado hacia {(x['de'] if entra is None else x['hacia'])['nombre']}"
+        falta = (x["de"] if entra is None else x["hacia"])["nombre"]
+        if _comparable(falta).startswith("ODF"):
+            # the ring goes in or out through an ODF of the node (a patch panel): the Visio does not draw the cable between that ODF and this mufa.
+            # Not a cable that failed to migrate: a gap of the diagrams to review with Planta Externa (it has its own count, empalmes_odf)
+            return "odf", f"el anillo entra o sale por «{falta}» y el Visio no dibuja el cable entre esa ODF y la mufa: revisar con Planta Externa"
+        return "sin_cable", f"no hay cable migrado hacia {falta}"
     if entra["id"] == sale["id"]:
         return "sin_cable", "la entrada y la salida son el mismo cable"
     for c, n in ((entra, x["hilo_entra"]), (sale, x["hilo_sale"])):

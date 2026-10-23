@@ -147,6 +147,7 @@ def estimar(puntos: Any, ahora: datetime | None = None) -> dict[str, Any]:
     if destino.exists():
         destino.unlink()
     generado.path.replace(destino)
+    presupuesto_visor.almacen_archivos.guardar_archivo("visor", destino.name, destino)
     respuesta = {
         "budget_id": datos_excel["budget_id"], "ticket_id": ticket, "distance_km": round(d["distancia"] / 1000, 3), "status": "ok",
         "connection_point": None, "route": {"distance_m": round(d["distancia"], 2), "duration_s": None, "turns": d["vista"]["postes"]["giros"]},

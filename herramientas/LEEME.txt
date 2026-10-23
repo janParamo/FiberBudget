@@ -1,1 +1,2 @@
-﻿Aqui va cloudflared.exe (el tunel de Cloudflare de la app de campo). No se sube a GitHub. Ver docs\campo\CLOUDFLARE.md, paso 2.
+﻿Herramientas de apoyo (no son parte del servicio): build_visor.bat / empaquetar_visor.py / instalador_visor.iss (VisorRutas.exe y .zip), iniciar_tunel_cloudflare.bat y cloudflared\ (tunel de la app de campo), verificar_campo.py, cargar_kmz.py (KMZ -> red_puntos / red_lineas) y almacen_sincronizar.py (archivos <-> base).
+Aqui va tambien cloudflared.exe (el tunel de Cloudflare de la app de campo). No se sube a GitHub. Ver docs\campo\CLOUDFLARE.md, paso 2.

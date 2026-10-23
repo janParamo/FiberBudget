@@ -1,4 +1,4 @@
-"""Arranque del visor para OTRAS computadoras (VisorRutas.exe, generado con build_visor.bat).
+"""Arranque del visor para OTRAS computadoras (VisorRutas.exe, generado con herramientas\build_visor.bat).
 
 Siempre en modo remoto: no hay bases de datos, .env, Google ni LibreOffice en esa PC; todo se
 pide a la API del servidor (/visor/*) por el túnel de ngrok. La URL y la clave se escriben la

@@ -55,7 +55,7 @@ def configuracion() -> dict[str, Any]:
 
 
 def carpeta_fotos() -> Path:
-    return Path(os.environ.get("CAMPO_FOTOS_DIR") or RAIZ / "datos_campo" / "fotos")
+    return Path(os.environ.get("CAMPO_FOTOS_DIR") or RAIZ / "datos" / "campo" / "fotos")
 
 
 def exigir_campo(actor: dict[str, Any]) -> None:

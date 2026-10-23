@@ -11,8 +11,6 @@ of truth for prices, formulas and layout.
 fiber_budget/
 ├── main.py               # FastAPI app, routes (/presupuesto, /origen), ngrok tunnel
 ├── visor_api.py          # /visor/*: the route viewer on other computers (own X-Visor-Key)
-├── empaquetar_visor.py   # builds VisorRutas.exe + VisorRutas.zip (called by build_visor.bat)
-├── build_visor.bat       # PyInstaller: remote-mode viewer for other computers
 ├── db.py                 # PostGIS (KMZ): connection point, mufa chain, poles, route mufas
 ├── routing.py            # Google Directions client (with retry/backoff)
 ├── presupuesto.py        # Pure quantity logic (labor, materials, equipment)
@@ -24,17 +22,29 @@ fiber_budget/
 ├── mapa_ruta.py          # Satellite route map (Esri tiles + Pillow)
 ├── config.py             # Env vars, logging, rules loader
 ├── business_rules.yaml   # Quantity rules and stable template labels only
-├── start_service.bat     # Windows loopback/Uvicorn launcher
+├── start_service.bat     # Windows loopback/Uvicorn launcher (also opens the Cloudflare tunnel when CLOUDFLARE_ACTIVAR=1)
+├── Visor de rutas.bat    # launcher of the desktop viewer (no console)
 ├── requirements.txt
 ├── .env.example
 ├── templates/            # The company's real workbook
-├── output/               # Generated Excel files, mapas/, budget_index.json
-├── logs/                 # service.log (rotating)
+├── visor_rutas/          # The desktop viewer, the network module (redes/) and the field app (campo_web/)
 ├── red_fibra/            # Visio importer, SQLite copy, PostgreSQL publisher,
 │                         # reporte_emparejamiento.py (KMZ mufas vs Visio, Excel for Planta Externa)
+├── Dockerfile, docker-compose.yml, docker/   # Run the service in a container on a Linux VM (docker/LEEME.md)
+├── herramientas/         # Support scripts, not part of the service: build_visor.bat + empaquetar_visor.py + instalador_visor.iss
+│                         # (VisorRutas.exe / .zip), iniciar_tunel_cloudflare.bat + cloudflared/, verificar_campo.py,
+│                         # cargar_kmz.py (KMZ -> red_puntos / red_lineas), almacen_sincronizar.py (files <-> database)
+├── datos/                # Everything that is not code and is not published (see datos/LEEME.md): kmz/, visio/ (the original diagrams),
+│                         # rutas_de_fusion/, campo/ (photos) and cache/ (odg, diagramas, kmz, iconos_google; refilled from the database)
+├── docs/                 # bitacora/ (one folder per day), campo/, modulo_redes/, migracion_visio/ (index in docs/INDICE.md)
+├── output/               # Generated Excel files, mapas/, budget_index.json, visor/ (cache of the viewer's budgets)
+├── logs/                 # service.log (rotating)
 └── Pruebas/              # everything for testing: automated tests (DB and Google mocked),
                           # pytest.ini and make_sample_template.py (test fixture workbook)
 ```
+
+The service modules (`main.py`, `config.py`, `db.py`…) stay in the project folder on purpose: the whole code base and the tests import them by name
+and Uvicorn starts `main:app`.
 
 ## Install
 
@@ -460,7 +470,7 @@ visor_rutas/
 ├── config_visor.py  # %APPDATA%\VisorRutas\config.json: modo, URL y clave (cifrada con DPAPI)
 ├── remoto_main.py   # arranque de VisorRutas.exe (siempre remoto; avisa si falta WebView2)
 ├── kmz_capas.py     # KMZ de la red -> caché del panel Lugares (python -m visor_rutas.kmz_capas)
-├── datos_kmz/       # esa caché (se genera sola; datos de la empresa, no va en el .exe)
+├── (la caché del KMZ está en datos/cache/kmz/: se genera sola; datos de la empresa, no va en el .exe)
 ├── redes/           # módulo de Proyectos y Diagramación de Redes (esquema `redes`; ver abajo)
 ├── ventana.py       # ventana Tkinter + tkintermapview (respaldo)
 └── web/
@@ -492,6 +502,24 @@ contrae a solo íconos y «›» lo vuelve a expandir; el estado se recuerda en
 **Proyectos**, **Problemas**, **Pendientes**, **Usuarios**, **Backup** y **Configuración**. La
 opción activa se resalta. Las de fases todavía no hechas salen en gris con "Pronto" ("Próximamente"
 al pasar el mouse). Abajo se ve el usuario identificado del módulo de redes.
+
+### Los archivos viven en la base (almacén)
+
+PostgreSQL es la fuente de verdad: las carpetas del proyecto son solo una **copia local desechable** y el programa vuelve a escribir lo que falta cuando lo necesita. Tabla `redes.almacen_archivos` (migración 019, base `Presupuesto_visio`), módulo `visor_rutas/almacen_archivos.py`; si la base no responde, todo sigue con los archivos locales como antes.
+
+| Espacio | Qué guarda | Carpeta local (caché) | Cuándo se escribe de nuevo |
+|---|---|---|---|
+| `visor` | Excel y PDF de los presupuestos del visor (incluye lotes) | `output/visor` | al abrir uno del historial; la copia local se borra a las 24 h, en la base duran `OUTPUT_RETENTION_DAYS` (30) |
+| `odg` | diagramas Visio ya convertidos (por md5) | `datos/cache/odg` | al pedir un diagrama, su fusión o sus splitters |
+| `diagramas` | imágenes (SVG / PNG) de esos diagramas | `datos/cache/diagramas` | al verlos; si no están, se convierten desde el `.odg` |
+| `kmz` | el KMZ de la red | `datos/kmz` | al abrir el visor si la caché está desactualizada o al actualizar la red |
+| `datos_kmz` | capas, íconos, fotos y registros de sincronización | `datos/cache/kmz` | al abrir el panel Lugares |
+
+- **Quién guarda:** `generar()`, la medición, los lotes y el PDF mandan sus archivos a la base; `kmz_capas.importar` manda la caché del KMZ; el importador de Visio manda los `.odg` al terminar. Los mapas de `output/visor/mapas` no se guardan (van dentro del Excel) y se borran a las 24 h.
+- **Herramienta:** `.\.venv\Scripts\python.exe herramientas\almacen_sincronizar.py resumen | subir | verificar [espacio…]` (sube lo que haya en las carpetas y compara tamaño y md5).
+- **Importar los diagramas Visio:** `python red_fibra\importador.py --origen "…\DIAGRAMAS ACTUALIZADOS"` publica directo en `Presupuesto_visio` (usa `VISIO_DB_*` del `.env`) y ya **no deja `red_fibra.db`**: el SQLite era una segunda copia. Si hace falta, `--db archivo.db` lo conserva y `RED_FIBRA_DB` lo vuelve a usar como respaldo.
+- **Respaldos del módulo de redes:** `REDES_RESPALDOS_DIR` (por defecto `respaldos_redes/` junto al proyecto) y `REDES_RESPALDOS_CONSERVAR` (cuántos se guardan; los más viejos se borran solos).
+- **Cargar el KMZ en `red_puntos` / `red_lineas`** (base nueva): `.\.venv\Scripts\python.exe herramientas\cargar_kmz.py [--reemplazar]`; `tipo` es el nombre de la carpeta del KMZ, que es por lo que filtra `business_rules.yaml`.
 
 ### Módulo de Proyectos y Diagramación de Redes
 
@@ -964,7 +992,7 @@ limpieza de la API no entra en esa carpeta y la del visor no toca `output/` ni
 - **En el mapa:** una línea **morada punteada** une las mufas del camino (casilla *Camino de la fibra*). No entra en el zoom automático, porque el camino al OLT puede medir kilómetros. Clic en una mufa del panel centra el mapa en ella.
 - **Ver diagrama:** abre el diagrama Visio real de esa mufa en la pestaña *Diagrama* del panel (ver abajo), con zoom de rueda, arrastre y un selector cuando la mufa aparece en varios diagramas.
   - **Formato SVG (vectorial):** se ve nítido con cualquier zoom, incluso en los diagramas de varios metros de ancho (el mayor mide 4,45 m). El zoom redimensiona la imagen en lugar de escalarla, así que se vuelve a dibujar nítida en cada nivel.
-  - **Primera vez:** se convierte desde `red_fibra/cache_odg` con LibreOffice, en unos 5–15 s según el tamaño, y queda en `red_fibra/cache_diagramas/<md5>_0.svg`. Solo si el SVG falla se usa un PNG (`<md5>_0.png`).
+  - **Primera vez:** se convierte desde `datos/cache/odg` con LibreOffice, en unos 5–15 s según el tamaño, y queda en `datos/cache/diagramas/<md5>_0.svg`. Solo si el SVG falla se usa un PNG (`<md5>_0.png`).
   - **Sin LibreOffice:** muestra "Diagrama no disponible (falta LibreOffice)".
   - **Diagramas originales:** no hace falta tenerlos (.vsd/.vsdx); el `.odg` ya conserva todo el dibujo vectorial.
 - **Copiar ruta de fusión** copia una línea por mufa, en texto plano.
@@ -1019,7 +1047,7 @@ limpieza de la API no entra en esa carpeta y la del visor no toca `output/` ni
 - **El presupuesto con datos** (☰ → Generar presupuesto) y el aproximado usan la ruta editada y los postes a mano **cuando la coordenada es la del cliente de esa ruta**. `POST /presupuesto` **no cambia** (los dos datos nuevos son opcionales, solo del visor); en modo remoto: `POST /visor/ruta_editada` y `ruta` / `postes_extra` en `/visor/estimacion`.
 - **Detalles:** el punto de conexión es el que corresponde a la coordenada del cliente; si la ruta editada empieza a más de 15 m de él, un aviso lo dice (el presupuesto cuenta ese punto de conexión). Un poste a mano se cobra como nuevo y se suma a los calculados.
 - **Ruta de fusión editable y su Excel (fase 4B, segunda parte):** `visor_rutas/ruta_fusion_plan.py`, `ruta_fusion_xlsx.py`, `exportar_fusion.py`, `web/mapa/editar_fusion.js`. En la pestaña **Ruta de fusión**, bajo las paradas de los diagramas, el bloque **Ruta para el Excel** trae una caja por mufa, **del cliente hacia la potencia**, con el texto como se escribe en el libro (`En MF X lat°, lon° H# hacia MF A fusionarlo con H# hacia MF B`; la primera: `ingresar la acometida del cliente. H1 del cliente…`). **Mufas aérea y de corte no se tocan** (se reconocen por el nombre en `business_rules.yaml` → `ruta_fusion.no_tocar`; «MF FUERZA AEREA» es un lugar y está en las excepciones; la mufa donde entra el cliente siempre se toca, con un aviso). Los hilos salen del Excel de anillos y donde no hay dato quedan **H__** («hilos por identificar»). Se puede: marcar / desmarcar, cambiar hilos, poner splitter (1x8…), escribir el texto a mano, subir / bajar / quitar, agregar una mufa o una mufa nueva («instalar MF FOSC»), «COMPARTIR POTENCIA DEL SP» y avisos en rojo. Cada cambio rehace los textos (Python), el camino punteado del mapa y el **presupuesto aproximado, que cuenta las mufas que se tocan** (si no editas nada, queda el conteo de siempre).
-- **Exportar al Excel:** agrega **una franja nueva al final** de la hoja **«2025 - 2026»** del libro `RUTA_FUSION_XLSX` (por defecto `EjemploRutaFusiones/RUTA DE FUSION - Copia.xlsx`; luego el de la nube): barra verde con la fecha de hoy (la cambias en el libro), **Cliente** (vacío si el presupuesto fue a mano; con ticket, su nombre — el campo del bloque), **Diagramas y Cuadrilla vacíos**, una caja por mufa, avisos en rojo, «COMPARTIR POTENCIA DEL SP» si aplica y **RUTA SUGERIDA** con el mapa de la ruta debajo (opcional). Se escribe **a nivel XML**: lo que ya existe no se toca (comentarios en hilo, dibujos, otras hojas), con los estilos del propio libro; antes se guarda un **respaldo** (`output/ruta_fusion_respaldos`, los últimos 10), se escribe en un archivo temporal que se **verifica** y se reemplaza de una vez. Si el libro está **abierto en Excel** no se escribe y se avisa. Siempre se agrega una franja nueva (no se reutiliza el bloque derecho de una fecha existente) y la franja de mufas en edición se pierde si cambias la ruta del mapa (el plan se rehace).
+- **Exportar al Excel:** agrega **una franja nueva al final** de la hoja **«2025 - 2026»** del libro `RUTA_FUSION_XLSX` (por defecto `datos/rutas_de_fusion/RUTA DE FUSION - Copia.xlsx`; luego el de la nube): barra verde con la fecha de hoy (la cambias en el libro), **Cliente** (vacío si el presupuesto fue a mano; con ticket, su nombre — el campo del bloque), **Diagramas y Cuadrilla vacíos**, una caja por mufa, avisos en rojo, «COMPARTIR POTENCIA DEL SP» si aplica y **RUTA SUGERIDA** con el mapa de la ruta debajo (opcional). Se escribe **a nivel XML**: lo que ya existe no se toca (comentarios en hilo, dibujos, otras hojas), con los estilos del propio libro; antes se guarda un **respaldo** (`output/ruta_fusion_respaldos`, los últimos 10), se escribe en un archivo temporal que se **verifica** y se reemplaza de una vez. Si el libro está **abierto en Excel** no se escribe y se avisa. Siempre se agrega una franja nueva (no se reutiliza el bloque derecho de una fecha existente) y la franja de mufas en edición se pierde si cambias la ruta del mapa (el plan se rehace).
 
 **Importar un KMZ a la red (visor v2, fase 5):** migración `013_kmz_importaciones.sql`, `visor_rutas/redes/importar_kmz.py`, `web/lugares/importar_kmz.js`. El botón **Importar KMZ** de la barra abre una ventana (solo administradores y editores).
 
@@ -1035,7 +1063,7 @@ limpieza de la API no entra en esa carpeta y la del visor no toca `output/` ni
 - **Medir con total, ruta editada, ruta de fusión y coordenadas masivas** tienen su endpoint (`/visor/medicion`, `/visor/ruta_editada`, `/visor/estimacion` con `ruta`, `postes_extra` y `mufas_tocadas`, `/visor/fusion/*`, `/visor/masivas/*`); Mis lugares, editar el KMZ, importar KMZ, guardar como proyecto y lo de las coordenadas masivas van por `/visor/redes/{metodo}`. Los Excel de los presupuestos masivos y el libro de rutas de fusión **viven en el servidor**: el .exe baja los presupuestos en un .zip.
 - **Archivos grandes por partes** (`visor_rutas/subidas.py`, `POST /visor/subidas`, `/visor/subidas/{id}/{n}` con los bytes de la parte, `/visor/subidas/{id}/fin`): un KMZ completo pesa 20 MB; la página lo parte en pedazos de 1,5 MB (con «Subiendo… 40 %»), el servidor los junta en memoria (nada en disco, hasta 40 MB, 8 subidas a la vez, caducan a los 30 min) y «Importar KMZ» / «Coordenadas masivas» usan el id (`subida_id`), que se entrega una sola vez. En modo local la página hace lo mismo contra este mismo módulo.
 - **Tareas largas:** el lote de coordenadas masivas corre en segundo plano con seguimiento y cancelar (se consulta cada 1,5 s); comparar un KMZ completo es una sola llamada (unos 10-30 s, con tope de 180 s en el cliente).
-- **Para las otras PCs:** regenerar `VisorRutas.zip` (`build_visor.bat`) y reiniciar `start_service.bat` en el servidor cuando cambie algo.
+- **Para las otras PCs:** regenerar `VisorRutas.zip` (`herramientas\build_visor.bat`) y reiniciar `start_service.bat` en el servidor cuando cambie algo.
 
 **Modo captura:** el botón **📷 Captura** de la barra de abajo esconde todo menos el mapa (menú, paneles, barras, buscador, controles, leyendas y ventanas) y lo deja a pantalla completa con lo que esté dibujado (ruta, postes, mufas, medidas) para tomar la imagen; **Esc** vuelve. Un aviso de 2,5 s recuerda cómo salir. Además, la lista de resultados del buscador ahora se abre por encima de la barra de herramientas.
 
@@ -1076,7 +1104,7 @@ A la izquierda del mapa está el panel **Lugares**, armado desde el archivo KMZ 
 - Al pasar el mouse sobre una troncal se resalta (más gruesa y con halo) y las demás se atenúan. Con clic, popup con nombre, descripción, familia y **longitud en km**.
 - **Leyenda "Troncales"** (abajo a la izquierda, plegable): las troncales visibles con su muestra. Clic en un nombre para encuadrarla y resaltarla.
 
-**Caché del KMZ** (`visor_rutas/datos_kmz/`, se genera sola):
+**Caché del KMZ** (`datos/cache/kmz/`, se genera sola):
 
 | Archivo | Contenido |
 |---|---|
@@ -1087,7 +1115,7 @@ A la izquierda del mapa está el panel **Lugares**, armado desde el archivo KMZ 
 | `fotos/` | imágenes de `files/` usadas en las descripciones |
 
 - Se regenera solo cuando cambia el md5 del KMZ: al abrir el visor (con aviso de progreso, ~15 s) o al primer pedido del modo remoto.
-- **Cuando llegue un KMZ nuevo:** cópielo en `red_kmz\` (o apunte `KMZ_PATH` a él) y abra el visor. Para regenerarlo a mano:
+- **Cuando llegue un KMZ nuevo:** cópielo en `datos\kmz\` (o apunte `KMZ_PATH` a él) y abra el visor. Para regenerarlo a mano:
 
   ```
   .\.venv\Scripts\python.exe -m visor_rutas.kmz_capas            # usa KMZ_PATH; no hace nada si no cambió
@@ -1200,11 +1228,11 @@ apagado, el visor de los demás dice "No se pudo conectar con el servidor de pre
    Para desactivar el visor remoto de todos, deje `VISOR_API_KEYS=` vacío.
 
 **Generar el .exe y el .zip** (en esta PC, sin permisos de administrador):
-1. Doble clic en `build_visor.bat` (instala PyInstaller en el `.venv` si falta; unos 2 minutos).
+1. Doble clic en `herramientas\build_visor.bat` (instala PyInstaller en el `.venv` si falta; unos 2 minutos).
 2. Resultado: `dist\VisorRutas\VisorRutas.exe` (modo `--onedir`, sin consola, con ícono) y
    **`VisorRutas.zip`** (≈ 25 MB) en la carpeta del proyecto, con un `LEEME.txt` para la otra persona.
 3. Solo empaqueta pywebview, requests, openpyxl/Pillow y el código del visor remoto con
-   `visor_rutas\web\` (HTML, CSS, JS y Leaflet). `empaquetar_visor.py` excluye el servicio
+   `visor_rutas\web\` (HTML, CSS, JS y Leaflet). `herramientas/empaquetar_visor.py` excluye el servicio
    (main, db, config…), FastAPI, psycopg y lo que lee bases o `.env`, y **verifica** al final
    que no haya ningún `.env`, base de datos, plantilla, regla de negocio ni código del servicio.
    Si algo se coló, falla y no genera el `.zip`.
@@ -1245,7 +1273,7 @@ Sirve para que Planta Externa agregue coordenadas en los diagramas (casos d y `m
 
 ## Piloto de fusiones
 
-Intenta leer automáticamente, de cada diagrama Visio ya convertido (`red_fibra/cache_odg/*.odg`), **qué hilo se fusiona con cuál**, y mide qué tan bien lo hace sobre las mufas que elijas. Todo es local: no usa IA externa ni servicios web. El importador **no** lo usa todavía. El visor solo lo muestra con la casilla *Mostrar fusiones detectadas (piloto)*.
+Intenta leer automáticamente, de cada diagrama Visio ya convertido (`datos/cache/odg/*.odg`), **qué hilo se fusiona con cuál**, y mide qué tan bien lo hace sobre las mufas que elijas. Todo es local: no usa IA externa ni servicios web. El importador **no** lo usa todavía. El visor solo lo muestra con la casilla *Mostrar fusiones detectadas (piloto)*.
 
 **Cómo están dibujadas las fusiones.** En los diagramas no hay conectores. Cada fusión es una línea suelta, casi siempre un "puente" en ángulo recto con flechas, que une el número de un hilo de un cable con el número de un hilo de otro cable, o con un splitter o cliente. Los números de hilo van en **un** cuadro de texto por cable ("1 2 3 … 24" o "6 / 5 / 4"). El color del trazo es el color del hilo en el **código TIA-598** dentro de su buffer: 1 azul, 2 naranja, 3 verde, 4 café, 5 gris, 6 blanco, 7 rojo, 8 negro, 9 amarillo, 10 violeta, 11 rosa, 12 aqua. Los buffers pueden ser de 12, 6, 2… hilos según la etiqueta del cable ("4BUFFER DE 6H"); si la etiqueta no lo dice, se asume 12.
 
@@ -1299,7 +1327,8 @@ En la pestaña *Diagrama*, en el visor a pantalla completa y en el editor de la 
 
 
 ## Íconos propios del KMZ (fase 9)
-En la ficha de cada elemento del mapa: **Cambiar ícono…** (puntos) o **Cambiar estilo…** (líneas). Para toda una carpeta: clic derecho en el árbol de Lugares → **Ícono / estilo…**. El del elemento gana al de la carpeta; **Quitar estilo** vuelve al del KMZ. Lo ven todos (se guarda en la base, tabla edes.kmz_estilos); no cambia el archivo KMZ ni el presupuesto. Si hay varios elementos en el mismo punto, el clic lista cuáles hay.
+En la ficha de cada elemento del mapa: **Cambiar ícono…** (puntos) o **Cambiar estilo…** (líneas). Para toda una carpeta: clic derecho en el árbol de Lugares → **Ícono / estilo…**. El del elemento gana al de la carpeta; **Quitar estilo** vuelve al del KMZ. Lo ven todos (se guarda en la base, tabla 
+edes.kmz_estilos); no cambia el archivo KMZ ni el presupuesto. Si hay varios elementos en el mismo punto, el clic lista cuáles hay.
 
 
 ## Splitters de los diagramas (se rellenan con cada ruta)
@@ -1308,10 +1337,11 @@ Al generar una ruta de fusión, el visor lee los splitters dibujados en los diag
 ## App de campo (técnicos con el teléfono)
 Una PWA (página instalable) que sirve esta misma API en `/campo/`: los técnicos registran **postes, mufas, reservas, solitarias, clientes y cables** desde Android o iPhone, con GPS y fotos, y el visor los ve **en tiempo real** para revisarlos, corregirlos y aprobarlos. No toca `/presupuesto` ni n8n.
 - **Para el técnico:** `docs/campo/GUIA_TECNICOS.md` (instalar en Android e iPhone, registrar, trazar cables, sin señal, problemas comunes). Es corta; se puede imprimir o mandar por WhatsApp.
-- **Interfaz (teléfono y tablet):** inspirada en Map Marker: mapa a pantalla completa, barra flotante (menú, filtro, lista, buscar, compartir), botón **＋** con mira central para ubicar puntos (el GPS se usa si la mira queda sobre él; si no, queda «marcado en el mapa»), cables punto por punto (el punto elegido sigue al centro del mapa; ＋ − ‹ › y guardar) o grabando el recorrido caminando, tarjeta inferior al tocar algo (editar, copiar, cómo llegar, eliminar), lista Explorar/Organizar con filtro, búsqueda por nombre o coordenadas, exportar a KML/KMZ/CSV y pantalla de **Ajustes** (tema, texto, formato de coordenadas, unidades, fotos, grabación). En tablets (≥ 820 px) los formularios salen en un panel lateral. Código en isor_rutas/campo_web/ (captura.js, editor.js, lista.js, menu.js, justes.js, exportar.js). Sin polígonos, círculos ni captura del mapa (no hay dónde guardarlos).
-- **Dirección con HTTPS:** sin HTTPS el teléfono no da el GPS ni instala la app. **Hoy se usa la de ngrok** (`CAMPO_URL_PUBLICA=https://<NGROK_DOMAIN>` en `.env`; la primera vez en cada teléfono ngrok muestra un aviso «Visit Site»). El túnel de Cloudflare (`docs/campo/CLOUDFLARE.md`, `iniciar_tunel_cloudflare.bat`) está preparado pero **no se usa hasta que se compre el dominio** `fiberbudget.com`; entonces: `cloudflared tunnel route dns`, `CAMPO_URL_PUBLICA=https://api.fiberbudget.com` y `CLOUDFLARE_ACTIVAR=1` en `.env`. `verificar_campo.py <URL> <clave>` comprueba que todo responda desde cualquier dirección.
-- **Dar de alta a un técnico:** (1) agregar `nombre:clave` a `VISOR_API_KEYS` en `.env` (se relee sola, sin reiniciar); (2) que la persona abra la app una vez con su clave (queda como «lector»); (3) en el visor → **Usuarios** → rol **Técnico de campo**. Un técnico solo crea y edita **sus** puntos pendientes; administradores y editores revisan (vista **Campo** del menú, capa «Levantamiento de campo» en Lugares).
+- **Interfaz (teléfono y tablet):** inspirada en Map Marker: mapa a pantalla completa, barra flotante (menú, filtro, lista, buscar, compartir), botón **＋** con mira central para ubicar puntos (el GPS se usa si la mira queda sobre él; si no, queda «marcado en el mapa»), cables punto por punto (el punto elegido sigue al centro del mapa; ＋ − ‹ › y guardar) o grabando el recorrido caminando, tarjeta inferior al tocar algo (editar, copiar, cómo llegar, eliminar), lista Explorar/Organizar con filtro, búsqueda por nombre o coordenadas, exportar a KML/KMZ/CSV y pantalla de **Ajustes** (tema, texto, formato de coordenadas, unidades, fotos, grabación). En tablets (≥ 820 px) los formularios salen en un panel lateral. Código en visor_rutas/campo_web/ (captura.js, editor.js, lista.js, menu.js, ajustes.js, exportar.js). Sin polígonos, círculos ni captura del mapa (no hay dónde guardarlos).
+- **Dirección con HTTPS:** sin HTTPS el teléfono no da el GPS ni instala la app. **Hoy se usa la de ngrok** (`CAMPO_URL_PUBLICA=https://<NGROK_DOMAIN>` en `.env`; la primera vez en cada teléfono ngrok muestra un aviso «Visit Site»). El túnel de Cloudflare (`docs/campo/CLOUDFLARE.md`, `herramientas/iniciar_tunel_cloudflare.bat`) está preparado pero **no se usa hasta que se compre el dominio** `fiberbudget.com`; entonces: `cloudflared tunnel route dns`, `CAMPO_URL_PUBLICA=https://api.fiberbudget.com` y `CLOUDFLARE_ACTIVAR=1` en `.env`. `herramientas/verificar_campo.py <URL> <clave>` comprueba que todo responda desde cualquier dirección.
+- **Dar de alta a un técnico:** agregar `nombre:clave` a **`CAMPO_API_KEYS`** en `.env` (se relee sola, sin reiniciar; una clave por persona: `python -c "import secrets; print(secrets.token_urlsafe(24))"`). Esa clave abre **solo** la app de campo (`/campo` y `/visor/campo/*`); el resto de `/visor/*` (rutas con Google, presupuestos, KMZ, redes) le responde 401. La persona se crea sola con el rol **Técnico de campo** la primera vez que entra (no hace falta ir a Usuarios). Quien revisa desde el visor sigue con su clave de `VISOR_API_KEYS`, que también abre la app. No uses el mismo nombre en las dos listas para un técnico: quien tiene clave del visor se crea como siempre («lector»). Un técnico solo crea y edita **sus** puntos pendientes; administradores y editores revisan (vista **Campo** del menú, capa «Levantamiento de campo» en Lugares).
+- **Descargar esta zona** (menú ☰, `campo_web/zona.js`): guarda en el teléfono los mosaicos del mapa visible (Esri; de unos 5 a 60 MB, la app avisa cuántos son antes) en la cache `campo-zonas` —que el service worker consulta primero y nunca recorta— y la red existente (mufas y postes) de esa zona. Hasta 2 500 mosaicos por zona y 8 000 en total; las zonas se ven en el mismo menú y se borran una a una. OpenStreetMap está excluido (no permite descargas masivas). Pruebas: `test_campo_zona.py`.
 - **Revisar:** aprobar un **poste o mufa** lo crea en la red base (o en un proyecto) con historial; un **cable** se aprueba como cable real si empieza y termina a ≤ 20 m de un poste o mufa del proyecto; reservas, solitarias, clientes y otros (y cualquier cable) pueden ir a **Mis lugares**. Rechazar pide un motivo que el técnico lee en su lista.
 - **Ajustes** (`business_rules.yaml`, sección `campo`): precisión de GPS que se toma sin preguntar (10 m), distancia de «posible duplicado» (5 m), tamaño y número de fotos, límite de peticiones por hora, largo máximo de un trazo y distancia de los extremos de un cable (20 m).
-- **Datos:** migraciones 017 y 018 (esquema `redes`, tablas `campo_*`; las fotos se guardan en `datos_campo/fotos/` o en `CAMPO_FOTOS_DIR`).
+- **Datos:** migraciones 017 y 018 (esquema `redes`, tablas `campo_*`; las fotos se guardan en `datos/campo/fotos/` o en `CAMPO_FOTOS_DIR`).
 - **Pruebas:** `Pruebas/test_campo*.py`, `test_visor_pagina_campo.py` (la PWA y el visor corren en un Edge de verdad con GPS simulado).

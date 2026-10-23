@@ -30,7 +30,7 @@ from xml.etree import ElementTree as ET
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from visor_rutas import coordenadas
+from visor_rutas import almacen_archivos, coordenadas
 
 log = logging.getLogger(__name__)
 
@@ -367,6 +367,7 @@ def procesar_punto(p: dict[str, Any], carpeta: Path, cache: Any, bloqueo: Any, a
     nombre = f"{p['n']:02d}_{_seguro(p['nombre'] or p['codigo'] or 'punto')}.xlsx"
     destino = carpeta / nombre
     shutil.move(str(origen), destino)
+    almacen_archivos.borrar("visor", origen.name)                 # generar() stored it at the top level; the batch keeps it in its folder
     avisos = list(dict.fromkeys(list(datos.get("avisos") or []) + list(resultado.get("avisos") or [])))
     return {**base, "ok": True, "conexion": datos["conexion"]["nombre"], "conexion_lat": datos["conexion"]["lat"], "conexion_lon": datos["conexion"]["lon"],
             "distancia_m": ruta["distancia_m"], "metraje_final_m": ruta["metraje_final_m"], "tipo_cable": ruta["tipo_cable"],
@@ -467,6 +468,10 @@ class GestorLotes:
                 escribir_resumen(lote.carpeta, lote.nombre, lote.resultados)
             except Exception:
                 log.exception("Bulk: could not write Resumen.xlsx")
+            try:
+                almacen_archivos.subir_carpeta("visor", lote.carpeta.parent, patron=f"{lote.carpeta.name}/*", excluir=("mapas",))
+            except Exception:
+                log.exception("Bulk: could not store the batch in the database")
             lote.fin = time.time()
             lote.estado = final                                             # only now: the summary is already written when the page sees it finished
             log.info("Bulk %s: %s, %d of %d", lote.id, lote.estado, len(lote.resultados), len(lote.puntos))

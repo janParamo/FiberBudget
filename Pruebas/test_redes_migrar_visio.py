@@ -315,6 +315,19 @@ def test_phase3_splitters_ports_clients_and_ring_splices(visio_con_contenido, tm
     assert {"Splitters", "Clientes", "Empalmes"} <= set(wb.sheetnames) and wb["Empalmes"].max_row == 1 + 6
 
 
+def test_a_ring_row_through_an_odf_without_a_cable_is_told_apart_from_a_missing_cable(visio_con_contenido):
+    """Of the 233 splices of the rings Excel, 21 name an «ODF xx PUERTOS» of a node as the neighbour and the Visio has no cable between that ODF and the mufa:
+    they are counted as such (empalmes_odf) and not as a cable that failed to migrate (empalmes_sin_cable)."""
+    con, _ = visio_con_contenido
+    _migrar_todo(con)
+    mufa_a = dict(con.execute("SELECT id, proyecto_id FROM redes.elementos WHERE nombre = 'Mufa A'").fetchone())
+    mufa_b = {"clave": None, "nombre": "Mufa B"}
+    odf = migrar_visio_contenido._empalmar(con, mufa_a, {"de": {"clave": None, "nombre": "ODF 48 PUERTOS"}, "hacia": mufa_b, "hilo_entra": 3, "hilo_sale": 3}, None)
+    assert odf[0] == "odf" and "ODF 48 PUERTOS" in odf[1] and "Planta Externa" in odf[1]
+    otro = migrar_visio_contenido._empalmar(con, mufa_a, {"de": {"clave": None, "nombre": "Mufa Que No Existe"}, "hacia": mufa_b, "hilo_entra": 3, "hilo_sale": 3}, None)
+    assert otro[0] == "sin_cable" and "Mufa Que No Existe" in otro[1]
+
+
 def test_ring_fibre_numbers_set_the_size_of_cables_without_a_count(visio_con_contenido):
     con, _ = visio_con_contenido
     plan = migrar_visio.planificar(con, con, REGLAS)
@@ -362,6 +375,9 @@ def test_dashboard_and_correction_queue(visio, tmp_path):
     cola = migracion_tablero.correcciones(con, admin)
     primera = cola["correcciones"][0]
     assert (primera["mufa"], primera["motivo"], primera["prioridad"]) == ("Mufa Perdida", "sin_ubicar", 1)
+    # an unplaced mufa comes with where its located neighbours are (Mufa A is its only one): the map is centred there
+    assert primera["sugerencia"] == {"lat": 12.1, "lon": -86.3, "fuente": "vecinas", "zoom": 17, "vecinas": 1, "nombres": ["Mufa A"]} and "se une a Mufa A" in primera["detalle"]
+    assert all(f["sugerencia"] is None for f in cola["correcciones"] if f["motivo"] != "sin_ubicar")
     motivos_c = {f["motivo"] for f in cola["correcciones"] if f["mufa"] == "Mufa C"}
     assert motivos_c == {"hilos_desconocidos", "sin_diagramar", "configuracion_estimada"}
     assert not any(f["mufa"] == "Reserva 1" and f["motivo"] == "sin_diagramar" for f in cola["correcciones"])   # a reserve has no splices
@@ -379,6 +395,19 @@ def test_dashboard_and_correction_queue(visio, tmp_path):
     ruta.write_bytes(base64.b64decode(x["datos"]))
     wb = load_workbook(ruta)
     assert wb.sheetnames == ["Tablero", "Correcciones"] and wb["Correcciones"].max_row == 2 and x["filas"] == 1
+    assert wb["Correcciones"]["G2"].value == "12.100000, -86.300000"                                       # the suggested position goes to the Excel too
+    # without Visio links it uses the other mufas drawn in the same diagram; then the rest of its Visio folder; with nothing located there is no hint
+    con.execute("DELETE FROM red_fibra.enlaces WHERE id = 5")
+    con.execute("INSERT INTO red_fibra.nodo_apariciones VALUES (5, 1, 'mufa')")
+    en_diagrama = migracion_tablero.correcciones(con, admin, motivo="sin_ubicar")["correcciones"][0]
+    assert en_diagrama["sugerencia"] == {"lat": 12.105, "lon": -86.3, "fuente": "diagrama", "zoom": 16, "vecinas": 2, "nombres": ["Mufa A", "Mufa B"]}
+    assert "en su diagrama aparecen Mufa A, Mufa B" in en_diagrama["detalle"]
+    con.execute("DELETE FROM red_fibra.nodo_apariciones WHERE nodo_id = 5")
+    en_carpeta = migracion_tablero.correcciones(con, admin, motivo="sin_ubicar")["correcciones"][0]
+    assert en_carpeta["sugerencia"]["fuente"] == "carpeta" and en_carpeta["sugerencia"]["vecinas"] >= 4 and "carpeta del Visio" in en_carpeta["detalle"]
+    con.execute("UPDATE redes.elementos SET ref_visio = ref_visio || '{\"zona\": \"Otra carpeta\"}'::jsonb WHERE nombre = 'Mufa Perdida'")
+    sola = migracion_tablero.correcciones(con, admin, motivo="sin_ubicar")["correcciones"][0]
+    assert sola["sugerencia"] is None and "ni vecinas ubicadas" in sola["detalle"]
 
 
 def test_editor_and_permissions_with_migrated_data(visio):
@@ -418,3 +447,17 @@ def test_editor_and_permissions_with_migrated_data(visio):
     f = con.execute("SELECT hilos, configuracion_estimada, (SELECT count(*) FROM redes.hilos WHERE cable_id = c.id) AS nh "
                     "FROM redes.cables c WHERE id = %s", (desconocido["id"],)).fetchone()
     assert (f["hilos"], f["configuracion_estimada"], f["nh"]) == (12, False, 12)
+
+
+def test_the_far_towns_of_managua_are_listed_in_the_real_rules():
+    """Masachapa, Montelimar, Villa El Carmen and San Benito are in the department of Managua (30-46 km from its centre): their Visio folders are named in
+    business_rules.yaml so that they are not taken for trunk mufas that lie far from Managua; the other regions did not change."""
+    from pathlib import Path
+
+    import yaml
+    reglas_reales = migrar_visio.reglas(yaml.safe_load((Path(__file__).resolve().parent.parent / "business_rules.yaml").read_text(encoding="utf-8")))
+    for carpeta in ("Red Masachapa", "RED MONTELIMAR", "red villa el carmen", "Red San Benito"):
+        assert migrar_visio.region_de_carpeta(carpeta, reglas_reales) == "Red existente – Managua", carpeta
+        assert migrar_visio.proyecto_de_zona(carpeta, reglas_reales) == "Red existente – Managua"
+    assert migrar_visio.region_de_carpeta("Red Rivas", reglas_reales) == "Red existente – Rivas"
+    assert migrar_visio.region_de_carpeta("Nodo La Gruta  carretera hacia Leon", reglas_reales) is None          # a trunk folder: still decided by distance

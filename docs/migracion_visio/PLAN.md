@@ -40,7 +40,7 @@ mufas nuevas.
   - `anillo_tramos`: 135 tramos (110 mufas) con hilo de entrada y de salida.
   - `textos_crudos`: todo el texto con posición, incluidas unas 27 500 etiquetas de numeración y
     unas 2 000 de splitters.
-  - `cache_odg/`: 428 diagramas convertidos, con las fusiones dibujadas como líneas sueltas.
+  - `cache_odg/` (hoy `datos/cache/odg/`): 428 diagramas convertidos, con las fusiones dibujadas como líneas sueltas.
   - `red_fibra/fusiones.py` + `piloto_fusiones.py`: extracción geométrica de fusiones (tabla
     `fusiones_piloto`). Revisar si ya se corrió y con qué precisión.
 - **Módulo de redes (`visor_rutas/redes/`, esquema `redes`, migraciones 001–008):** `elementos`,
@@ -67,8 +67,9 @@ mufas nuevas.
 3. **El Visio original sigue disponible** junto al editor, para comparar.
 4. **Lo que un usuario valida o edita manda:** una reimportación nunca lo sobrescribe; solo
    reporta las diferencias.
-5. **Idempotente:** correr la migración dos veces no duplica (clave = id del nodo Visio + md5 del
-   archivo de origen).
+5. **Idempotente:** correr la migración dos veces no duplica. **Clave = nombre normalizado + coordenada
+   redondeada a 4 decimales** (o + carpeta si no tiene coordenada), no el id del nodo: el importador
+   renumera los ids en cada carga (decisión de Jan, 2026-10-12; ver §11).
 6. **No modificar** `red_lineas`, `red_puntos` ni `red_fibra`; solo leerlas.
 
 ## 5. Modelo de datos (migración `009_red_existente.sql` y siguientes)
@@ -109,7 +110,8 @@ Proponer y justificar en la fase 0; como mínimo:
 - `nodos` de tipo MUFA, NODO, MINI_NODO y ODF → `elementos`, con nombre, propietario y notas
   (SANGRIA, VALIDAR, SATURADA…).
 - Coordenada real → ubicación normal. `estimada_vecinos` → `ubicacion_estimada`. Sin coordenada →
-  listado "Mufas sin ubicar", desde el que el usuario las coloca arrastrándolas.
+  la cola de corrección «Sin ubicar» (vista **Red existente**), desde la que el usuario las coloca con un clic
+  en el mapa; el mapa se centra donde probablemente están (ver §11).
 - Emparejar con `red_puntos` (KMZ) con las reglas de `origen.py`; guardar el id en `ref_externa`.
 
 ### 6.2 Enlaces → cables
@@ -242,3 +244,25 @@ En cada fase:
 - No romper: diagramas Visio ("Ver diagrama"), ruta de fusión, capas KMZ y Visio, presupuesto
   aproximado, modo remoto/.exe, módulo de proyectos.
 - Respaldo de la base antes de cada corrida de migración (usar `redes/respaldo.py`).
+
+## 11. Decisiones tomadas y estado (actualizado el 2026-10-22)
+
+Lo que se decidió después de escribir este plan (diagnóstico de la fase 0, `FASE0_DIAGNOSTICO.md`, y las fases siguientes) y que **manda sobre el texto de arriba**:
+
+| Tema | Decisión |
+|---|---|
+| Clave de idempotencia | **Nombre normalizado + coordenada a 4 decimales** (~11 m); sin coordenada, nombre + carpeta del Visio. El `nodo_id` y los md5 solo se guardan como referencia (`ref_visio`). |
+| Hilos de un cable | 2, 4, 6, 8, 12, 24, 48, 72, 96 y 144, o **desconocido** (71 % de los cables no lo traen). Orden: etiqueta del Visio → continuidad por los dos lados → continuidad por un lado («por confirmar») → texto de la línea del KMZ → **mínimo que exige el Excel de anillos** (el hilo 26 pide al menos 48; estimado, confianza baja, OK de Jan 2026-10-13). |
+| Reservas | **Se migran** como `elementos` tipo `mufa`, subtipo `reserva` (13 en el diagnóstico). |
+| Proyectos base | **Uno por región** (carpeta del Visio → proyecto, `business_rules.yaml: migracion_visio.proyectos_base`); lo demás va a «Red existente – Managua». Una mufa de una carpeta sin región (ruta troncal) a ≤ 5 km del centro de una región pasa a esa región. Masachapa, Montelimar, Villa El Carmen y San Benito son del departamento de Managua aunque estén a 30–46 km de su centro: están nombradas en la lista de Managua. |
+| Configuración de buffers | 24 → 6x4, 48 → 6x8 por defecto (12x2 y 12x4 como alternativas); 6 → 1x6, 12 → 1x12, 72 → 6x12, 96 → 8x12, 144 → 12x12. Lo que sale de la regla queda `configuracion_estimada`. |
+| Splitter y bandejas | La entrada del splitter ocupa una posición (1x8 → 9). Mufa de 48 (2 bandejas) o 96 (4); 24 empalmes por bandeja. |
+| Fusiones por geometría | **Apagadas** (`fusiones_geometria.usar: false`): medido 2026-10-13, precisión 3,9 %. Las fusiones migradas son solo las del Excel de anillos (confianza alta). |
+| Coordenadas de clientes | Del KMZ (acometidas «C#####»). **Kayako queda fuera por orden de Jan.** |
+| Mufas sin ubicar | No se dibujan en el mapa; salen en la cola de corrección de **Red existente** con el botón «Colocar en el mapa». Cada una trae una pista de dónde está, solo para centrar el mapa (nunca se guarda): las mufas a las que se une en el Visio, si no las otras que salen en su mismo diagrama, si no el resto de su carpeta. |
+
+Resultado de la migración real (corrida del 2026-10-22 sobre la base nueva, igual a la del 13 de octubre): 13 proyectos base, 3 472 elementos (3 191 con ubicación real, 102 estimada, **179 sin ubicar**), 3 006 cables, 35 754 hilos, 1 375 splitters, 1 208 puertos con cliente, 2 016 clientes en el mapa, 3 032 mufas de modelo 48 y 335 de 96 (66 con avisos), verificación: 0 errores y 66 avisos.
+
+**Empalmes del Excel de anillos: 233 filas.** 212 se crearon. **21 no**: todas nombran como vecino un «ODF xx PUERTOS» del nodo y el Visio no dibuja el cable entre esa ODF y la mufa; se cuentan aparte (`empalmes_odf`) para revisarlas con Planta Externa. Otras 8 filas del Excel traen hilos ilegibles («¿?») y se omiten con su motivo.
+
+**Lo que sigue pendiente:** Kayako (fuera por ahora); decidir si se crean los cables mufa–ODF que faltan (hoy no se inventan); y las 179 mufas sin ubicar, que alguien tiene que colocar una por una.

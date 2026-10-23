@@ -83,14 +83,14 @@ def test_the_checker_reports_a_tunnel_that_answers_with_its_own_page():
 
 
 def test_the_tunnel_files_do_not_leak_the_token_and_the_service_opens_it_only_when_configured():
-    bat = (RAIZ / "iniciar_tunel_cloudflare.bat").read_text(encoding="utf-8")
-    assert "TUNNEL_TOKEN" in bat and "herramientas\\cloudflared.exe" in bat and "tunnel --no-autoupdate run" in bat
+    bat = (RAIZ / "herramientas" / "iniciar_tunel_cloudflare.bat").read_text(encoding="utf-8")
+    assert "TUNNEL_TOKEN" in bat and "%~dp0cloudflared.exe" in bat and "tunnel --no-autoupdate run" in bat
     assert not re.search(r"echo[^\r\n]*%(CLOUDFLARE_)?TUNNEL_TOKEN%", bat) and "--token" not in bat.replace("rem ", "")          # never on screen nor on the command line
     inicio = (RAIZ / "start_service.bat").read_text(encoding="utf-8")
     assert "CLOUDFLARE_ACTIVAR" in inicio and 'if "%CF_TUNEL%"=="1" start' in inicio and inicio.index("CF_TUNEL") < inicio.index("uvicorn")      # opt-in (ngrok is the way in until the domain exists); the tunnel first, then the service
     ignorado = (RAIZ / ".gitignore").read_text(encoding="utf-8", errors="replace")
-    assert "herramientas/cloudflared.exe" in ignorado and "cloudflared/config.yml" in ignorado
-    ejemplo = (RAIZ / "cloudflared" / "config.yml.ejemplo").read_text(encoding="utf-8")
+    assert "herramientas/cloudflared.exe" in ignorado and "herramientas/cloudflared/config.yml" in ignorado
+    ejemplo = (RAIZ / "herramientas" / "cloudflared" / "config.yml.ejemplo").read_text(encoding="utf-8")
     assert "api.fiberbudget.com" in ejemplo and "http://127.0.0.1:8000" in ejemplo and "http_status:404" in ejemplo
     assert "<ID_DEL_TUNEL>" in ejemplo                                                    # the example keeps placeholders; the real data lives in config.yml (ignored)
     assert "--config" in bat and "cloudflared\\config.yml" in bat and "cloudflared\\config.yml" not in inicio             # a config file is used by the tunnel script; the service does not open it by itself

@@ -268,3 +268,12 @@ Todo lo nuevo debe funcionar también en modo remoto por `/visor/*` con `X-Visor
 
 En cada fase: pruebas en `Pruebas/`, todas las existentes pasan, `POST /presupuesto` sin cambios,
 README actualizado.
+
+## Actualización 2026-10-22: la red existente migrada desde Visio
+
+Las mufas existentes ya viven en el módulo (proyectos base «Red existente – <región>»; plan y decisiones en `docs/migracion_visio/PLAN.md` §11). Para esta especificación:
+
+- **Qué entra:** nodos MUFA, NODO, MINI_NODO y ODF, y **también las reservas** (como `mufa` con subtipo `reserva`). La clave de cada elemento es su **nombre normalizado + coordenada a 4 decimales** (o + carpeta si no tiene coordenada), no el id del Visio.
+- **Cables:** uno por enlace, con **2 a 144 hilos o «desconocido»** (se define en el editor; al elegir la capacidad se generan los hilos). Todo dato migrado lleva `fuente`, `confianza` y `estado_migracion` (`automatica`, `en_revision`, `validada`, `editada`); lo que una persona valida o edita nunca lo pisa una nueva migración.
+- **Sin ubicar:** una mufa sin coordenada no se dibuja; se coloca desde la cola de corrección de la vista **Red existente**, que centra el mapa donde probablemente está.
+- **Kayako:** fuera por ahora; las coordenadas de los clientes salen de las acometidas del KMZ.

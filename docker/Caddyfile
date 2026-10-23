@@ -1,0 +1,9 @@
+# HTTPS para el servicio (perfil "https" de docker-compose.yml). {$DOMINIO} viene del .env.
+{$DOMINIO} {
+	encode zstd gzip
+
+	# flush_interval -1: los avisos en tiempo real de la app de campo (eventos SSE) deben salir al instante, sin esperar un buffer.
+	reverse_proxy app:8000 {
+		flush_interval -1
+	}
+}

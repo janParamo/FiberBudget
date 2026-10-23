@@ -96,17 +96,27 @@ def armar(datos: dict[str, Any]) -> dict[str, Any]:
     avisos = []
     # Splitters read from the diagrams: each usable stop says which one it has; the first stop (client side) with a secondary that has free
     # ports gets its splitter (the hilo is fused there). A secondary whose ports nobody has confirmed is only mentioned.
-    usado = False
-    for paso, parada in zip(pasos, paradas):
+    corte = None
+    for i, (paso, parada) in enumerate(zip(pasos, paradas)):
         elegido = splitters_diagrama.preferido(parada.get("splitters_diagrama") or [])
         if elegido is None or not paso["tocar"]:
             continue
         paso["info_splitter"] = splitters_diagrama.descripcion(elegido)[:200]
-        if not usado and elegido["clase"] == "secundario" and elegido["libres"] and elegido.get("ratio") in SPLITTERS:
-            paso["splitter"], usado = elegido["ratio"], True
-            avisos.append(f"{con_mf(paso['nombre'])}: {paso['info_splitter']}; se fusiona ahí. Validar los puertos en el diagrama")
+        if corte is None and elegido["clase"] == "secundario" and elegido["libres"] and elegido.get("ratio") in SPLITTERS:
+            paso["splitter"], corte = elegido["ratio"], i
+            avisos.append(f"{con_mf(paso['nombre'])}: {paso['info_splitter']}; se fusiona ahí. Validar con Planta Externa los puertos en el diagrama "
+                          "y que haya hilos libres entre las mufas hasta aquí")
         elif elegido["clase"] == "secundario" and elegido["desconocidos"]:
             avisos.append(f"{con_mf(paso['nombre'])}: tiene un splitter secundario con puertos por confirmar; ábralo en «Splitters» de la parada")
+    # The fusion route stops at that splitter (rule 7): the client is served from it, so the mufas after it, towards the power, are passed by.
+    # They stay in the plan, not touched, so the user can mark them again if the splitter turns out not to be usable.
+    if corte is not None:
+        dejadas = [p for p in pasos[corte + 1:] if p["tocar"]]
+        for p in dejadas:
+            p["tocar"], p["motivo"] = False, "después del splitter"
+        if dejadas:
+            avisos.append(f"La ruta se detiene en {con_mf(pasos[corte]['nombre'])} (splitter secundario con puertos libres): las {len(dejadas)} mufa(s) que siguen hacia la "
+                          "potencia ya no se tocan. Si ese splitter no se puede usar, márquelas de nuevo")
     if paradas and paradas[0]["nombre"] and motivo_no_tocar(paradas[0]["nombre"], config):
         avisos.append(f"La mufa de conexión {paradas[0]['nombre']} es {motivo_no_tocar(paradas[0]['nombre'], config)}: "
                       "el cliente entra ahí, así que se toca; validar con Planta Externa")

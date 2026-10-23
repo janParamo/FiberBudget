@@ -1,14 +1,14 @@
 @echo off
 rem Tunel de Cloudflare de la app de campo: expone http://API_HOST:API_PORT como la direccion HTTPS oficial (ver docs\campo\CLOUDFLARE.md).
-rem Necesita cloudflared\config.yml (tunel creado con "cloudflared tunnel create") o CLOUDFLARE_TUNNEL_TOKEN en .env (tunel creado en el panel), y cloudflared.exe
+rem Necesita herramientas\cloudflared\config.yml (tunel creado con "cloudflared tunnel create") o CLOUDFLARE_TUNNEL_TOKEN en .env (tunel creado en el panel), y cloudflared.exe
 rem en la carpeta "herramientas" (no pide permisos de administrador) o en el PATH.
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 call ".venv\Scripts\activate.bat"
 if errorlevel 1 exit /b 1
 
-set "CLOUDFLARED=%~dp0herramientas\cloudflared.exe"
+set "CLOUDFLARED=%~dp0cloudflared.exe"
 if not exist "%CLOUDFLARED%" (
     where cloudflared >nul 2>nul
     if errorlevel 1 (
@@ -18,7 +18,7 @@ if not exist "%CLOUDFLARED%" (
     set "CLOUDFLARED=cloudflared"
 )
 
-rem Con cloudflared\config.yml (tunel creado desde la linea de comandos) se usa ese archivo; si no, el token.
+rem Con herramientas\cloudflared\config.yml (tunel creado desde la linea de comandos) se usa ese archivo; si no, el token.
 if exist "%~dp0cloudflared\config.yml" (
     "%CLOUDFLARED%" tunnel --config "%~dp0cloudflared\config.yml" --no-autoupdate run
     exit /b %errorlevel%

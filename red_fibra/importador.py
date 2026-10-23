@@ -653,19 +653,55 @@ def leer_excel_anillos(ruta):
 # ---------------------------------------------------------------------------
 # Proceso principal
 # ---------------------------------------------------------------------------
+def pg_del_env():
+    """Cadena de conexión a la base Visio (VISIO_DB_* del .env del proyecto), o None si no está configurada."""
+    try:
+        from urllib.parse import quote
+        from dotenv import dotenv_values
+        v = dotenv_values(os.path.join(os.path.dirname(AQUI), '.env'))
+        if not v.get('VISIO_DB_NAME'):
+            return None
+        return 'postgresql://%s:%s@%s:%s/%s' % (quote(v.get('VISIO_DB_USER') or 'postgres', safe=''), quote(v.get('VISIO_DB_PASSWORD') or '', safe=''),
+                                                v.get('VISIO_DB_HOST') or 'localhost', v.get('VISIO_DB_PORT') or '5432', v['VISIO_DB_NAME'])
+    except Exception:
+        return None
+
+
+def subir_diagramas(cache):
+    """Los .odg convertidos también quedan en la base (almacén de archivos), para que el visor los encuentre sin esta carpeta."""
+    try:
+        sys.path.insert(0, os.path.dirname(AQUI))
+        from visor_rutas import almacen_archivos
+        r = almacen_archivos.subir_carpeta('odg', cache, patron='*.odg')
+        print('Diagramas en la base: %d subidos, %d ya estaban, %d fallidos' % (r['subidos'], r['iguales'], r['fallidos']))
+    except Exception as exc:
+        print('Aviso: no se pudieron guardar los diagramas en la base (%s)' % exc)
+
+
 def main():
     ap = argparse.ArgumentParser(description='Importa diagramas Visio y Excel de anillos a SQLite')
     ap.add_argument('--origen', required=True, help='Carpeta raíz de los diagramas')
-    ap.add_argument('--db', default='red_fibra.db')
-    ap.add_argument('--cache', default=None, help='Carpeta de caché de conversiones (por defecto junto a la base)')
+    ap.add_argument('--db', default=None,
+                    help='Archivo SQLite de trabajo. Si se omite y hay PostgreSQL, se usa un archivo temporal que se borra al publicar '
+                         '(la base de verdad es PostgreSQL); sin PostgreSQL, red_fibra.db')
+    ap.add_argument('--cache', default=None, help='Carpeta de caché de conversiones (por defecto datos/cache/odg)')
     ap.add_argument('--soffice', default=None, help='Ruta a soffice(.exe) de LibreOffice')
     ap.add_argument('--pg', default=os.environ.get('RED_FIBRA_PG'),
                     help='Si se indica (o existe RED_FIBRA_PG), al terminar publica la base en PostgreSQL. '
                          'Ej.: postgresql://usuario:clave@servidor:5432/ideay')
     args = ap.parse_args()
+    if not args.pg:
+        args.pg = pg_del_env()
+    temporal = None
+    if args.db is None:
+        if args.pg:
+            temporal = tempfile.mkdtemp(prefix='red_fibra_')
+            args.db = os.path.join(temporal, 'red_fibra.db')
+        else:
+            args.db = 'red_fibra.db'
 
     origen = os.path.abspath(args.origen)
-    cache = args.cache or os.path.join(os.path.dirname(os.path.abspath(args.db)), 'cache_odg')
+    cache = args.cache or os.path.join(os.path.dirname(AQUI), 'datos', 'cache', 'odg')
     os.makedirs(cache, exist_ok=True)
 
     # 1. Inventario

@@ -106,7 +106,8 @@ def test_schema_architecture_rules(base_redes, con_redes):
                    "campo_ubicaciones",                          # only the last position of each technician: replaced, never deleted
                        "migracion_visio_corridas", "migracion_visio_log",         # logs: only inserted
                    "lugares_adjuntos", "lugares_compartidas",
-                   "kmz_importacion_detalle"}                # images / shares: replaced or logically deleted by their owner; the rows of an import go away with it
+                   "kmz_importacion_detalle",
+                   "almacen_archivos"}                       # files by (space, key): replaced whole, deleted by age                # images / shares: replaced or logically deleted by their owner; the rows of an import go away with it
     for tabla, cols in columnas.items():
         if tabla in sin_version or tabla.startswith(("geography_", "geometry_")):
             continue

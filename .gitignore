@@ -1,4 +1,4 @@
-# Secretos y configuración local (usar .env.example como plantilla)
+# Secretos y configuraciÃ³n local (usar .env.example como plantilla)
 .env
 
 # Entorno y archivos generados
@@ -12,24 +12,28 @@ output/
 logs/
 VisorRutas.zip
 
-# Datos de la empresa: no se publican (pueden contener clientes y la topología de la red)
+# Datos de la empresa: no se publican (pueden contener clientes y la topologia de la red).
+# Todo lo que no es codigo vive en datos/ (ver datos/LEEME.md): KMZ, Visio originales, libro de fusiones, fotos de campo y cachés.
+datos/*
+!datos/LEEME.md
 respaldos_redes/
-visioMapas/
-red_kmz/
 red_fibra/*.db
-red_fibra/cache_diagramas/
+# Lugares donde estaban antes las cachés (hoy en datos/cache/): por si un programa viejo las recrea
 red_fibra/cache_odg/
-
-# Capas y fotos del KMZ ya convertidas (red de la empresa)
+red_fibra/cache_diagramas/
 visor_rutas/datos_kmz/
-
-# Libro de rutas de fusi�n de ejemplo (clientes reales)
+visor_rutas/datos_kmz_iconos_google/
+red_kmz/
+visioMapas/
 EjemploRutaFusiones/
+datos_campo/
+cloudflared/
 
 # Tunel de Cloudflare (binario, configuracion con credenciales)
 herramientas/cloudflared.exe
-cloudflared/config.yml
-cloudflared/*.json
+herramientas/cloudflared/config.yml
+herramientas/cloudflared/*.json
 
-# Fotos de la app de campo (datos de ejecucion)
-datos_campo/
+# Docker: carpetas de datos de la VM (si se prueba en esta PC)
+volumenes/
+.env.docker

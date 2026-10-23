@@ -9,7 +9,7 @@ TEXT = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
 STYLE = "urn:oasis:names:tc:opendocument:xmlns:style:1.0"
 FO = "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
 OFFICE = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-CACHE = Path(__file__).resolve().parents[1] / "cache_odg"
+CACHE = Path(__file__).resolve().parents[2] / "datos" / "cache" / "odg"
 
 
 def cm(v):

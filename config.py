@@ -41,7 +41,7 @@ class Settings:
     campo_url_publica: str = ""   # public HTTPS address of the field app (Cloudflare tunnel), e.g. https://api.fiberbudget.com; only informative (log, /visor/campo/config)
     libreoffice_path: str = ""   # empty: autodetect soffice (recalc.find_soffice)
     red_fibra_db: Path = BASE_DIR / "red_fibra" / "red_fibra.db"   # Visio SQLite (fallback)
-    ruta_fusion_xlsx: Path = BASE_DIR / "EjemploRutaFusiones" / "RUTA DE FUSION - Copia.xlsx"   # workbook of fusion routes (the viewer adds a strip)
+    ruta_fusion_xlsx: Path = BASE_DIR / "datos" / "rutas_de_fusion" / "RUTA DE FUSION - Copia.xlsx"   # workbook of fusion routes (the viewer adds a strip)
     # Visio network in PostgreSQL (schema red_fibra). Empty VISIO_DB_NAME disables it.
     visio_db_host: str = "localhost"
     visio_db_port: int = 5432
@@ -122,7 +122,7 @@ def get_settings() -> Settings:
         campo_url_publica=os.getenv("CAMPO_URL_PUBLICA", "").strip().rstrip("/"),
         libreoffice_path=os.getenv("LIBREOFFICE_PATH", "").strip(),
         red_fibra_db=_path("RED_FIBRA_DB", "red_fibra/red_fibra.db"),
-        ruta_fusion_xlsx=_path("RUTA_FUSION_XLSX", "EjemploRutaFusiones/RUTA DE FUSION - Copia.xlsx"),
+        ruta_fusion_xlsx=_path("RUTA_FUSION_XLSX", "datos/rutas_de_fusion/RUTA DE FUSION - Copia.xlsx"),
         visio_db_host=os.getenv("VISIO_DB_HOST", "localhost").strip() or "localhost",
         visio_db_port=_int_setting("VISIO_DB_PORT", "5432", minimum=1),
         visio_db_name=os.getenv("VISIO_DB_NAME", "").strip(),

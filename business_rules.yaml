@@ -418,6 +418,9 @@ migracion_visio:
       "Red existente – Jinotega": ["RED JINOTEGA", "RED NODO MACIZO PEÑAS BLANCAS"]
       "Red existente – Boaco y Chontales": ["Red Boaco", "Red Juigalpa"]
       "Red existente – Caribe Sur": ["Red Bluefields", "Red El Rama", "RED NUEVA GUINEA"]
+      # Towns of the department of Managua whose Visio folders have no region of their own: they ARE Managua (the default project), even if they are 30-46 km
+      # from its centre. Listed so that they are not mistaken for «far from Managua» trunk mufas (the 22 elements found on 2026-10-22).
+      "Red existente – Managua": ["Red Masachapa", "RED MONTELIMAR", "RED VILLA EL CARMEN", "RED SAN BENITO"]
 
 # Note printed on every page of every budget (API/n8n and viewer): written on each visible
 # sheet (Ruta proyectada and Presupuesto, one page each), `rows_below_last` rows under the

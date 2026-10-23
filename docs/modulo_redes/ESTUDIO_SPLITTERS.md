@@ -2,7 +2,7 @@
 
 Pregunta de Jan: ¿se puede saber **automáticamente** si un splitter es secundario (morado) o principal (dorado) y si tiene **puertos libres**
 (flechas que apuntan a los números del splitter), sabiendo que "las líneas no están unidas al número" y que Visio "las desplaza"?
-Todo lo de abajo se midió sobre los 428 diagramas ya importados (`red_fibra/cache_odg`, convertidos con LibreOffice). Los scripts están en
+Todo lo de abajo se midió sobre los 428 diagramas ya importados (`datos/cache/odg`, convertidos con LibreOffice). Los scripts están en
 `red_fibra/estudio_splitters/` (cada uno dice qué mide; `odgtools.py` lee un .odg en cm absolutos).
 
 ## 1. ¿La conversión desplaza las líneas? **No**
@@ -65,3 +65,29 @@ hilos que pasa por el mismo lugar, la propia línea de entrada del splitter); la
 
 ## 5. Seguimiento (2026-10-21)
 Los pasos 1 y 2 de §4 ya se hacen en cada ruta de fusión (`visor_rutas/splitters_diagrama.py`) y el 3 tiene pantalla (`web/mapa/splitters.js`, tabla `redes.splitters_diagrama`). Nota: la expresión que leía las listas «1- cliente» del estudio dejaba que un renglón en blanco se tragara el siguiente; con la corrección los puertos libres de referencia son más de 52 (las precisiones de §3 son una cota que puede variar al repetir la medición).
+
+## 6. Los «hilos verdes» (continuidad): medido el 2026-10-22 — el color solo **no** sirve
+
+Pregunta (regla 7 de Jan: splitter secundario con puertos libres **y hilos libres entre mufas**): ¿se puede leer del dibujo qué hilos pasan de largo por una mufa
+(los «verdes, no se toca») para saber si hay hilos libres hacia el splitter? Se midió con `red_fibra/estudio_splitters/e4_hilos_verdes.py` (lee cada `.odg` con
+`fusiones.leer_dibujo` y clasifica el color de cada línea con `color_tia`, el mismo método del piloto de fusiones) sobre los 428 diagramas:
+
+| Color (TIA-598) | Líneas | Con flechas | Diagramas |
+|---|---|---|---|
+| negro | 19 817 | 40 % | 425 |
+| violeta | 8 042 | 89 % | 289 |
+| rojo | 7 109 | 91 % | 373 |
+| aqua | 6 760 | 98 % | 319 |
+| rosa | 5 406 | 98 % | 217 |
+| **verde** | **4 802** | **99 %** | **280 (65 %)** |
+| naranja | 3 483 | 95 % | 254 |
+| azul | 1 284 | 19 % | 181 |
+
+- El verde aparece en el 65 % de los diagramas, pero el **99 % de esas líneas llevan flechas** (son puentes de fusión: el hilo 3 de cada buffer es verde en el código
+  TIA), y su largo mediano (8,28 cm) es igual al de las demás (8,48 cm). No hay una marca distinta que separe «hilo verde de continuidad» del «hilo 3 empalmado».
+- Las que podrían ser continuidad (verdes, **sin flechas** y de 2 cm o más): solo **7 diagramas** (2 %), 5 de ellos con splitters. Son tan pocas que no sirven de regla.
+
+**Conclusión:** la continuidad no se puede leer automáticamente solo con el color del trazo. Hace falta seguir cada línea hasta lo que une (qué mufa entra y cuál sale) y una
+verdad de referencia que hoy no existe. Por eso la regla 7 queda así: el plan **sí corta la ruta** en el primer splitter secundario con puertos libres, y deja como aviso
+rojo «validar con Planta Externa que haya hilos libres entre las mufas hasta aquí». Para automatizarlo habría que contar con una lista de hilos libres por cable (por ejemplo, la de
+Planta Externa) o que alguien marque en el visor los hilos de continuidad.

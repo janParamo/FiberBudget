@@ -5,5 +5,5 @@ routing.py, presupuesto.py, red_fibra_pg.py, origen.py) sin modificarlas.
 Modo remoto (otras computadoras, VisorRutas.exe): pide todo a la API por ngrok (/visor/*).
 
 Arranque local: "Visor de rutas.bat", o  .venv\\Scripts\\pythonw.exe -m visor_rutas
-Arranque remoto: VisorRutas.exe (build_visor.bat), o  .venv\\Scripts\\python.exe -m visor_rutas.remoto_main
+Arranque remoto: VisorRutas.exe (herramientas\\build_visor.bat), o  .venv\\Scripts\\python.exe -m visor_rutas.remoto_main
 """

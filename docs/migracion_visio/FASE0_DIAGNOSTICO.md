@@ -87,7 +87,7 @@ La mayoría de los clientes **no** tienen puerto de splitter: están listados en
 |---|---|
 | 1. `anillo_tramos` | 135 tramos en 110 mufas. **106 con hilo de entrada y de salida legibles** ("HILOS 17 / 18", "PUERTOS 17 Y 18") → unas **212 fusiones** de confianza alta |
 | 2. Texto que nombra hilos ("H27 Y H28", "HILOS 4 Y 5") | **21 textos** en 21 diagramas: casi nada |
-| 3. Geometría del Visio (`fusiones_piloto`) | **0: el piloto nunca se corrió.** Los 428 diagramas convertidos (`cache_odg/`) sí tienen las fusiones dibujadas. |
+| 3. Geometría del Visio (`fusiones_piloto`) | **0: el piloto nunca se corrió.** Los 428 diagramas convertidos (`cache_odg/`, hoy `datos/cache/odg/`) sí tienen las fusiones dibujadas. |
 | 4. Sin dato | Todo lo demás: "fusiones sin diagramar" |
 
 **Conclusión:** sin la extracción geométrica, solo unas ~110 mufas del anillo tendrán empalmes conocidos. La geometría es la única fuente masiva, y hay que **medir su precisión antes** de usarla (§4, pregunta 4).

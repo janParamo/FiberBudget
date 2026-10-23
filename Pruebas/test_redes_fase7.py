@@ -222,3 +222,17 @@ def test_service_methods(base_redes, con_redes):
     from visor_rutas.redes.api import METODOS
     assert {"problemas", "guardar_problema", "pendientes", "guardar_pendiente", "respaldos", "crear_respaldo", "restaurar_respaldo",
             "exportar_proyecto", "referencias_proyecto"} <= set(METODOS)
+
+
+def test_old_backups_are_pruned_beyond_the_configured_amount(tmp_path, monkeypatch):
+    monkeypatch.setenv("REDES_RESPALDOS_DIR", str(tmp_path))
+    for dia in range(1, 6):
+        for sufijo in (".json", ".sql"):
+            (tmp_path / f"respaldo_redes_2026-10-0{dia}_120000{sufijo}").write_text("x")
+    (tmp_path / "otro.json").write_text("x")
+    assert respaldo.podar() == 0                              # no limit configured: nothing is removed
+    monkeypatch.setenv("REDES_RESPALDOS_CONSERVAR", "2")
+    assert respaldo.podar() == 3
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "otro.json", "respaldo_redes_2026-10-04_120000.json", "respaldo_redes_2026-10-04_120000.sql",
+        "respaldo_redes_2026-10-05_120000.json", "respaldo_redes_2026-10-05_120000.sql"]

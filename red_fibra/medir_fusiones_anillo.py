@@ -50,7 +50,7 @@ def main():
     for nodo_id, pares in verdad_del_anillo(con).items():
         d = con.execute("SELECT f.md5 FROM nodo_apariciones a JOIN archivos f ON f.id = a.archivo_id WHERE a.nodo_id = ? AND a.rol = 'principal' "
                         "AND f.tipo_diagrama = 'mufa' AND f.estado = 'ok' LIMIT 1", (nodo_id,)).fetchone()
-        odg = os.path.join(AQUI, "cache_odg", d[0] + ".odg") if d else None
+        odg = os.path.join(os.path.dirname(AQUI), "datos", "cache", "odg", d[0] + ".odg") if d else None
         if odg and os.path.exists(odg):
             detectadas = [f for f in fusiones.extraer_fusiones(odg) if f["hilo_entrada"] is not None and f["hilo_salida"] is not None]
             medidas.append((pares, detectadas))

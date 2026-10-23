@@ -139,6 +139,33 @@ def test_the_plan_uses_the_secondary_with_free_ports_and_mentions_the_ones_to_co
     assert any("puertos por confirmar" in a for a in plan["avisos_rojos"]) and any("5 puerto(s) libre(s)" in a for a in plan["avisos_rojos"])
 
 
+def test_the_route_stops_at_the_first_secondary_with_free_ports(carpeta):
+    libre = sd.combinar(next(s for s in sd.leer(MD5, carpeta) if s["etiqueta"] == "SPL 1x8 SECUNDARIO"), None)
+    assert libre["libres"] > 0 and libre["clase"] == "secundario"
+
+    def parada(nombre, orden, *, splitters=(), conexion=False):
+        return {"orden": orden, "nombre": nombre, "lat": 1, "lon": 2, "es_conexion": conexion, "fuente_hilos": "sin_dato", "hilos_anillo": [],
+                "splitters_diagrama": list(splitters)}
+    # OLT side first: MF E (the node's mufa), MF D, MF C (a second secondary, never reached), MF B (the first one with free ports), MF A (connection)
+    paradas = [parada("MF E", 1), parada("MF D", 2), parada("MF C", 3, splitters=[libre]), parada("MF B", 4, splitters=[libre]), parada("MF A", 5, conexion=True)]
+    plan = ruta_fusion_plan.armar({"ruta_fusion": paradas, "origen_trafico": {"nodo": "NODO X"}})
+    por_nombre = {p["nombre"]: p for p in plan["pasos"]}
+    assert [p["nombre"] for p in plan["pasos"]] == ["MF A", "MF B", "MF C", "MF D", "MF E"]          # client side first, all still in the plan
+    assert por_nombre["MF B"]["splitter"] == "1/8" and por_nombre["MF C"]["splitter"] is None         # only the first one is used
+    assert [p["tocar"] for p in plan["pasos"]] == [True, True, False, False, False] and plan["tocadas"] == 2
+    assert por_nombre["MF C"]["motivo"] == por_nombre["MF D"]["motivo"] == "después del splitter"
+    assert any("se detiene en MF B" in a and "3 mufa(s)" in a for a in plan["avisos_rojos"]) and any("hilos libres" in a for a in plan["avisos_rojos"])
+    assert plan["lineas"][1].endswith("fusionarlo con H__ del SPL 1/8 (hilos por identificar)")                  # the last box goes into the splitter
+    # the user can mark them again (the splitter may not be usable): the plan is theirs
+    editado = [dict(p) for p in plan["pasos"]]
+    for p in editado:
+        p["tocar"], p["motivo"] = True, None
+    assert ruta_fusion_plan.redactar({**plan, "pasos": editado})["tocadas"] == 5
+    # without a splitter with free ports nothing is cut; and a secondary with only unknown ports does not cut either
+    sin = ruta_fusion_plan.armar({"ruta_fusion": [parada("MF E", 1), parada("MF A", 2, conexion=True)], "origen_trafico": {}})
+    assert [p["tocar"] for p in sin["pasos"]] == [True, True]
+
+
 # ------------------------------------------------------------------ storage (needs the test database)
 
 @pytest.fixture

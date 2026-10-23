@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import e3b_puertos_listas as E
 
 SVG = "{http://www.w3.org/2000/svg}"
-CACHE = Path(__file__).resolve().parents[1] / "cache_diagramas"
+CACHE = Path(__file__).resolve().parents[2] / "datos" / "cache" / "diagramas"
 datos = E.datos
 
 

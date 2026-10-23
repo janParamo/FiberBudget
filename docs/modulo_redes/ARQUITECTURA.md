@@ -195,7 +195,7 @@ flowchart LR
   - Convierte los errores en `{ok: false, error, errores?, conflicto?}`.
 - **El usuario nunca lo manda la página:** en local sale de Windows (`getpass`); en remoto, de la clave.
 - **Límite por hora en remoto:** solo cuentan los métodos que llaman a Google (`CON_LIMITE = {"geocodificar"}`).
-- **El `.exe` remoto** lleva solo las páginas; el backend del módulo (`visor_rutas.redes`) corre en el servidor. `empaquetar_visor.py` lo verifica.
+- **El `.exe` remoto** lleva solo las páginas; el backend del módulo (`visor_rutas.redes`) corre en el servidor. `herramientas/empaquetar_visor.py` lo verifica.
 
 ### 4.2 Backend: `visor_rutas/redes/`
 
@@ -294,7 +294,7 @@ Un usuario remoto (X-Visor-Key) entra como **lector** y nunca se vuelve administ
   | Avisos | vértices pegados a elementos eliminados; diagramas sin inicio; problemas abiertos sobre algo eliminado; pendientes con responsable desactivado |
 
   Desde el menú Backup, o `python -m visor_rutas.redes.verificar`.
-- **`respaldos_redes\` es sensible** (datos y fotos): no se publica, igual que `output\`. Tampoco va dentro del `.exe`, y `empaquetar_visor.py` lo verifica.
+- **`respaldos_redes\` es sensible** (datos y fotos): no se publica, igual que `output\`. Tampoco va dentro del `.exe`, y `herramientas/empaquetar_visor.py` lo verifica.
 
 ---
 
@@ -314,7 +314,7 @@ Un usuario remoto (X-Visor-Key) entra como **lector** y nunca se vuelve administ
 
 1. **Tabla o columna:** una migración nueva `NNN_nombre.sql`. Nunca se edita una ya aplicada, porque cambia su checksum. Incluir `version` y `borrado_en` si se edita registro por registro, índices parciales `WHERE borrado_en IS NULL`, y la tabla en `repositorio.COLUMNAS`.
 2. **Operación:** una función `f(con, actor, *, …)` en su módulo que revise permisos (`proyectos.puede_ver` / `puede_editar`), escriba dentro de `with con.transaction()` y registre el historial. Luego se agrega a `METODOS` en `api.py`. Si llama a Google, también a `CON_LIMITE`.
-3. **Página:** `Redes.llamar("metodo", {...})`. Si es un archivo nuevo, se agrega a `visor.html` y a la lista de páginas obligatorias de `empaquetar_visor.py`.
+3. **Página:** `Redes.llamar("metodo", {...})`. Si es un archivo nuevo, se agrega a `visor.html` y a la lista de páginas obligatorias de `herramientas/empaquetar_visor.py`.
 4. **Pruebas** en `Pruebas/test_redes_*.py`, con los fixtures de `redes_base.py`.
 
 ---
