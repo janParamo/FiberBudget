@@ -55,6 +55,19 @@
     pintar();
   }
 
+  const claveDe = (a) => (String(a).startsWith("remoto:") ? String(a).slice(7) + ".xlsx" : String(a).split(/[\\/]/).pop());
+
+  /** «Llevar a planificación»: one activity per Excel of what is marked (the loose budgets and the groups of the batches, not what was chosen in the explorer). */
+  async function aPlanificacion() {
+    if (!st.marcados.size && !st.marcadosCarpetas.size) { estado("Marque presupuestos sueltos o carpetas de masivas (no sirven los del explorador)", "error"); return; }
+    estado("Llevando a planificación…", "cargando");
+    const r = await api().redes("plan_llevar", { archivos: [...st.marcados].map(claveDe), carpetas: [...st.marcadosCarpetas] }).catch((e) => ({ ok: false, error: String(e) }));
+    if (!r.ok) { estado(r.error, "error"); return; }
+    const motivos = r.resultados.filter((x) => !x.ok && !x.repetida).slice(0, 3).map((x) => `${x.archivo}: ${x.error}`);
+    estado(`${r.creadas} actividad(es) creada(s) en Planificación` + (r.repetidas ? `, ${r.repetidas} ya estaban` : "") + (r.fallidas ? `, ${r.fallidas} con problema (${motivos.join(" | ")})` : ""),
+           r.fallidas ? "error" : "ok");
+  }
+
   async function elegir(tipo) {
     let r;
     try { r = await api().pdf_elegir(tipo); } catch (e) { r = { ok: false, error: `El explorador no está disponible: cierre el visor y ábralo de nuevo (${e})` }; }
@@ -120,6 +133,7 @@
         : `<p class="nota">${st.cargando ? "Leyendo…" : "No hay presupuestos sueltos"}</p>`}
       </div>
       <div class="ik-pie"><button type="button" class="btn btn-primario" data-pdfx="convertir" ${cantidad() && !trabajando ? "" : "disabled"}>Convertir a PDF (${cantidad()})</button>
+        <button type="button" class="btn" data-pdfx="plan" ${(st.marcados.size || st.marcadosCarpetas.size) && !trabajando ? "" : "disabled"} title="Crear en Planificación una actividad por cada presupuesto marcado">Llevar a planificación</button>
         <button type="button" class="btn" data-pdfx="recargar" ${trabajando ? "disabled" : ""}>Recargar</button></div>${pie}`;
     const nueva = c.querySelector(".pdfx-scroll");
     if (nueva) nueva.scrollTop = alto;
@@ -139,6 +153,7 @@
       const a = b.dataset.pdfx;
       if (a === "cerrar") v.hidden = true;
       else if (a === "convertir") convertir();
+      else if (a === "plan") aPlanificacion();
       else if (a === "recargar") cargar();
       else if (a === "todos") { visibles().forEach((p) => st.marcados.add(p.archivo)); pintar(); }
       else if (a === "ninguno") { st.marcados.clear(); st.marcadosCarpetas.clear(); st.externos = []; pintar(); }

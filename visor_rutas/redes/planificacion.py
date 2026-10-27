@@ -264,6 +264,33 @@ def crear_actividad(con: Any, actor: dict[str, Any], *, cliente_nombre: str, lat
     return {"id": f["id"]}
 
 
+def llevar_a_planificacion(con: Any, actor: dict[str, Any], *, archivos: list[str] | None = None, carpetas: list[str] | None = None) -> dict[str, Any]:
+    """Takes budgets that already exist (Excel of output/visor, or the groups of a bulk-coordinates batch) to planning: one «inactivo» activity per Excel, with
+    the client, ticket, contact, coordinate and total read from the file. `archivos` / `carpetas`: keys relative to output/visor (as pdf_lote.planificar).
+    Returns one result per Excel (created, already in planning, or the reason it could not)."""
+    exigir_planificacion(actor)
+    from visor_rutas import almacen_archivos, pdf_lote, presupuesto_visor
+    try:
+        plan = pdf_lote.planificar(presupuesto_visor.carpeta_visor().resolve(), [str(a) for a in archivos or []], [str(c) for c in carpetas or []])
+    except ValueError as exc:
+        raise DatosInvalidos({"archivos": str(exc)}) from None
+    resultados = []
+    for clave, ruta, _ in plan:
+        try:
+            if not ruta.is_file():
+                almacen_archivos.restaurar("visor", clave, ruta)
+            datos = presupuesto_visor.datos_para_planificacion(ruta)
+            id_ = crear_actividad(con, actor, origen="visor", presupuesto_clave=clave, **datos)["id"]
+            resultados.append({"archivo": ruta.name, "ok": True, "id": id_, "cliente": datos["cliente_nombre"]})
+        except DatosInvalidos as exc:
+            repetida = "ticket" in (exc.errores or {})
+            resultados.append({"archivo": ruta.name, "ok": False, "repetida": repetida, "error": " · ".join((exc.errores or {}).values()) or str(exc)})
+        except Exception as exc:                                      # a broken Excel never stops the rest
+            resultados.append({"archivo": ruta.name, "ok": False, "repetida": False, "error": f"No se pudo leer el Excel ({type(exc).__name__})"})
+    return {"resultados": resultados, "creadas": sum(r["ok"] for r in resultados), "repetidas": sum(r.get("repetida", False) for r in resultados),
+            "fallidas": sum(1 for r in resultados if not r["ok"] and not r.get("repetida"))}
+
+
 def actividades(con: Any, actor: dict[str, Any], *, estado: str | None = None, cuadrilla_id: int | None = None, buscar: str | None = None,
                 limite: int = 500) -> dict[str, Any]:
     """Planning: every activity (filter by state, crew or text). A crew: only those of its own crew."""

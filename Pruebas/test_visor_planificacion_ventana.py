@@ -63,6 +63,8 @@ def test_the_window_is_in_the_menu_and_shows_the_app_or_why_it_cannot():
             await p.esperar("!document.getElementById('plan-marco').hidden", 10)
             assert await p.evaluar("document.getElementById('plan-marco').getAttribute('src')") == "http://127.0.0.1:8123/planificacion/#clave=k%201%262"
             assert await p.evaluar("document.getElementById('plan-nota').textContent") == "http://127.0.0.1:8123"
+            # the budget window has the button that takes a budget to planning
+            assert await p.evaluar("document.getElementById('vp-llevar-plan').textContent") == "Llevar a planificación"
             # going to another window and coming back does not load it again
             await p.evaluar("document.querySelector('[data-vista=mapa]').click(); true")
             await p.evaluar("window.__stubs.planificacion_acceso = () => { window.__otra = 1; return {ok: true, url: 'http://x', clave: ''}; }; true")

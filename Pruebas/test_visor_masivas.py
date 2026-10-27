@@ -217,3 +217,34 @@ def test_a_route_over_the_limit_goes_to_desaprobados(entorno, monkeypatch):
     lote = _esperar(api, api.masivas_iniciar("a.txt", puntos)["lote"]["id"])
     assert lote["resultados"][0]["grupo"] == "desaprobados" and "desaprobados" in lote["resultados"][0]["archivo"]
     assert (salida / "visor" / lote["carpeta"].rsplit("\\", 1)[-1] / "desaprobados" / "Uno.xlsx").is_file()
+
+
+def test_budgets_of_a_batch_go_to_planning_with_the_data_of_their_excel(entorno, con_redes):
+    from visor_rutas.redes import planificacion as pl, usuarios
+    from visor_rutas import presupuesto_visor
+    from visor_rutas.ventana_web import Api
+    main, pv, salida, llamadas = entorno
+    api = Api()
+    r = api.masivas_leer("tickets.xlsx", _libro([["Ticket", "Tienda", "Latitud", "Longitud"], ["T-1001", "Casa Pérez", 12.1364, -86.2514], ["T-1002", "Tienda Ana", 12.1400, -86.2600]]))
+    comentario = "Código de cliente: C35307\nPersona de contacto: Grace Gutiérrez\nTeléfono: 85999439"
+    lote = _esperar(api, api.masivas_iniciar("tickets.xlsx", r["puntos"], comentario)["lote"]["id"])
+    carpeta = lote["carpeta"].rsplit("\\", 1)[-1]
+    admin = usuarios.identificar(con_redes, usuario_windows="jgutierrez")
+    # the data of one Excel as planning reads it
+    xlsx = salida / "visor" / carpeta / "aprobados" / "T-1001_Casa_Perez.xlsx"
+    d = presupuesto_visor.datos_para_planificacion(xlsx)
+    assert (d["cliente_nombre"], d["ticket"], d["codigo_cliente"], d["contacto_nombre"], d["contacto_telefono"]) == ("Casa Pérez", "T-1001", "C35307", "Grace Gutiérrez", "85999439")
+    assert (round(d["lat"], 4), round(d["lon"], 4)) == (12.1364, -86.2514)
+    # the group of the batch: one activity per Excel; doing it again says they are already there
+    r1 = pl.llevar_a_planificacion(con_redes, admin, carpetas=[f"{carpeta}/aprobados"])
+    assert (r1["creadas"], r1["repetidas"], r1["fallidas"]) == (2, 0, 0)
+    acts = pl.actividades(con_redes, admin)["actividades"]
+    assert sorted(a["cliente_nombre"] for a in acts) == ["Casa Pérez", "Tienda Ana"] and all(a["estado"] == "inactivo" and a["presupuesto_clave"].startswith(carpeta) for a in acts)
+    r2 = pl.llevar_a_planificacion(con_redes, admin, archivos=[f"{carpeta}/aprobados/T-1001_Casa_Perez.xlsx"])
+    assert (r2["creadas"], r2["repetidas"], r2["fallidas"]) == (0, 1, 0)
+    # what is not a budget of output/visor is refused; only planning does it
+    with pytest.raises(Exception):
+        pl.llevar_a_planificacion(con_redes, admin, archivos=["../fuera.xlsx"])
+    otro = usuarios.identificar(con_redes, persona_visor="lola")
+    with pytest.raises(Exception):
+        pl.llevar_a_planificacion(con_redes, otro, carpetas=[f"{carpeta}/aprobados"])

@@ -152,6 +152,43 @@ def version_archivo(xlsx: Path) -> str:
     return f"{estado.st_mtime_ns}-{estado.st_size}"
 
 
+def datos_para_planificacion(xlsx: Path) -> dict[str, Any]:
+    """What planning needs from a budget Excel (to turn it into an activity): the client's name (budget sheet), and from the first page («Ruta proyectada»)
+    the ticket, client code, contact, phone and the client's coordinate; plus the total. Returns the arguments of planificacion.crear_actividad
+    (a missing coordinate is left out: planning refuses the activity and says so)."""
+    from openpyxl import load_workbook
+    from excel_generator import _client_name_cell, _find_route_label
+    reglas = main.load_rules(main.settings.rules_path)
+    campos = reglas["route_sheet"]["fields"]
+    libro = load_workbook(xlsx)                       # with formulas: the client's cell is found by the title formula; what is read here are typed values
+    ruta = libro[reglas["route_sheet"]["sheet"]]
+
+    def valor(campo: str) -> str:
+        try:
+            celda = _find_route_label(ruta, campos[campo])
+        except ValueError:
+            return ""
+        texto = str(celda.value or "")
+        if ":" in texto:
+            return texto.split(":", 1)[1].strip()
+        for columna in range(celda.column + 1, ruta.max_column + 6):             # label in one cell, value in the next one that has something
+            otra = ruta.cell(celda.row, columna).value
+            if otra not in (None, ""):
+                return str(otra).strip()
+        return ""
+    presupuesto = libro["Presupuesto"]
+    datos: dict[str, Any] = {"cliente_nombre": str(presupuesto[_client_name_cell(presupuesto)].value or "").strip(), "ticket": valor("ticket_id"),
+                             "codigo_cliente": valor("client_code"), "contacto_nombre": valor("contact_name"), "contacto_telefono": valor("contact_phone")}
+    numeros = re.findall(r"-?\d+(?:\.\d+)?", valor("client_coordinates").replace(",", " "))
+    if len(numeros) >= 2:
+        datos["lat"], datos["lon"] = float(numeros[0]), float(numeros[1])
+    resumen = resumen_presupuesto(xlsx, True)
+    total = next((t.get("valor") for t in resumen.get("totales") or [] if t.get("clave") == "total"), None)
+    datos["presupuesto_total"] = total
+    datos["resumen"] = {"archivo": xlsx.name, "conexion": valor("connection_point")}
+    return datos
+
+
 def archivo_del_visor(ruta: str | Path, sufijos: tuple[str, ...] = (".xlsx", ".pdf")) -> Path:
     """La ruta, solo si es un archivo dentro de output/visor (lo que pide la página); si ya no está en el disco pero sí en la base, se escribe de nuevo."""
     archivo = Path(str(ruta or "")).resolve()

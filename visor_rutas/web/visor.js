@@ -1975,6 +1975,19 @@
     const r = await api.abrir_excel(archivo);
     if (!r.ok) aviso(r.error, "error");
   }
+  /** Key (relative to output/visor) of a budget of the history: «remoto:<id>» (server) or the path of this computer. */
+  const claveDeArchivo = (a) => (String(a).startsWith("remoto:") ? String(a).slice(7) + ".xlsx" : String(a).split(/[\\/]/).pop());
+
+  /** «Llevar a planificación»: the activity of this budget (client, ticket, contact, coordinate and total are read from its Excel). */
+  async function llevarAPlanificacion(archivo) {
+    aviso("Llevando el presupuesto a planificación…", "cargando");
+    const r = await api.redes("plan_llevar", { archivos: [claveDeArchivo(archivo)], carpetas: [] }).catch((e) => ({ ok: false, error: String(e) }));
+    if (!r.ok) { aviso(r.error || "No se pudo llevar a planificación", "error"); return; }
+    const x = r.resultados[0];
+    if (x.ok) aviso("Listo: la actividad está en Planificación (inactiva, falta asignarla a una cuadrilla)", "ok");
+    else aviso(x.repetida ? "Ese presupuesto ya está en planificación" : x.error, "error");
+  }
+
   async function abrirCarpeta(archivo) {
     const r = await api.abrir_carpeta(archivo || "");
     if (!r.ok) aviso(r.error, "error");
@@ -2228,6 +2241,7 @@
     document.querySelectorAll("[data-guardar]").forEach((b) =>
       b.addEventListener("click", () => pres.actual && guardarComo(pres.actual.archivo, b.dataset.guardar)));
     $("vp-abrir-excel").addEventListener("click", () => pres.actual && abrirEnExcel(pres.actual.archivo));
+    $("vp-llevar-plan").addEventListener("click", () => pres.actual && llevarAPlanificacion(pres.actual.archivo));
     $("vp-abrir-carpeta").addEventListener("click", () => abrirCarpeta(pres.actual ? pres.actual.archivo : ""));
     $("presupuesto-aprox").addEventListener("click", accionEstimacion);
     renderEstimacion();

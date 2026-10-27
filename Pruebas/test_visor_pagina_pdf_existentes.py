@@ -26,6 +26,8 @@ STUBS = """(() => {
     return {ok: true, trabajo: {id, estado: listo ? 'listo' : 'convirtiendo', hechos: listo ? 3 : 1, total: 3, actual: listo ? '' : 'b.xlsx', fallos: [], pdf: listo ? 3 : 1, carpetas_salida: ['aprobados_pdf']}}; };
   window.__stubs.pdf_descargar = (id) => { window.__zip++; return {ok: true, nombre: 'PDF_x.zip', datos: 'eA=='}; };
   window.__stubs.pdf_abrir_carpeta = () => ({ok: true});
+  window.__plan = null;
+  window.__stubs.redes = (metodo, args) => { window.__plan = {metodo, args}; return {ok: true, creadas: 2, repetidas: 1, fallidas: 0, resultados: []}; };
   window.__elegidos = 0;
   window.__stubs.pdf_elegir = (tipo) => { window.__elegidos++; return tipo === 'carpeta' ? {ok: true, rutas: ['D:/Presupuestos/Managua']} : {ok: true, rutas: ['D:/x/uno.xlsx', 'D:/x/dos.xlsx']}; };
   window.__stubs.guardar_archivo = (nombre, datos, tipo) => ({ok: true, ruta: 'C:/x/' + nombre});
@@ -33,7 +35,7 @@ STUBS = """(() => {
 
 API = "{ historial_presupuestos: (...a) => window.pywebview.api.historial_presupuestos(...a), pdf_carpetas: (...a) => window.pywebview.api.pdf_carpetas(...a), " \
       "pdf_convertir: (...a) => window.pywebview.api.pdf_convertir(...a), pdf_estado: (...a) => window.pywebview.api.pdf_estado(...a), " \
-      "pdf_descargar: (...a) => window.pywebview.api.pdf_descargar(...a), pdf_elegir: (...a) => window.pywebview.api.pdf_elegir(...a), pdf_abrir_carpeta: (...a) => window.pywebview.api.pdf_abrir_carpeta(...a) }"
+      "pdf_descargar: (...a) => window.pywebview.api.pdf_descargar(...a), pdf_elegir: (...a) => window.pywebview.api.pdf_elegir(...a), redes: (...a) => window.pywebview.api.redes(...a), pdf_abrir_carpeta: (...a) => window.pywebview.api.pdf_abrir_carpeta(...a) }"
 
 
 async def _recorrido():
@@ -58,10 +60,16 @@ async def _recorrido():
         assert "Managua" in await p.evaluar("document.getElementById('pdfx-cuerpo').innerText")
         await p.evaluar("document.querySelectorAll('#pdfx-cuerpo [data-pdfx=quitar_externo]')[1].click(); true")                    # remove dos.xlsx
         assert await p.evaluar("document.querySelectorAll('#pdfx-cuerpo [data-pdfx=quitar_externo]').length") == 2
+        # taking budgets to planning needs something marked; then it sends the keys of the Excel files and the groups
+        assert await p.evaluar("document.querySelector('#pdfx-cuerpo [data-pdfx=plan]').disabled") is True
         # mark one loose budget and the aprobados group of the batch
         await p.evaluar("document.querySelectorAll('#pdfx-cuerpo [data-pdfx=marca]')[1].click(); true")
         await p.evaluar("document.querySelectorAll('#pdfx-cuerpo [data-pdfx=carpeta_marca]')[0].click(); true")
         assert "Convertir a PDF (4)" in await p.evaluar("document.querySelector('#pdfx-cuerpo [data-pdfx=convertir]').innerText")
+        await p.evaluar("document.querySelector('#pdfx-cuerpo [data-pdfx=plan]').click(); true")
+        await p.esperar("window.__plan !== null", 5)
+        assert await p.evaluar("window.__plan") == {"metodo": "plan_llevar", "args": {"archivos": ["Tienda_Ana_12.2_-86.3_20261021-100000.xlsx"], "carpetas": ["masivo_20261026-091704_Matagalpa/aprobados"]}}
+        await p.esperar("document.getElementById('pdfx-cuerpo').innerText.includes('2 actividad(es) creada(s) en Planificación, 1 ya estaban')", 5)
         await p.evaluar("document.querySelector('#pdfx-cuerpo [data-pdfx=convertir]').click(); true")
         await p.esperar("window.__pedido !== null", 5)
         assert await p.evaluar("window.__pedido") == {"archivos": [SUELTOS[1]["archivo"]], "carpetas": ["masivo_20261026-091704_Matagalpa/aprobados"],
