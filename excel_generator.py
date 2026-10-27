@@ -117,7 +117,8 @@ def _route_assignment(ws: Any, labels: list[str], value: Any) -> tuple[str, Any]
 
 
 def _quantity_assignments(ws: Any, quantities: dict[str, int], manual_labels: set[str]) -> dict[str, Any]:
-    assignments = {f"G{row}": 0 for row in range(12, 33)}
+    # Every labor row starts at 0; a blank row (a spacer) is not a row: no stray 0 is written there.
+    assignments = {f"G{row}": 0 for row in range(12, 33) if ws.cell(row, 5).value not in (None, "")}
     for label, quantity in quantities.items():
         row = _find_exact_label_row(ws, label, column=5)
         if row is None:
@@ -166,6 +167,17 @@ def _prepared_by_cell(ws: Any) -> str | None:
                 target = ws.cell(cell.row, column)
                 return target.coordinate if target.value in (None, "") else None
     return None
+
+
+def _prepared_by_filled(ws: Any) -> bool:
+    """True when the template already says who prepared it (text beside the "Elaborado por:" label): the template's own text is kept."""
+    for row in ws.iter_rows():
+        for cell in row:
+            if _normalized(cell.value).startswith(PREPARED_BY_LABEL):
+                label = next((rng for rng in ws.merged_cells.ranges if cell.coordinate in rng), None)
+                beside = ws.cell(cell.row, (label.max_col if label else cell.column) + 1)
+                return beside.value not in (None, "")
+    return False
 
 
 def _comment_cell(ws: Any) -> str:
@@ -358,6 +370,11 @@ def _insert_picture(xlsx_path: Path, sheet_part: str, anchor: PictureAnchor, png
             temp_path.unlink()
 
 
+def _con_valor(texto: str, etiqueta: str, valor: str) -> str:
+    """The line «*Etiqueta: …» of the template's comment with `valor` instead of what it said (the line stays as it is otherwise)."""
+    return re.sub(rf"(?im)^(\s*\*?\s*{re.escape(etiqueta)}\s*:\s*).*$", lambda m: m.group(1) + valor, texto, count=1)
+
+
 def _comment_text(existing: Any, raw_comment: str) -> str:
     """Keep the template's comment text and append the ticket comment verbatim."""
     block = f"{COMMENT_SEPARATOR}\n{raw_comment}"
@@ -509,7 +526,8 @@ def _hardware_assignments(ws: Any, hardware: dict[str, Any]) -> dict[str, Any]:
     """Hanging-hardware rule for the route's cable type (cable.hardware_by_cable_type).
 
     A number is written as is; {"same_as": label} becomes a live formula pointing at that
-    material's quantity cell, {"same_as_install": label} at that MANO DE OBRA row's quantity.
+    material's quantity cell, {"same_as_install": label} at that MANO DE OBRA row's quantity;
+    either takes "times": N to multiply it (the green preformed is twice the buckle: =G40*2).
     These rows may replace template formulas: the rule asks for it.
     """
     rows = _material_rows(ws)
@@ -529,12 +547,15 @@ def _hardware_assignments(ws: Any, hardware: dict[str, Any]) -> dict[str, Any]:
     assignments = {}
     for label, value in hardware.items():
         target = f"G{row_of(label)}"
+        veces = int(value.get("times", 1)) if isinstance(value, dict) else 1
         if isinstance(value, dict) and "same_as_install" in value:
             origen = value["same_as_install"]
             etiquetas = origen if isinstance(origen, (list, tuple)) else [origen]            # several rows add up (aerial + duct)
-            assignments[target] = Formula("+".join(f"G{install_row_of(e)}" for e in etiquetas))
+            suma = "+".join(f"G{install_row_of(e)}" for e in etiquetas)
+            assignments[target] = Formula(suma if veces == 1 else (f"({suma})*{veces}" if len(etiquetas) > 1 else f"{suma}*{veces}"))
         elif isinstance(value, dict):
-            assignments[target] = Formula(f"G{row_of(value['same_as'])}")
+            referencia = f"G{row_of(value['same_as'])}"
+            assignments[target] = Formula(referencia if veces == 1 else f"{referencia}*{veces}")
         else:
             assignments[target] = int(value)
     return assignments
@@ -612,12 +633,20 @@ def generar_excel(data: dict[str, Any], rules: dict[str, Any], template_path: Pa
     if data.get("raw_comment"):
         assignments_by_sheet["Presupuesto"][comment_cell] = _comment_text(
             budget_sheet[comment_cell].value, data["raw_comment"])
+    elif data.get("comment_edits") and isinstance(budget_sheet[comment_cell].value, str):
+        # Bulk coordinates: the template's own comment keeps its text; only the values it already has ("*Ancho de banda: …") are replaced.
+        texto = budget_sheet[comment_cell].value
+        for etiqueta, valor in (("Ancho de banda", data["comment_edits"].get("bandwidth")), ("Plan a contratar", data["comment_edits"].get("plan"))):
+            if valor:
+                texto = _con_valor(texto, etiqueta, str(valor))
+        assignments_by_sheet["Presupuesto"][comment_cell] = texto
 
     # "Elaborado por:" on the budget sheet, as on the route sheet.
+    # A template that already names the author (the current one: "Jan Paramo") keeps it; the service only fills an empty cell.
     prepared_by_cell = _prepared_by_cell(budget_sheet)
     if prepared_by_cell:
         assignments_by_sheet["Presupuesto"][prepared_by_cell] = PREPARED_BY
-    else:
+    elif not _prepared_by_filled(budget_sheet):
         warnings.append('"Elaborado por:" not filled on Presupuesto (label or empty cell not found)')
 
     _validate_labor_assignments(assignments_by_sheet["Presupuesto"],
@@ -643,6 +672,10 @@ def generar_excel(data: dict[str, Any], rules: dict[str, Any], template_path: Pa
     for field_name, value in route_fields.items():
         if field_name not in route_config["fields"]:
             raise ValueError(f"Unknown route-sheet field: {field_name}")
+        if field_name == "prepared_by":                       # "Elaborado por: Jan Paramo" written in the template stays as it is
+            etiqueta = _find_route_label(route_sheet, route_config["fields"][field_name])
+            if ":" in str(etiqueta.value or "") and str(etiqueta.value).split(":", 1)[1].strip():
+                continue
         coordinate, assigned_value = _route_assignment(
             route_sheet, route_config["fields"][field_name], value)
         if coordinate in route_assignments:

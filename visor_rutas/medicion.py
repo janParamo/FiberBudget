@@ -78,7 +78,7 @@ def _datos(puntos: list[LatLon], reglas: dict[str, Any]) -> dict[str, Any]:
     etiqueta_nuevo = reglas["poles"]["new_pole_row_label"]
     nuevos = cantidades[etiqueta_nuevo]
     requeridos = len(registros) + nuevos
-    materiales = main.calcular_materiales(final, requeridos, reglas)
+    materiales = main.calcular_materiales(final, requeridos, reglas, existing_poles=len(registros))
     if distancia / 1000 > float(reglas.get("budget_alerts", {}).get("distance_threshold_km", 5.0)):
         avisos.append("La medida supera los 5 km")
     return {

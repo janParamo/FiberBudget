@@ -146,6 +146,12 @@ def limpiar_archivos_viejos(carpeta: Path | None = None) -> int:
     return borrados
 
 
+def version_archivo(xlsx: Path) -> str:
+    """Changes whenever the Excel is saved again (by the user in Excel / LibreOffice): the page compares it to know it must read the file again."""
+    estado = Path(xlsx).stat()
+    return f"{estado.st_mtime_ns}-{estado.st_size}"
+
+
 def archivo_del_visor(ruta: str | Path, sufijos: tuple[str, ...] = (".xlsx", ".pdf")) -> Path:
     """La ruta, solo si es un archivo dentro de output/visor (lo que pide la página); si ya no está en el disco pero sí en la base, se escribe de nuevo."""
     archivo = Path(str(ruta or "")).resolve()
@@ -208,7 +214,7 @@ def abrir_guardado(archivo: str | Path) -> dict[str, Any]:
             "tipo_cable": None, "metraje_final_m": None, "postes_marcados": 0,
             "origen_trafico": {"node": None, "confidence": None}, "avisos": avisos,
             "pendientes": {"campos": [], "items": [], "postes": 0}, "resumen": resumen, "guardado": True,
-            "coordenada": f"{m['lat']}, {m['lon']}" if m else None}
+            "coordenada": f"{m['lat']}, {m['lon']}" if m else None, "version": version_archivo(xlsx)}
 
 
 # --------------------------------------------------------------------------- formulario
@@ -246,6 +252,7 @@ def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None) -
         "contact_name": _texto(campos.get("contact_name")) or cliente,
         "contact_phone": _texto(campos.get("contact_phone")),
         "raw_comment": str(campos.get("raw_comment") or ""),
+        "comment_edits": campos.get("comment_edits") or None,
         "technology": TECNOLOGIAS.get(tecnologia),
         "odf_rack_ports": int(odf) if odf in ("12", "24") else None,
         "latitude": lat if lat is not None else 0.0,
@@ -359,7 +366,7 @@ def supuestos_estimacion(metraje_final_m: float, rules: dict[str, Any]) -> dict[
     return {
         "service_type": config["servicio_hasta_umbral"] if hasta else config["servicio_sobre_umbral"],
         "bandwidth": config["bandwidth"], "medium": config["medium"], "technology": tecnologia,
-        "cable": "Flat" if hasta else "ADSS", "metraje_final_m": round(float(metraje_final_m), 1),
+        "cable": "ADSS" if (rules["cable"].get("solo_adss") or not hasta) else "Flat", "metraje_final_m": round(float(metraje_final_m), 1),
         "umbral_m": umbral, "cliente": config["cliente"],
     }
 
@@ -376,8 +383,11 @@ def campos_estimacion(lat: float, lon: float, supuestos: dict[str, Any], ahora: 
 
 
 def estimar(lat: float, lon: float, metraje_final_m: float, get_route: Any = None,
-            postes_existentes_m: list[float] | None = None, postes_extra: int = 0, mufas_tocadas: int | None = None) -> dict[str, Any]:
+            postes_existentes_m: list[float] | None = None, postes_extra: int = 0, mufas_tocadas: int | None = None,
+            ticket: dict[str, Any] | None = None) -> dict[str, Any]:
     """Presupuesto aproximado de la vista principal: solo la coordenada, supuestos por defecto.
+
+    ticket: datos del ticket (ticket_id, client_name, client_code, raw_comment...) que reemplazan los de relleno (coordenadas masivas).
 
     metraje_final_m: el de la ruta que el visor acaba de dibujar (calculo.calcular_ruta), que
     decide Residencial / Empresarial. Con el caché de rutas, la generación no vuelve a llamar a Google.
@@ -385,7 +395,9 @@ def estimar(lat: float, lon: float, metraje_final_m: float, get_route: Any = Non
     """
     rules = main.load_rules(main.settings.rules_path)
     supuestos = supuestos_estimacion(metraje_final_m, rules)
-    campos = campos_estimacion(lat, lon, supuestos)
+    campos = {**campos_estimacion(lat, lon, supuestos), **{k: v for k, v in (ticket or {}).items() if v}}
+    if (ticket or {}).get("client_name") and not (ticket or {}).get("contact_name"):
+        campos["contact_name"] = ticket["client_name"]            # no contact written in the comment: the client
     respuesta = generar(construir_solicitud(campos), get_route, nombre_base="Estimacion",
                         postes_existentes_m=postes_existentes_m, postes_extra=postes_extra, mufas_tocadas=mufas_tocadas)
     supuestos["postes_marcados"] = len((respuesta.get("budget") or {}).get("new_poles_marked_existing_m") or [])
@@ -491,5 +503,5 @@ def resultado_para_visor(respuesta: dict[str, Any]) -> dict[str, Any]:
             "items": respuesta.get("pending_validation_items") or [],
             "postes": len(respuesta.get("pending_validation_poles") or []),
         },
-        "resumen": resumen_presupuesto(archivo, calculado),
+        "resumen": resumen_presupuesto(archivo, calculado), "version": version_archivo(archivo),
     }

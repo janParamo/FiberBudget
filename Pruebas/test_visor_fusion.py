@@ -388,8 +388,11 @@ def test_buscar_una_coordenada_dentro_de_un_diagrama(entorno, base, monkeypatch)
     assert fusion.buscar_en_diagrama("a" * 32, "N12°07'24.4\" W86°14'04.4\"", archivo_sqlite=base)["total"] == 1       # degrees too, like the search box
     # farther than 25 m, or written in another diagram: nothing
     assert fusion.buscar_en_diagrama("a" * 32, "12.2000, -86.3000", archivo_sqlite=base)["total"] == 0
-    assert fusion.buscar_en_diagrama("a" * 32, "12.1001, -86.2500", archivo_sqlite=base)["total"] == 0
-    assert fusion.buscar_en_diagrama("b" * 32, "12.1001, -86.2500", archivo_sqlite=base)["resultados"][0]["texto"] == "MF CONEXION 12.1001, -86.2500"
+    # nothing WRITES that coordinate in the diagram; the only thing close is the mufa MUFA PEQUEÑA that it draws, 211 m away, shown as a mufa
+    cerca_de_mufa = fusion.buscar_en_diagrama("a" * 32, "12.1001, -86.2500", archivo_sqlite=base)
+    assert [r["texto"] for r in cerca_de_mufa["resultados"] if "mufa" not in r] == [] and [r["texto"] for r in cerca_de_mufa["resultados"]] == ["MUFA PEQUEÑA"]
+    en_b = fusion.buscar_en_diagrama("b" * 32, "12.1001, -86.2500", archivo_sqlite=base)["resultados"][0]
+    assert en_b["texto"] == "MF CONEXION" and en_b["mufa"]["nombre"] == "MF CONEXION" and en_b["distancia_m"] == 0.0       # its label (that writes the coordinate) is shown as the mufa
     # lat / lon typed the other way round are understood (the search box does the same)
     assert fusion.buscar_en_diagrama("a" * 32, "-86.2345678, 12.1234567", archivo_sqlite=base)["total"] == 1
     # the real diagrams write «12.111510°, -86.234059°», the degree sign often stored as a broken character
@@ -413,3 +416,54 @@ def test_buscar_en_un_diagrama_pide_cosas_validas(entorno, base, monkeypatch):
     _odg_falso(tmp_path / "odg", "a" * 32)
     with pytest.raises(FileNotFoundError):
         fusion.buscar_en_diagrama("a" * 32, "mufa", archivo_sqlite=tmp_path / "no_existe.db")
+
+
+def test_buscar_las_mufas_que_salen_en_el_mismo_diagrama(entorno, base, monkeypatch):
+    """Besides the texts, the search lists the MUFAS drawn in the diagram: by name, and with a coordinate the nearest ones with how far they are."""
+    _, fusion, tmp_path = entorno
+    monkeypatch.setattr(fusion, "CACHE_ODG", tmp_path / "odg")
+    _odg_falso(tmp_path / "odg", "a" * 32, 60, 30)
+    buscar = lambda texto, md5="a" * 32: fusion.buscar_en_diagrama(md5, texto, archivo_sqlite=base)
+    # by name: the mufa of the diagram first, placed at its label, with its coordinate; its label text is not repeated
+    r = buscar("pequena")
+    assert r["total"] == 1 and r["mufas_en_diagrama"] == 2
+    m = r["resultados"][0]
+    assert m["texto"] == "MUFA PEQUEÑA" and (m["x_cm"], m["y_cm"]) == (5.0, 5.0) and m["ancho_cm"] == 60.0
+    assert m["mufa"] == {"nombre": "MUFA PEQUEÑA", "tipo": "MUFA", "lat": 12.102, "lon": -86.25, "estimada": False}
+    # «mufa» is every mufa of the diagram that has a label, and the other texts that say it (a mufa that is not a node here: MF OTRA)
+    r = buscar("mufa")
+    assert [(x["texto"], "mufa" in x) for x in r["resultados"]] == [("MUFA PEQUEÑA", True), ("MF OTRA / 12.1234567, -86.2345678 / SATURADA", False)]
+    # MF CONEXION appears in this diagram (as a neighbour) but is not drawn in it: nothing to go to...
+    assert buscar("conexion")["total"] == 0
+    # ...until a text of the drawing writes its coordinate: then that is where it is
+    con = sqlite3.connect(base)
+    con.execute("INSERT INTO textos_crudos(archivo_id, pagina, x_cm, y_cm, texto) VALUES (1, 0, 30, 20, ?)", ("FO 12H HACIA EL NORTE / 12.1001, -86.2500",))
+    con.commit()
+    con.close()
+    c = buscar("conexion")["resultados"]
+    assert len(c) == 1 and c[0]["mufa"]["nombre"] == "MF CONEXION" and (c[0]["x_cm"], c[0]["y_cm"]) == (30.0, 20.0)
+    # a coordinate: the mufas of the diagram within 500 m, nearest first, with the distance (the text that writes it is the mufa's place, not a second result)
+    cerca = buscar("12.1001, -86.2500")
+    assert cerca["modo"] == "coordenada" and cerca["mufas_en_diagrama"] == 2
+    assert [(x["mufa"]["nombre"], x["distancia_m"]) for x in cerca["resultados"]] == [("MF CONEXION", 0.0), ("MUFA PEQUEÑA", 211.3)]
+    assert [x["texto"] for x in buscar("12.1020, -86.2500")["resultados"]][0] == "MUFA PEQUEÑA" and buscar("12.1020, -86.2500")["resultados"][0]["distancia_m"] == 0.0
+    # farther than 500 m from every mufa of the diagram: none (the texts that write a coordinate near it still count, as before)
+    assert [x for x in buscar("12.2000, -86.3000")["resultados"] if "mufa" in x] == []
+    # an estimated coordinate says so
+    con = sqlite3.connect(base)
+    con.execute("UPDATE nodos SET fuente_coord = 'estimada_vecinos' WHERE id = 2")
+    con.commit()
+    con.close()
+    assert buscar("pequena")["resultados"][0]["mufa"]["estimada"] is True
+
+
+def test_sin_las_tablas_de_mufas_la_busqueda_de_textos_sigue_funcionando(entorno, base, monkeypatch):
+    _, fusion, tmp_path = entorno
+    monkeypatch.setattr(fusion, "CACHE_ODG", tmp_path / "odg")
+    _odg_falso(tmp_path / "odg", "a" * 32, 60, 30)
+    con = sqlite3.connect(base)
+    con.execute("DROP TABLE nodo_apariciones")
+    con.commit()
+    con.close()
+    r = fusion.buscar_en_diagrama("a" * 32, "sangria", archivo_sqlite=base)
+    assert r["total"] == 1 and r["resultados"][0]["texto"] == "BUFFER EN SANGRIA" and r["mufas_en_diagrama"] == 0

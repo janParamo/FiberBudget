@@ -109,36 +109,34 @@ poles:
 
 cable:
   adss_threshold_m: 600
-  flat_material_label: "FIBRA OPTICA 12 Hilos ADSS Flat SingleMode Span 100 m"
+  # Every route is GPON now (2026-10-23): the cable is ALWAYS the ADSS 24-48H one, whatever the length. The current template (templates/Plantilla.xlsx)
+  # has no Flat row at all (neither the 6H-12H labor row, nor the 12-hilos material, nor the FTTH clamp), so nothing about Flat is written.
+  # false brings back the old choice (Flat up to adss_threshold_m) but needs a template that still has those rows.
+  solo_adss: true
   adss_material_label: "FIBRA OPTICA 24 Hilos ADSS SingleMode Span 150 m"
+  flat_material_label: "FIBRA OPTICA 12 Hilos ADSS Flat SingleMode Span 100 m"
   clevis_label: "Clevis tipo D Chico"
   band_label: "Cinta Band It 3/4\" (50mts)"
   buckle_label: "Hebilla Band It 3/4"
   s_clamp_label: "Grapa Metalica en S"
   ftth_clamp_label: "Grapa p/ cable fibra FTTH"
   green_preformed_label: "Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"
-  # Fiber material = aerial installation metres only. Duct is not budgeted for now: the
-  # template's Flat formula (=G12+G28) is replaced and the ADSS row (constant 0) gets one.
-  # With wells on the route (ducto) the material of the cable type used also counts the duct row (main.py: hardware_fibra).
+  # What the internal count of calcular_materiales uses for the hanging hardware: "all" = every pole of the route (existing + new), as the template does;
+  # "existing" = only the poles that already stand. (Only the internal figure: the Excel quantities come from the template's own formulas.)
+  hardware_poles: all
+  # Fiber material = aerial installation metres only. Duct is not budgeted for now: the template's formula (=G12+G27) is kept as is unless there are
+  # wells on the route (ducto): then the material counts the duct row too (main.py: hardware_fibra).
   fiber_material_from_install:
-    "FIBRA OPTICA 12 Hilos ADSS Flat SingleMode Span 100 m":
-      same_as_install: "Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)"
     "FIBRA OPTICA 24 Hilos ADSS SingleMode Span 150 m":
       same_as_install: "Instalacion de Fibra Optica Area ADSS (24H - 48H)"
-  # One clamp type per support point. These MATERIALES rows are set by cable type and
-  # may replace the template's formula for that row (documented exception):
-  # a number is written as is; same_as writes a live formula to that row's quantity.
-  #   Flat: 2 S clamps per pole (template formula) and as many FTTH clamps; no green preformed (0).
-  #   ADSS: no clamps; green preformed = 2 x Clevis tipo D Chico (2 per pole). That formula
-  #         (=G37*2) lives in the template and is not listed here, so it is kept as is.
+  # MATERIALES rows set by cable type; they may replace the template's formula for that row (documented exception): a number is written as is,
+  # same_as / same_as_install write a live formula (times: N multiplies it).
+  #   ADSS (always): the template computes the hanging hardware itself (2026-10-23): Clevis tipo D Chico, Cinta Band It and Hebilla Band It = one per
+  #         installation of herraje (=G19+G20+G21: poles that already stand + new 8 m + new 9 m), and the green preformed = TWICE the buckle (=G37*2).
+  #         Those formulas are kept as they are. Only the S clamp is set: ADSS uses none (the template leaves it as 2 x buckle for the old Flat route).
   hardware_by_cable_type:
-    flat:
-      "Grapa p/ cable fibra FTTH":
-        same_as: "Grapa Metalica en S"
-      "Preformada Punto Verde ADSS 11.7 mm / 12.8 mm": 0
     adss:
       "Grapa Metalica en S": 0
-      "Grapa p/ cable fibra FTTH": 0
 
 splice:
   backbone_splice_row_label: "Empalme de fibra optica cables de Red Backbone (core/troncal)"
@@ -174,6 +172,9 @@ odf:
 # Technology: the request's `technology` field, else a single "gpon"/"metro" word in the
 # ticket comment, else bandwidth above metro_bandwidth_threshold_mbps -> metro, otherwise gpon.
 equipment:
+  # Only GPON routes are in use (2026-10-23): the kit is always the GPON one, whatever the request, the comment or the bandwidth say.
+  # false brings back the choice (request field, then a gpon / metro word in the comment, then the bandwidth threshold below).
+  solo_gpon: true
   metro_bandwidth_threshold_mbps: 100
   kits:
     gpon:
@@ -277,8 +278,10 @@ traffic_origin:
 # Satellite map of the route (Esri World Imagery + street labels), placed in the
 # "ESQUEMA DE RUTA PROYECTADA" box of the route sheet. If the tiles cannot be downloaded
 # the box says "Mapa no disponible" and the budget is still produced.
+# The picture of the route in the "ESQUEMA DE RUTA PROYECTADA" box. false (2026-10-23): no map is made and the box is left BLANK, so the route is
+# checked and the picture is put in by hand. (With true and the tiles failing, the box says "Mapa no disponible".)
 route_map:
-  enabled: true
+  enabled: false
   tile_timeout_s: 10
   max_zoom: 19          # closest zoom; where Esri has no zoom-19 imagery it falls back to 18
   same_point_m: 15      # nearby network nodes closer than this to the connection point are not drawn
@@ -315,6 +318,15 @@ splitter_secundario:
 visor_masivo:
   google_por_minuto: 30
   max_puntos: 200
+  # The "Ancho de banda: 20M" of the ticket's comment replaces the value of "*Ancho de banda: …" in the budget's comment box (second sheet). Below the
+  # minimum it is left as the minimum with the plan below ("100 mbps", "Residencial"); the price calculation does not use it.
+  ancho_banda_minimo_mbps: 100
+  # Name of each budget file: ticket + the store's name of the file ("TLC-370-24851_BIG_ESTELI_1.xlsx"). true adds the client code between them.
+  nombre_con_codigo: false
+  # Each budget is saved in the batch's folder "aprobados" when its route is shorter than this (metres), else in "desaprobados"; the PDFs go to
+  # "aprobados_pdf" and "desaprobados_pdf".
+  umbral_aprobado_m: 2000
+  plan_ancho_bajo: "Residencial"
 
 # "Medir" of the viewer: the metraje final and the total of a line measured on the map (visor_rutas/medicion.py).
 # The same rules and the same Excel template as the budget; servicio / ancho de banda / equipo come from visor_estimacion.

@@ -104,7 +104,7 @@ def test_success_generates_excel(client):
         "distance_along_route_m": 50.0,
     }]
     assert os.path.basename(data["excel_path"]) == f"Juan_Pérez_Ferretería_{data['budget_id']}.xlsx"
-    assert data["budget"]["quantities"]["Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)"] == 0
+    assert "Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)" not in data["budget"]["quantities"]   # solo_adss: no Flat row
     assert data["budget"]["quantities"]["Instalacion de Fibra Optica Area ADSS (24H - 48H)"] == 2305
     assert os.path.exists(data["excel_path"])
 
@@ -115,7 +115,7 @@ def test_success_generates_excel(client):
     assert budget_sheet["G14"].value == 0
     assert budget_sheet["G20"].value == 1
     # Fiber material = aerial installation only (duct ignored): Flat <- G12, ADSS 24H <- G13.
-    assert budget_sheet["G34"].value == "=G12"
+    assert budget_sheet["G34"].value == "=G12+G27"
     assert budget_sheet["G41"].value == "=G13"
     assert budget_sheet["G35"].data_type == "f"
     assert budget_sheet["H12"].value == "=G12*1"
@@ -141,8 +141,8 @@ def test_success_generates_excel(client):
         "Texto de validacion fijo.\n\n\n--- Comentario original del ticket ---\n"
         + RAW_COMMENT.replace("\x0b", ""))
     assert {"G81:I81", "C64:I73"} <= {str(r) for r in budget_sheet.merged_cells.ranges}
-    # 1,850 m route -> ADSS: no S/FTTH clamps; green preformed = the template's 2 x Clevis (row 35), kept.
-    hardware_rows = {34: "=G12", 38: 0, 39: 0, 40: "=G35*2", 41: "=G13"}
+    # ADSS (always, 2026-10-23): the template computes the hardware itself and the rules only zero the S clamp (row 38); the rest keeps the fixture formulas.
+    hardware_rows = {38: 0, 40: "=G35*2", 41: "=G13"}
     for row in range(34, 52):
         assert budget_sheet[f"G{row}"].value == hardware_rows.get(row, "=G12+G27")
     # POSTE 8 MTRS (row 45) has a formula in this fixture: kept, and reported.
@@ -214,6 +214,21 @@ def test_repeated_ticket_returns_existing_budget(client, monkeypatch):
     assert main._budget_index_path().is_file()
 
 
+def _con_reglas(monkeypatch, **cambios):
+    """Changes the rules the service reads for one test: _con_reglas(monkeypatch, **{"equipment.solo_gpon": False})."""
+    import main
+    original = main.load_rules
+
+    def reglas(path):
+        r = original(path)
+        for ruta, valor in cambios.items():
+            seccion, clave = ruta.split(".")
+            r[seccion][clave] = valor
+        return r
+
+    monkeypatch.setattr(main, "load_rules", reglas)
+
+
 def test_exceeds_5km_uses_configured_threshold(client, monkeypatch):
     import main
 
@@ -235,7 +250,7 @@ def test_exceeds_5km_uses_configured_threshold(client, monkeypatch):
 def test_default_gpon_kit_is_written_to_materials(client):
     data = client.post("/presupuesto", json=BODY, headers=HEADERS).json()
     assert data["equipment"]["technology"] == "gpon"
-    assert data["equipment"]["technology_source"] == "bandwidth"
+    assert data["equipment"]["technology_source"] == "solo_gpon"          # only GPON routes are in use (equipment.solo_gpon)
     assert data["equipment"]["missing_in_template"] == []
     sheet = load_workbook(data["excel_path"])["Presupuesto"]
     written = {sheet.cell(row, 5).value: sheet.cell(row, 7).value for row in range(56, 63)}
@@ -245,7 +260,8 @@ def test_default_gpon_kit_is_written_to_materials(client):
     assert sheet["G32"].value == 0   # Visita Tecnica row in the fixture
 
 
-def test_metro_with_rack_odf_reports_rows_missing_from_template(client):
+def test_metro_with_rack_odf_reports_rows_missing_from_template(client, monkeypatch):
+    _con_reglas(monkeypatch, **{"equipment.solo_gpon": False})              # the choice of technology on (it is off in production)
     body = {**BODY, "ticket_id": "T-METRO", "technology": "METRO", "odf_rack_ports": "24"}
     response = client.post("/presupuesto", json=body, headers=HEADERS)
     assert response.status_code == 200
@@ -391,6 +407,7 @@ def test_no_network_point_near_client_is_reported_in_excel(client, monkeypatch):
 def test_route_map_goes_into_route_sheet_box_and_formulas_stay(client, monkeypatch, tmp_path):
     import main
     from PIL import Image
+    _con_reglas(monkeypatch, **{"route_map.enabled": True})                  # off in production: the box stays blank
 
     captured = {}
 
@@ -427,17 +444,30 @@ def test_route_map_goes_into_route_sheet_box_and_formulas_stay(client, monkeypat
     for row in template.iter_rows():
         for cell in row:
             if isinstance(cell.value, str) and cell.value.startswith("=") and cell.coordinate not in (
-                    "E8", "G34", "G38", "G39", "G40", "G41"):   # date rewrite and named material rules
+                    "E8", "G34", "G35", "G36", "G37", "G38", "G39", "G40", "G41"):   # date rewrite and named material rules
                 assert budget[cell.coordinate].value == cell.value, cell.coordinate
 
 
-def test_map_failure_still_produces_excel_with_notice(client):
+def test_map_failure_still_produces_excel_with_notice(client, monkeypatch):
+    _con_reglas(monkeypatch, **{"route_map.enabled": True})
     data = client.post("/presupuesto", json=BODY, headers=HEADERS).json()
     assert data["status"] == "ok"
     assert (data["ruta"]["mapa_generado"], data["ruta"]["mapa_archivo"]) == (False, None)
     route_sheet = load_workbook(data["excel_path"])["Ruta proyectada"]
     assert route_sheet["C18"].value == "Mapa no disponible"
     assert route_sheet._images == []
+
+
+def test_the_route_picture_box_is_left_blank_by_default(client, monkeypatch):
+    """2026-10-23: no map is made and the "ESQUEMA DE RUTA PROYECTADA" box stays empty (no text, no picture): the route is checked and the picture
+    is put in by hand."""
+    import main
+    llamadas = []
+    monkeypatch.setattr(main.mapa_ruta, "generar_mapa_ruta", lambda *a, **k: llamadas.append(1))
+    data = client.post("/presupuesto", json={**BODY, "ticket_id": "T-BLANCO"}, headers=HEADERS).json()
+    assert data["status"] == "ok" and llamadas == []                          # not even asked for the tiles
+    route_sheet = load_workbook(data["excel_path"])["Ruta proyectada"]
+    assert route_sheet["C18"].value is None and route_sheet._images == []
 
 
 def test_origen_endpoint_returns_block_without_budget(client, monkeypatch):
@@ -589,6 +619,6 @@ def test_mufa_connection_is_used_for_routing_and_route_sheet(client, monkeypatch
 
     workbook = load_workbook(data["excel_path"], data_only=False)
     assert workbook["Ruta proyectada"]["B2"].value == f"{mufa.lat:.6f}, {mufa.lon:.6f}"
-    # 189 m -> Flat: FTTH clamps follow the S clamps (row 38); no green preformed.
+    # 189 m -> ADSS all the same (only GPON routes): the S clamp is zero; the rest keeps the template formulas.
     budget_sheet = workbook["Presupuesto"]
-    assert (budget_sheet["G39"].value, budget_sheet["G40"].value) == ("=G38", 0)
+    assert (budget_sheet["G38"].value, budget_sheet["G40"].value) == (0, "=G35*2")

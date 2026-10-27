@@ -97,7 +97,8 @@ def test_poles_ignore_coiled_reserve():
     production_rules = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
     quantities = calcular_presupuesto(55, STRAIGHT, production_rules,
                                       existing_pole_positions_m=[0.0, 16.72, 45.56])
-    assert quantities[ROUTE_LABEL] == 150
+    assert quantities[production_rules["route"]["adss_install_row_label"]] == 150      # every route is ADSS 24-48H now (cable.solo_adss)
+    assert ROUTE_LABEL not in quantities
     assert quantities[production_rules["poles"]["new_pole_row_label"]] == 0
     assert quantities[production_rules["poles"]["existing_pole_row_label"]] == 3
 
@@ -106,7 +107,7 @@ def test_reserve_is_added_every_300m():
     rules_path = Path(__file__).parents[1] / "business_rules.yaml"
     production_rules = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
     quantities = calcular_presupuesto(18000, STRAIGHT, production_rules)
-    assert quantities[ROUTE_LABEL] == 0
+    assert ROUTE_LABEL not in quantities
     assert quantities[production_rules["route"]["adss_install_row_label"]] == 21635
 
 
@@ -127,12 +128,36 @@ def test_materials_use_adss_hardware_for_long_routes():
     assert materials["quantities"]["Hebilla Band It 3/4"] == 20
     assert materials["quantities"]["Grapa Metalica en S"] == 0
     assert materials["quantities"]["Grapa p/ cable fibra FTTH"] == 0
-    assert materials["quantities"]["Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"] == 20
+    assert materials["quantities"]["Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"] == 40      # twice the buckles
+
+
+def test_hardware_internal_count_is_per_pole_and_the_green_preformed_is_twice_the_buckle():
+    """2026-10-23: clevis, band and buckle = one per pole of the route (cable.hardware_poles: all, as the template's own formulas do); the green
+    preformed = twice the buckle. "existing" counts only the poles that already stand."""
+    production_rules = _production_rules()
+    materials = calcular_materiales(500, 18, production_rules, existing_poles=10)          # 10 existing + 8 new
+    q = materials["quantities"]
+    assert (q["Clevis tipo D Chico"], q['Cinta Band It 3/4" (50mts)'], q["Hebilla Band It 3/4"]) == (18, 18, 18)
+    assert q["Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"] == 36 and q["Grapa Metalica en S"] == 0
+    assert materials["cable_type"] == "ADSS 24 hilos"                                      # even 500 m: only GPON routes are in use
+    production_rules["cable"]["hardware_poles"] = "existing"
+    assert calcular_materiales(500, 18, production_rules, existing_poles=10)["quantities"]["Hebilla Band It 3/4"] == 10
+
+
+def test_only_gpon_and_only_adss_can_be_switched_off():
+    rules = _production_rules()
+    assert seleccionar_tecnologia("500 Mbps", "metro", "Instalar por Metro", rules) == ("gpon", "solo_gpon")      # whatever the request says
+    assert calcular_materiales(100, 5, rules)["cable_key"] == "adss"
+    rules["equipment"]["solo_gpon"] = False
+    rules["cable"]["solo_adss"] = False
+    assert seleccionar_tecnologia("500 Mbps", None, "", rules) == ("metro", "bandwidth")
+    assert calcular_materiales(100, 5, rules)["cable_key"] == "flat" and calcular_materiales(1000, 5, rules)["cable_key"] == "adss"
 
 
 def test_materials_use_flat_grasps_for_short_routes():
     rules_path = Path(__file__).parents[1] / "business_rules.yaml"
     production_rules = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+    production_rules["cable"]["solo_adss"] = False             # the old choice (Flat up to 600 m), still available
     materials = calcular_materiales(500, 8, production_rules)
     assert materials["cable_type"] == "Flat"
     # Flat: S clamps and as many FTTH clamps; the green preformed is ADSS only.
@@ -164,6 +189,13 @@ def _production_rules():
     return yaml.safe_load((Path(__file__).parents[1] / "business_rules.yaml").read_text(encoding="utf-8"))
 
 
+def _reglas_con_eleccion_de_tecnologia():
+    """The production rules with the choice of technology on (equipment.solo_gpon off): the mechanism of the tests below."""
+    reglas = _production_rules()
+    reglas["equipment"]["solo_gpon"] = False
+    return reglas
+
+
 @pytest.mark.parametrize("bandwidth, technology, comment, expected", [
     ("100 Mbps", None, "", ("gpon", "bandwidth")),             # 100 is not above 100
     ("200 Mbps", None, "", ("metro", "bandwidth")),
@@ -174,7 +206,7 @@ def _production_rules():
     ("50 Mbps", "metro", "pide gpon", ("metro", "request")),   # request field wins
 ])
 def test_technology_selection(bandwidth, technology, comment, expected):
-    assert seleccionar_tecnologia(bandwidth, technology, comment, _production_rules()) == expected
+    assert seleccionar_tecnologia(bandwidth, technology, comment, _reglas_con_eleccion_de_tecnologia()) == expected
 
 
 def test_equipment_kits_and_odf():

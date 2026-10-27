@@ -549,6 +549,9 @@ def buscar_mufas(texto: str, visio_con: Any = None, archivo_sqlite: Path | None 
 
 MAX_RESULTADOS_DIAGRAMA = 60
 TOLERANCIA_COORDENADA_M = 25.0         # a coordinate typed is the one written in the diagram if it is this close
+RADIO_MUFAS_M = 500.0                  # ...and the mufas of the diagram this close to it are listed too (nearest first)
+MAX_MUFAS_DIAGRAMA = 40                # mufas of the diagram listed in one search
+TIPOS_MUFA_DIAGRAMA = ('MUFA', 'NODO', 'MINI_NODO', 'ODF', 'RESERVA')
 _SINONIMOS_MUFA = {"MF", "MC", "MUFA", "MUFAS"}
 _RE_GRADO_DECIMAL = re.compile(r"(\d+\.\d+)\s*[°º˚�]+")
 
@@ -565,6 +568,11 @@ def buscar_en_diagrama(md5: str, texto: str, visio_con: Any = None, archivo_sqli
     A coordinate (any format of the search box: 12.1115, -86.2340 / N12°06'41" …) finds the texts that WRITE a coordinate within
     25 m of it, nearest first, and says how far each one is. Anything else is a text search: every word must be in the text
     (accents and case ignored; MF / MC / MUFA are the same word). Texts without a position are left out.
+
+    It also finds the MUFAS drawn in this diagram (the nodes that appear in it, `nodo_apariciones`): by name with a text search, and, with a
+    coordinate, the ones within RADIO_MUFAS_M of it with how far they are. Each one is a result with `mufa: {nombre, tipo, lat, lon, estimada}`
+    (`distancia_m` for a coordinate) placed where its label is drawn; one whose label cannot be found in the drawing is left out, and the plain
+    text of that same label is not repeated. `mufas_en_diagrama` is how many mufas the diagram has.
     """
     from visor_rutas import coordenadas, masivas
     md5, _ = _validar(md5, 0)
@@ -584,6 +592,13 @@ def buscar_en_diagrama(md5: str, texto: str, visio_con: Any = None, archivo_sqli
     try:
         filas = fuente.filas("SELECT pagina, x_cm, y_cm, texto FROM textos_crudos WHERE x_cm IS NOT NULL AND y_cm IS NOT NULL AND archivo_id IN "
                              "(SELECT id FROM archivos WHERE md5 = ?)", (md5,))
+        try:
+            nodos = fuente.filas("SELECT DISTINCT n.nombre, n.tipo, n.lat, n.lon, n.fuente_coord FROM nodo_apariciones a JOIN nodos n ON n.id = a.nodo_id "
+                                 "WHERE a.archivo_id IN (SELECT id FROM archivos WHERE md5 = ?) AND n.tipo IN (%s)"
+                                 % ", ".join("'%s'" % t for t in TIPOS_MUFA_DIAGRAMA), (md5,))
+        except Exception as exc:                              # noqa: BLE001 - a database without those tables: the plain text search still works
+            log.warning("Diagram search: mufas of %s not read (%s)", md5, type(exc).__name__)
+            nodos = []
     finally:
         fuente.cerrar()
 
@@ -605,8 +620,13 @@ def buscar_en_diagrama(md5: str, texto: str, visio_con: Any = None, archivo_sqli
                 if d <= TOLERANCIA_COORDENADA_M:
                     halladas.append(item(p, x, y, t, coordenada={"lat": punto["lat"], "lon": punto["lon"]}, distancia_m=round(d, 1)))
                     break
-        halladas.sort(key=lambda r: (r["distancia_m"], r["y_cm"], r["x_cm"]))
-        return {"modo": "coordenada", "consulta": {"lat": lat, "lon": lon}, "resultados": halladas[:limite], "total": len(halladas)}
+        cercanas = _mufas_del_diagrama(nodos, filas, item, lat, lon)
+        puestas = {(m["pagina"], m["x_cm"], m["y_cm"]) for m in cercanas}
+        halladas = [h for h in halladas if (h["pagina"], h["x_cm"], h["y_cm"]) not in puestas]      # the label of a mufa is shown as the mufa
+        halladas = [*cercanas, *halladas]
+        halladas.sort(key=lambda r: (r["distancia_m"], r["y_cm"], r["x_cm"], "mufa" not in r))
+        return {"modo": "coordenada", "consulta": {"lat": lat, "lon": lon}, "resultados": halladas[:limite], "total": len(halladas),
+                "mufas_en_diagrama": len({_plano(n[0]) for n in nodos})}
 
     palabras = _plano(consulta).split()
     grupos = [_SINONIMOS_MUFA if p in _SINONIMOS_MUFA else {p} for p in palabras]
@@ -623,7 +643,65 @@ def buscar_en_diagrama(md5: str, texto: str, visio_con: Any = None, archivo_sqli
         puntaje = 0 if plano == " ".join(palabras) else 1 if plano.startswith(palabras[0]) else 2
         halladas.append((puntaje, len(plano), float(y), float(x), item(p, x, y, t)))
     halladas.sort(key=lambda r: r[:4])
-    return {"modo": "texto", "resultados": [r[4] for r in halladas[:limite]], "total": len(halladas)}
+    textos = [r[4] for r in halladas]
+    mufas = _mufas_del_diagrama(nodos, filas, item, None, None, grupos)
+    puestas = {(m["pagina"], m["x_cm"], m["y_cm"]) for m in mufas}
+    resultados = [*mufas, *[t for t in textos if (t["pagina"], t["x_cm"], t["y_cm"]) not in puestas]]      # the label of a mufa is shown as the mufa
+    return {"modo": "texto", "resultados": resultados[:limite], "total": len(resultados), "mufas_en_diagrama": len({_plano(n[0]) for n in nodos})}
+
+
+def _mufas_del_diagrama(nodos: list[tuple], filas: list[tuple], item: Any, lat: float | None, lon: float | None,
+                        grupos: list[set[str]] | None = None) -> list[dict[str, Any]]:
+    """The mufas drawn in the diagram that answer the search: by name (`grupos`: the words of a text search) or, with a coordinate, the
+    ones within RADIO_MUFAS_M of it. Each is placed at its label in the drawing (its name, else the text that writes its coordinate within
+    TOLERANCIA_COORDENADA_M); one that cannot be placed is left out. Nearest first with a coordinate, by name otherwise."""
+    escritas: list[tuple] = []                                    # (pagina, x, y, lat, lon, texto) of the texts that write a coordinate
+    vistos: set[tuple[str, int, int]] = set()
+    salida: list[dict[str, Any]] = []
+    from visor_rutas import masivas
+    for nombre, tipo, nlat, nlon, fuente_coord in nodos:
+        plano = _plano(nombre or "")
+        if not plano:
+            continue
+        clave = (plano, round(float(nlat) * 10000) if nlat is not None else 0, round(float(nlon) * 10000) if nlon is not None else 0)
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        distancia = None
+        if grupos is not None:
+            if not all(any(a in plano for a in alternativas) for alternativas in grupos):
+                continue
+        else:
+            if nlat is None or nlon is None:
+                continue
+            distancia = _distance_m(lat, lon, float(nlat), float(nlon))
+            if distancia > RADIO_MUFAS_M:
+                continue
+        ancla = _ancla_por_nombre(filas, nombre)
+        if ancla is None and nlat is not None and nlon is not None:
+            if not escritas:
+                for p, x, y, t in filas:
+                    if re.search(r"\d", t or ""):
+                        for punto in masivas._desde_texto([_RE_GRADO_DECIMAL.sub(r"\1", t or "")]):
+                            if punto["lat"] is not None:
+                                escritas.append((p, x, y, punto["lat"], punto["lon"]))
+                                break
+            propios = sorted(((_distance_m(float(nlat), float(nlon), e[3], e[4]), e) for e in escritas), key=lambda c: c[0])
+            if propios and propios[0][0] <= TOLERANCIA_COORDENADA_M:
+                ancla = propios[0][1][:3]
+        if ancla is None:
+            continue
+        p, x, y = ancla
+        extra: dict[str, Any] = {"mufa": {"nombre": nombre, "tipo": tipo, "lat": float(nlat) if nlat is not None else None,
+                                          "lon": float(nlon) if nlon is not None else None, "estimada": fuente_coord == "estimada_vecinos"}}
+        if distancia is not None:
+            extra["distancia_m"] = round(distancia, 1)
+        salida.append(item(p, x, y, nombre, **extra))
+    if grupos is None:
+        salida.sort(key=lambda r: (r["distancia_m"], r["texto"]))
+    else:
+        salida.sort(key=lambda r: (len(_plano(r["texto"])), r["texto"]))
+    return salida[:MAX_MUFAS_DIAGRAMA]
 
 
 def detalle_mufa(nodo_id: int, visio_con: Any = None, archivo_sqlite: Path | None = None) -> dict[str, Any] | None:

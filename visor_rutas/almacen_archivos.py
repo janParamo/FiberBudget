@@ -237,6 +237,16 @@ def restaurar_espacio(espacio: str, carpeta: Path | str, prefijo: str = "", con:
     return escritos
 
 
+def _cambio_de_contenido(archivo: Path, fila: dict[str, Any]) -> bool:
+    """A file of the same size as the stored one that was modified after the store got it (an edit that changed no length): compared by md5."""
+    try:
+        if archivo.stat().st_mtime <= fila["modificado_en"].timestamp() + 1:
+            return False
+        return hashlib.md5(archivo.read_bytes()).hexdigest() != fila["md5"]
+    except (OSError, AttributeError, KeyError):
+        return False
+
+
 def subir_carpeta(espacio: str, carpeta: Path | str, patron: str = "**/*", excluir: Iterable[str] = (), borrar_sobrantes: bool = False,
                   conservar: Iterable[str] = (), con: Any = None) -> dict[str, int]:
     """Sends to the store the files of `carpeta` that are not there yet (same key and size) or that changed (other size).
@@ -253,7 +263,8 @@ def subir_carpeta(espacio: str, carpeta: Path | str, patron: str = "**/*", exclu
     if conexion is None:
         return resultado
     try:
-        guardados = {f["clave"]: f["tamano"] for f in listar(espacio, "", conexion)}
+        filas = {f["clave"]: f for f in listar(espacio, "", conexion)}
+        guardados = {c: f["tamano"] for c, f in filas.items()}
         excluidas = {str(e).replace("\\", "/").strip("/") for e in excluir}
         for archivo in sorted(p for p in carpeta.glob(patron) if p.is_file()):
             clave = archivo.relative_to(carpeta).as_posix()
@@ -264,7 +275,7 @@ def subir_carpeta(espacio: str, carpeta: Path | str, patron: str = "**/*", exclu
             except OSError:
                 resultado["fallidos"] += 1
                 continue
-            if guardados.get(clave) == tamano:
+            if guardados.get(clave) == tamano and not _cambio_de_contenido(archivo, filas[clave]):
                 resultado["iguales"] += 1
             elif guardar_archivo(espacio, clave, archivo, conexion):
                 resultado["subidos"] += 1

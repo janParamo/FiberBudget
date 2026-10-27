@@ -25,7 +25,7 @@ def test_el_metraje_final_es_el_de_las_reglas_de_negocio(entorno):
     assert r["metraje_final_m"] == pytest.approx(main.calcular_metraje_final(distancia, _reglas(main)), abs=0.01)
     assert r["metraje_final_m"] > r["distancia_m"]
     assert r["reserva_m"] == pytest.approx(r["metraje_final_m"] - r["distancia_m"], abs=0.01)
-    assert r["tipo_cable"] == "Flat"
+    assert r["tipo_cable"] == "ADSS 24 hilos"                      # every route is ADSS 24H-48H (cable.solo_adss)
     # el poste del fixture está en la ruta: 1 existente, el resto nuevos; requeridos = suma
     assert r["postes"]["existentes"] == 1
     assert r["postes"]["requeridos"] == r["postes"]["existentes"] + r["postes"]["nuevos"]
@@ -88,5 +88,5 @@ def test_la_api_del_visor_expone_las_dos_llamadas(entorno):
     mala = api.medir_ruta([[1, 2]], False)
     assert mala == {"ok": False, "error": "Una medida necesita al menos dos puntos"}
     total = api.medir_ruta(PUNTOS, True)
-    assert total["ok"] and total["resultado"]["archivo"].endswith(".xlsx") and total["supuestos"]["cable"] == "Flat"
+    assert total["ok"] and total["resultado"]["archivo"].endswith(".xlsx") and total["supuestos"]["cable"] == "ADSS 24 hilos"
     assert not math.isnan(total["medicion"]["metraje_final_m"])

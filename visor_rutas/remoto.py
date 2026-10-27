@@ -180,8 +180,11 @@ class ProveedorRemoto:
         return self._seguro(lambda: self._json("POST", "/visor/masivas/leer", json={"nombre": str(nombre or ""), "datos": datos or "", "subida_id": subida_id},
                                                timeout=TIMEOUT_PRESUPUESTO_S))
 
-    def masivas_iniciar(self, nombre: str, puntos: list[dict[str, Any]]) -> dict[str, Any]:
-        return self._seguro(lambda: self._json("POST", "/visor/masivas/iniciar", json={"nombre": str(nombre or ""), "puntos": puntos}))
+    def masivas_iniciar(self, nombre: str, puntos: list[dict[str, Any]], comentario: str = "") -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/masivas/iniciar", json={"nombre": str(nombre or ""), "puntos": puntos, "comentario": str(comentario or "")}))
+
+    def masivas_pdf(self, id: str, cuales: str = "ambos") -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", f"/visor/masivas/{quote(str(id), safe='')}/pdf", params={"cuales": str(cuales or "ambos")}))
 
     def masivas_estado(self, id: str, desde: int = 0) -> dict[str, Any]:
         return self._seguro(lambda: self._json("GET", f"/visor/masivas/{quote(str(id), safe='')}", params={"desde": int(desde or 0)}))
@@ -189,8 +192,9 @@ class ProveedorRemoto:
     def masivas_cancelar(self, id: str) -> dict[str, Any]:
         return self._seguro(lambda: self._json("POST", f"/visor/masivas/{quote(str(id), safe='')}/cancelar"))
 
-    def masivas_descargar(self, id: str) -> dict[str, Any]:
-        return self._seguro(lambda: self._json("POST", f"/visor/masivas/{quote(str(id), safe='')}/descargar", timeout=TIMEOUT_PRESUPUESTO_S))
+    def masivas_descargar(self, id: str, tipo: str = "xlsx") -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", f"/visor/masivas/{quote(str(id), safe='')}/descargar", params={"tipo": "pdf" if tipo == "pdf" else "xlsx"},
+                                               timeout=TIMEOUT_PRESUPUESTO_S))
 
     def redactar_fusion(self, plan: dict[str, Any]) -> dict[str, Any]:
         return self._seguro(lambda: self._json("POST", "/visor/fusion/redactar", json={"plan": plan}))
@@ -395,6 +399,18 @@ class ProveedorRemoto:
     def medir_ruta(self, puntos: list[list[float]], con_total: bool = False) -> dict[str, Any]:
         return self._seguro(lambda: self._json("POST", "/visor/medicion", json={"puntos": puntos, "con_total": bool(con_total)},
                                                timeout=TIMEOUT_PRESUPUESTO_S if con_total else TIMEOUT_CONSULTA_S))
+
+    def pdf_carpetas(self) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", "/visor/pdf/carpetas"))
+
+    def pdf_convertir(self, archivos: list[str], carpetas: list[str]) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", "/visor/pdf/convertir", json={"archivos": [str(a) for a in archivos or []], "carpetas": [str(c) for c in carpetas or []]}))
+
+    def pdf_estado(self, id: str) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", f"/visor/pdf/{quote(str(id), safe='')}"))
+
+    def pdf_descargar(self, id: str) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("POST", f"/visor/pdf/{quote(str(id), safe='')}/descargar", timeout=TIMEOUT_PRESUPUESTO_S))
 
     def historial_presupuestos(self) -> dict[str, Any]:
         return self._seguro(lambda: self._json("GET", "/visor/presupuestos"))

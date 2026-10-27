@@ -223,13 +223,14 @@ def calcular_presupuesto(
     route_quantity = math.ceil(final_distance_m)
     flat_install_label = route["aerial_install_row_label"]
     adss_install_label = route.get("adss_install_row_label")
-    use_adss = final_distance_m > rules.get("cable", {}).get("adss_threshold_m", float("inf"))
+    use_adss = bool(rules.get("cable", {}).get("solo_adss")) or final_distance_m > rules.get("cable", {}).get("adss_threshold_m", float("inf"))
     # Where the route goes through wells the cable is installed in duct: those metres go to the duct row, the rest stays aerial.
     duct_quantity = min(route_quantity, math.ceil(sum(b - a for a, b in duct_spans))) if duct_spans else 0
     if duct_spans and not tramos_aereos(distance_m, duct_spans):
         duct_quantity = route_quantity                  # all in duct: the reserves too (nothing is left on poles)
     aerial_quantity = route_quantity - duct_quantity
-    quantities[flat_install_label] = 0 if use_adss else aerial_quantity
+    if not rules.get("cable", {}).get("solo_adss"):       # solo_adss: the template has no Flat row to write
+        quantities[flat_install_label] = 0 if use_adss else aerial_quantity
     if adss_install_label:
         quantities[adss_install_label] = aerial_quantity if use_adss else 0
     if route.get("duct_install_row_label"):
@@ -324,7 +325,9 @@ def _plano_visita(texto: str) -> str:
 
 def seleccionar_tecnologia(bandwidth: str, technology: str | None, raw_comment: str,
                            rules: dict[str, Any]) -> tuple[str, str]:
-    """Return (technology, source): request field, then ticket comment, then bandwidth."""
+    """Return (technology, source): request field, then ticket comment, then bandwidth. With equipment.solo_gpon always GPON."""
+    if rules.get("equipment", {}).get("solo_gpon"):
+        return "gpon", "solo_gpon"
     if technology:
         return technology, "request"
     mentioned = {word.casefold() for word in re.findall(r"\b(gpon|metro)\b", raw_comment or "", re.IGNORECASE)}
@@ -345,11 +348,15 @@ def calcular_equipos(technology: str, odf_rack_ports: int | None, rules: dict[st
     return items
 
 
-def calcular_materiales(distance_m: float, total_poles: int, rules: dict[str, Any]) -> dict[str, Any]:
-    """Select cable and hanging hardware quantities from the route length."""
+def calcular_materiales(distance_m: float, total_poles: int, rules: dict[str, Any], existing_poles: int | None = None) -> dict[str, Any]:
+    """Select cable and hanging hardware quantities from the route length.
+
+    Hardware (clevis, band, buckle) is one per installation of "herraje en poste existente" when cable.hardware_poles is "existing" (pass
+    `existing_poles`), else one per pole of the route; the green preformed (ADSS) is TWICE the buckles. With cable.solo_adss the cable is ADSS
+    whatever the length."""
     cable = rules["cable"]
-    adss = distance_m > cable["adss_threshold_m"]
-    pole_count = max(0, int(total_poles))
+    adss = bool(cable.get("solo_adss")) or distance_m > cable["adss_threshold_m"]
+    pole_count = max(0, int(existing_poles if cable.get("hardware_poles") == "existing" and existing_poles is not None else total_poles))
     # One clamp type per support point (see cable.hardware_by_cable_type).
     quantities = {
         cable["clevis_label"]: pole_count,
@@ -357,7 +364,7 @@ def calcular_materiales(distance_m: float, total_poles: int, rules: dict[str, An
         cable["buckle_label"]: pole_count,
         cable["s_clamp_label"]: 0 if adss else pole_count * 2,
         cable["ftth_clamp_label"]: 0 if adss else pole_count * 2,   # Flat: as many as S clamps
-        cable["green_preformed_label"]: pole_count if adss else 0,   # ADSS only
+        cable["green_preformed_label"]: pole_count * 2 if adss else 0,   # ADSS only: twice the buckles
     }
     return {
         "cable_key": "adss" if adss else "flat",

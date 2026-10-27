@@ -1673,8 +1673,25 @@
     } else if (nombre === "mapa" && mapa) {
       mapa.invalidateSize();
     }
+    if (nombre === "planificacion") cargarPlanificacion(false);
     if (window.RedesVistas && window.RedesVistas[nombre]) window.RedesVistas[nombre].mostrar();
   }
+
+  // --- vista "Planificación": la app /planificacion/ del servicio, dentro del visor (la clave va en la dirección y la app la guarda y la borra de ahí)
+  const plan = { url: null };
+  async function cargarPlanificacion(forzar) {
+    const marco = $("plan-marco"), error = $("plan-error");
+    if (plan.url && !forzar) return;
+    error.hidden = false; error.innerHTML = '<span class="spinner"></span> Abriendo la planificación…'; marco.hidden = true;
+    let r;
+    try { r = await api.planificacion_acceso(); } catch (e) { r = { ok: false, error: "No se pudo abrir la planificación: " + e }; }
+    if (!r.ok) { plan.url = null; error.textContent = r.error; $("plan-nota").textContent = ""; return; }
+    plan.url = r.url;
+    error.hidden = true; marco.hidden = false;
+    $("plan-nota").textContent = r.url;
+    marco.src = `${r.url}/planificacion/${r.clave ? "#clave=" + encodeURIComponent(r.clave) : ""}`;
+  }
+  $("plan-recargar").addEventListener("click", () => { plan.url = null; cargarPlanificacion(true); });
 
   // --- formulario "Generar presupuesto"
   function cargarConfigPresupuesto() {
@@ -1833,6 +1850,25 @@
   }
 
   // --- resultado: hojas del Excel, PDF y botones
+  // The Excel is edited outside the program (Excel / LibreOffice): when the window gets the focus back, the budget is read again; if it changed (its
+  // "version"), the sheets, the totals and the PDF shown are the ones of the edited file (the PDF is made again from it when its tab is opened).
+  let refrescando = false;
+  async function refrescarPresupuesto() {
+    const actual = pres.actual;
+    if (!actual || !actual.archivo || refrescando || $("vp-contenido").hidden) return;
+    refrescando = true;
+    try {
+      const r = await api.abrir_presupuesto_guardado(actual.archivo);
+      if (pres.actual !== actual || !r.ok || !r.resultado.version || r.resultado.version === actual.version) return;
+      const hoja = pres.hoja;
+      mostrarResultado({ ...actual, calculado: r.resultado.calculado, resumen: r.resultado.resumen, version: r.resultado.version });
+      if (hoja && hoja !== "Presupuesto") mostrarHoja(hoja);
+      aviso("El Excel cambió: se actualizó lo que se ve y el PDF saldrá con esos cambios", "ok");
+    } catch (e) { /* the file may be busy: the next focus tries again */ } finally { refrescando = false; }
+  }
+  window.addEventListener("focus", refrescarPresupuesto);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refrescarPresupuesto(); });
+
   function mostrarResultado(resultado) {
     pres.actual = resultado;
     pres.html.clear();
@@ -2178,6 +2214,7 @@
     $("vp-hist-filtro").addEventListener("input", pintarHistorial);
     $("vp-hist-estimaciones").addEventListener("change", pintarHistorial);
     $("vp-hist-recargar").addEventListener("click", cargarHistorial);
+    $("vp-hist-pdf").addEventListener("click", () => { if (window.PdfExistentes) window.PdfExistentes.abrir({ api: () => api, aviso }); });
     $("vp-hist-lista").addEventListener("click", (e) => {
       const item = e.target.closest("[data-hist]");
       if (item) abrirDelHistorial(item.dataset.hist);

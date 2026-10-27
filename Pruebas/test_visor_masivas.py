@@ -53,13 +53,15 @@ def test_a_file_becomes_a_batch_of_budgets_with_a_summary_and_a_zip(entorno):
     for x in (a, b):
         assert x["archivo"].endswith(".xlsx") and x["archivo"].startswith(lote["carpeta"])                    # in the batch's folder, not in output/visor
     carpeta = salida / "visor" / lote["carpeta"].rsplit("\\", 1)[-1]
-    assert carpeta.is_dir() and sorted(p.name for p in carpeta.glob("*.xlsx")) == ["01_Casa_Perez.xlsx", "02_Tienda_Ana.xlsx", "Resumen.xlsx"]
+    assert carpeta.is_dir() and sorted(p.relative_to(carpeta).as_posix() for p in carpeta.rglob("*.xlsx")) == [
+        "Resumen.xlsx", "aprobados/Casa_Perez.xlsx", "aprobados/Tienda_Ana.xlsx"]                          # routes of less than 2 km
     assert not list((salida / "visor").glob("Estimacion_*.xlsx"))                                         # nothing left behind
     hoja = load_workbook(carpeta / "Resumen.xlsx")["Resumen"]
     filas = [[c.value for c in f] for f in hoja.iter_rows(min_row=4)]
-    assert [f[1] for f in filas] == ["Casa Pérez", "Tienda Ana"] and filas[0][5] == "MF PRUEBA" and filas[0][6] == 1850.0
+    assert [f[2] for f in filas] == ["Casa Pérez", "Tienda Ana"] and filas[0][6] == "MF PRUEBA" and filas[0][7] == 1850.0
     z = api.masivas_descargar(inicio["lote"]["id"])
-    assert z["ok"] and z["nombre"].endswith(".zip") and sorted(zipfile.ZipFile(io.BytesIO(base64.b64decode(z["datos"]))).namelist()) == ["01_Casa_Perez.xlsx", "02_Tienda_Ana.xlsx", "Resumen.xlsx"]
+    assert z["ok"] and z["nombre"].endswith(".zip") and sorted(zipfile.ZipFile(io.BytesIO(base64.b64decode(z["datos"]))).namelist()) == [
+        "Resumen.xlsx", "aprobados/Casa_Perez.xlsx", "aprobados/Tienda_Ana.xlsx"]
     assert api.masivas_estado("no")["ok"] is False and api.masivas_cancelar("no")["ok"] is False and api.masivas_descargar("no")["ok"] is False
     assert api.masivas_estado(inicio["lote"]["id"], desde=1)["lote"]["resultados"][0]["nombre"] == "Tienda Ana"
 
@@ -74,7 +76,71 @@ def test_a_point_that_fails_does_not_stop_the_rest(entorno, monkeypatch):
     lote = _esperar(api, api.masivas_iniciar("a.txt", puntos)["lote"]["id"])
     assert [r["ok"] for r in lote["resultados"]] == [True, False, True] and "No se encontró mufa" in lote["resultados"][1]["error"]
     hoja = load_workbook(lote["carpeta"] + "\\Resumen.xlsx")["Resumen"]
-    assert "No se encontró mufa" in [c.value for c in list(hoja.iter_rows(min_row=5, max_row=5))[0]][14]
+    assert "No se encontró mufa" in [c.value for c in list(hoja.iter_rows(min_row=5, max_row=5))[0]][15]
+
+
+def test_ticket_data_names_each_document_ticket_code_client_and_goes_into_the_budget(entorno):
+    from visor_rutas.ventana_web import Api
+    main, pv, salida, llamadas = entorno
+    api = Api()
+    r = api.masivas_leer("tickets.xlsx", _libro([["Ticket", "Cliente", "Latitud", "Longitud"], ["T-1001", "Casa Pérez", 12.1364, -86.2514], ["T-1002", "Tienda Ana", 12.1400, -86.2600],
+                                                  ["T-1003", "Sin código", 12.1380, -86.2530]]))
+    assert [(p["ticket"], p["nombre"], p["codigo"]) for p in r["puntos"]] == [("T-1001", "Casa Pérez", ""), ("T-1002", "Tienda Ana", ""), ("T-1003", "Sin código", "")]
+    comentario = ("T-1001 Código cliente: C12345\nNombre de contacto: Juan Mora\nTeléfono contacto: 8599 9439\nEjecutivo de ventas: Yader Ramirez\n\n"
+                  "T-1002 Código cliente: C67890\nPide 100 Mbps\n\nT-1003 solo instalar")
+    inicio = api.masivas_iniciar("tickets.xlsx", r["puntos"], comentario)
+    lote = _esperar(api, inicio["lote"]["id"])
+    assert [(x["ticket"], x["codigo"], x["nombre_archivo"]) for x in lote["resultados"]] == [
+        ("T-1001", "C12345", "T-1001_Casa_Perez.xlsx"), ("T-1002", "C67890", "T-1002_Tienda_Ana.xlsx"), ("T-1003", "", "T-1003_Sin_codigo.xlsx")]
+    hoja = load_workbook(lote["resultados"][0]["archivo"])["Presupuesto"]
+    textos = [str(c.value) for f in hoja.iter_rows() for c in f if c.value is not None]
+    assert "Casa Pérez" in textos and not any("Código cliente: C12345" in t or "Comentario original" in t for t in textos)         # the comment is not written in the budget
+    import excel_generator
+    hoja2 = load_workbook(lote["resultados"][0]["archivo"])["Presupuesto"]
+    assert hoja2[excel_generator._client_name_cell(hoja2)].value == "Casa Pérez"                 # the store's name of the file is the "Cliente" cell of the second sheet
+    primera = load_workbook(lote["resultados"][0]["archivo"])["Ruta proyectada"]               # the first page: client and seller data from the comment
+    portada = [str(c.value) for f in primera.iter_rows() for c in f if c.value is not None]
+    assert {"Código cliente: C12345", "Contactos: Juan Mora", "Teléfono contacto: 8599 9439", "Ejecutivo de ventas: Yader Ramirez"} <= set(portada)
+    otra = [str(c.value) for f in load_workbook(lote["resultados"][1]["archivo"])["Ruta proyectada"].iter_rows() for c in f if c.value is not None]
+    assert "Contactos: Tienda Ana" in otra and "Código cliente: C67890" in otra              # no contact written: the client's name
+
+
+def test_the_comment_fills_what_the_uploaded_file_lacks(entorno):
+    from visor_rutas.ventana_web import Api
+    main, pv, salida, llamadas = entorno
+    api = Api()
+    r = api.masivas_leer("faltan.xlsx", _libro([["Latitud", "Longitud", "Ticket"], [12.1364, -86.2514, ""], [12.1400, -86.2600, "T-9"]]))
+    comentario = ("Nombre de cliente: David Tovar\nCódigo de cliente: C35307\nPersona de contacto: Grace Gutiérrez\nTeléfono: 85999439\n"
+                  "Vendedor: Yader Ramirez\nTicket: xkj-813-61728")
+    lote = _esperar(api, api.masivas_iniciar("faltan.xlsx", r["puntos"], comentario)["lote"]["id"])
+    assert [(x["ticket"], x["nombre"], x["codigo"], x["nombre_archivo"]) for x in lote["resultados"]] == [
+        ("xkj-813-61728", "David Tovar", "C35307", "xkj-813-61728_David_Tovar.xlsx"), ("T-9", "David Tovar", "C35307", "T-9_David_Tovar.xlsx")]   # the file's ticket wins
+    portada = [str(c.value) for f in load_workbook(lote["resultados"][0]["archivo"])["Ruta proyectada"].iter_rows() for c in f if c.value is not None]
+    assert {"Contactos: Grace Gutiérrez", "Teléfono contacto: 85999439", "Ejecutivo de ventas: Yader Ramirez", "Código cliente: C35307"} <= set(portada)
+
+
+def test_the_pdf_of_every_budget_is_made_in_the_background_and_zipped(entorno, monkeypatch):
+    from visor_rutas.ventana_web import Api
+    import recalc
+    main, pv, salida, llamadas = entorno
+    api = Api()
+    puntos = masivas.extraer("a.txt", b"Uno 12.1364, -86.2514\nDos 12.1400, -86.2600\n")["puntos"]
+    lote = _esperar(api, api.masivas_iniciar("a.txt", puntos)["lote"]["id"])
+    assert api.masivas_descargar(lote["id"], "pdf")["ok"] is False                                      # not converted yet
+    monkeypatch.setattr(recalc, "find_soffice", lambda *a, **k: "soffice")
+    import pdf_export
+    monkeypatch.setattr(pdf_export, "xlsx_a_pdf", lambda xlsx, soffice, carpeta_pdf: carpeta_pdf.mkdir(exist_ok=True) or (carpeta_pdf / (xlsx.stem + ".pdf")).write_bytes(b"%PDF-1.4"))
+    assert api.masivas_pdf(lote["id"], "desaprobados")["ok"] is False                                   # nothing in desaprobados
+    assert api.masivas_pdf(lote["id"], "otra")["ok"] is False
+    assert api.masivas_pdf(lote["id"], "aprobados")["ok"]
+    t0 = time.time()
+    while api.masivas_estado(lote["id"])["lote"]["pdf"]["estado"] == "convirtiendo" and time.time() - t0 < 30:
+        time.sleep(0.05)
+    assert api.masivas_estado(lote["id"])["lote"]["pdf"] == {"estado": "listo", "hechos": 2, "total": 2, "error": "", "cuales": "aprobados"}
+    z = api.masivas_descargar(lote["id"], "pdf")
+    assert z["ok"] and z["nombre"].endswith("_PDF.zip") and sorted(zipfile.ZipFile(io.BytesIO(base64.b64decode(z["datos"]))).namelist()) == [
+        "aprobados_pdf/Dos.pdf", "aprobados_pdf/Uno.pdf"]
+    assert api.masivas_pdf("no")["ok"] is False
 
 
 def test_a_batch_can_be_cancelled_and_the_google_limit_comes_from_the_rules(entorno, monkeypatch):
@@ -84,7 +150,7 @@ def test_a_batch_can_be_cancelled_and_the_google_limit_comes_from_the_rules(ento
     capturado = {}
     real = api._lotes.iniciar
 
-    def espia(nombre, puntos, base, por_minuto, maximo, bloqueo, cache):
+    def espia(nombre, puntos, base, por_minuto, maximo, bloqueo, cache, comentario=""):
         capturado.update(por_minuto=por_minuto, maximo=maximo)
         return real(nombre, puntos, base, por_minuto, maximo, bloqueo, cache)
     monkeypatch.setattr(api._lotes, "iniciar", espia)
@@ -139,3 +205,15 @@ def test_the_points_become_a_project_with_clients_the_connection_and_the_routes(
     assert METODOS["proyecto_desde_masivas"](con, admin, nombre="Visita norte", puntos=PUNTOS)["proyecto"]["codigo"] == "MAS-VISITA-NORTE-2"
     with pytest.raises(db.SinPermiso):
         METODOS["proyecto_desde_masivas"](con, lector, nombre="X", puntos=PUNTOS)                      # only editors create projects
+
+
+def test_a_route_over_the_limit_goes_to_desaprobados(entorno, monkeypatch):
+    from visor_rutas.ventana_web import Api
+    main, pv, salida, llamadas = entorno
+    original = main.load_rules
+    monkeypatch.setattr(main, "load_rules", lambda path: {**original(path), "visor_masivo": {**original(path).get("visor_masivo", {}), "umbral_aprobado_m": 1000}})   # the fake route is 1850 m
+    api = Api()
+    puntos = masivas.extraer("a.txt", b"Uno 12.1364, -86.2514\n")["puntos"]
+    lote = _esperar(api, api.masivas_iniciar("a.txt", puntos)["lote"]["id"])
+    assert lote["resultados"][0]["grupo"] == "desaprobados" and "desaprobados" in lote["resultados"][0]["archivo"]
+    assert (salida / "visor" / lote["carpeta"].rsplit("\\", 1)[-1] / "desaprobados" / "Uno.xlsx").is_file()

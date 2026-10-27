@@ -389,7 +389,7 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
         quantities[poles_rules["new_pole_row_label"]] += postes_extra
     nuevos = quantities[poles_rules["new_pole_row_label"]]
     final_m = presupuesto.calcular_metraje_final(distancia_m, rules)
-    materials = presupuesto.calcular_materiales(final_m, existentes_usados + nuevos, rules)
+    materials = presupuesto.calcular_materiales(final_m, existentes_usados + nuevos, rules, existing_poles=existentes_usados)
 
     # Posiciones aproximadas de los postes nuevos sobre la ruta.
     turns = presupuesto.count_turns(puntos, poles_rules["corner_angle_deg"])

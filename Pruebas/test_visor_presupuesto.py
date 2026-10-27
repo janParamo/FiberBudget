@@ -79,8 +79,10 @@ def _archivos(carpeta: Path) -> set[str]:
 
 # --------------------------------------------------------------------------- misma generación que la API
 
-def test_visor_uses_the_api_generation_same_quantities_and_own_folder(entorno):
+def test_visor_uses_the_api_generation_same_quantities_and_own_folder(entorno, monkeypatch):
     main, pv, salida, llamadas = entorno
+    original = main.load_rules
+    monkeypatch.setattr(main, "load_rules", lambda path: {**original(path), "route_map": {**original(path)["route_map"], "enabled": True}})   # off in production
     api = TestClient(main.app).post("/presupuesto", json=BODY, headers=HEADERS).json()
     antes = _archivos(salida)
     indice = (salida / "budget_index.json").read_text(encoding="utf-8")
@@ -132,12 +134,12 @@ def test_estimate_defaults_from_visor_estimacion(entorno):
     hasta = pv.supuestos_estimacion(600, rules)
     sobre = pv.supuestos_estimacion(600.5, rules)
     assert (hasta["service_type"], hasta["cable"], hasta["technology"], hasta["bandwidth"]) == (
-        "Residencial", "Flat", "gpon", "10 Mbps")
+        "Residencial", "ADSS", "gpon", "10 Mbps")                  # ADSS even up to 600 m: only GPON routes are in use
     assert (sobre["service_type"], sobre["cable"]) == ("Empresarial", "ADSS")
     propio = {**rules, "visor_estimacion": {**rules["visor_estimacion"], "bandwidth": "200 Mbps",
                                             "servicio_hasta_umbral": "Corporativo"}}
     otro = pv.supuestos_estimacion(100, propio)
-    assert (otro["service_type"], otro["bandwidth"], otro["technology"]) == ("Corporativo", "200 Mbps", "metro")
+    assert (otro["service_type"], otro["bandwidth"], otro["technology"]) == ("Corporativo", "200 Mbps", "gpon")   # solo_gpon
 
 
 def test_estimate_reuses_the_viewer_route_without_calling_google_again(entorno):
@@ -254,3 +256,18 @@ def test_summary_lists_lines_with_quantity_and_template_totals(entorno, tmp_path
     assert [(t["clave"], t["etiqueta"]) for t in resumen["totales"]] == [
         ("alcaldia", "ALCALDIA"), ("subtotal", "SUBTOTAL"), ("costo total", "Costo Total el 7,29 %"), ("total", "TOTAL")]
     assert resumen["totales"][-1]["valor"] is None                       # =I58+I60 without LibreOffice
+
+
+def test_the_version_of_a_budget_changes_when_the_excel_is_saved_again(entorno, tmp_path):
+    import os
+    main, pv, salida, llamadas = entorno
+    xlsx = salida / "visor" / "Estimacion_12.1_-86.2_20261026-120000.xlsx"
+    xlsx.parent.mkdir(parents=True, exist_ok=True)
+    from openpyxl import Workbook
+    libro = Workbook()
+    libro.active.title = "Presupuesto"
+    libro.save(xlsx)
+    antes = pv.version_archivo(xlsx)
+    assert pv.version_archivo(xlsx) == antes
+    os.utime(xlsx, ns=(xlsx.stat().st_atime_ns, xlsx.stat().st_mtime_ns + 5_000_000_000))      # saved again later
+    assert pv.version_archivo(xlsx) != antes

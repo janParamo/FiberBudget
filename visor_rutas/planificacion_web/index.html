@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/planificacion/">
+  <title>Planificación – Fiber Budget</title>
+  <link rel="stylesheet" href="lib/leaflet/leaflet.css">
+  <link rel="stylesheet" href="planificacion.css">
+</head>
+<body>
+  <!-- La clave del visor (rol editor o administrador) -->
+  <main id="pantalla-clave" class="clave" hidden>
+    <div class="clave-caja">
+      <h1>Planificación</h1>
+      <p>Escriba su clave del visor. Se guarda en este navegador.</p>
+      <label for="clave">Clave</label>
+      <input id="clave" type="password" autocomplete="off" spellcheck="false">
+      <p id="clave-error" class="error" role="alert" hidden></p>
+      <button id="clave-entrar" type="button" class="primario">Entrar</button>
+    </div>
+  </main>
+
+  <div id="app" hidden>
+    <header class="barra">
+      <h1>Planificación</h1>
+      <nav class="tabs" aria-label="Vista">
+        <button type="button" data-vista="lista" class="activa">Actividades</button>
+        <button type="button" data-vista="mapa">Mapa</button>
+        <button type="button" data-vista="cuadrillas">Cuadrillas</button>
+      </nav>
+      <span id="estado-conexion" class="nota" role="status"></span>
+      <button id="nueva-actividad" type="button">Nueva actividad</button>
+      <button id="salir" type="button" class="secundario">Salir</button>
+    </header>
+
+    <section id="tablero" class="tablero" aria-label="Resumen"></section>
+    <div id="alertas" class="alertas" hidden></div>
+
+    <div class="cuerpo">
+      <aside id="lateral" class="lateral" aria-label="Cuadrillas"></aside>
+
+      <main class="centro">
+        <section id="vista-lista" class="vista">
+          <div class="filtros">
+            <input id="buscar" type="search" placeholder="Buscar por cliente, ticket o código" autocomplete="off">
+            <select id="filtro-estado" aria-label="Estado"><option value="">Todos los estados</option></select>
+            <select id="filtro-cuadrilla" aria-label="Cuadrilla"><option value="">Todas las cuadrillas</option></select>
+            <span class="relleno"></span>
+            <select id="asignar-a" aria-label="Asignar a"><option value="">Asignar lo marcado a…</option></select>
+            <button id="asignar" type="button" disabled>Asignar</button>
+          </div>
+          <div class="tabla-caja"><table class="tabla" id="tabla"><thead><tr>
+            <th></th><th>Ticket</th><th>Cliente</th><th>Estado</th><th>Cuadrilla</th><th>Espera</th><th>Ejecución</th><th>Avance</th></tr></thead><tbody></tbody></table></div>
+        </section>
+        <section id="vista-mapa" class="vista" hidden><div id="mapa"></div></section>
+        <section id="vista-cuadrillas" class="vista" hidden>
+          <div id="lista-cuadrillas" class="tarjetas"></div>
+          <form id="form-cuadrilla" class="form-linea">
+            <b>Nueva cuadrilla</b>
+            <input id="cq-empresa" placeholder="Empresa (Tamos, Telenic, IDEAY…)" required maxlength="80">
+            <input id="cq-nombre" placeholder="Nombre (Tamos 3)" required maxlength="80">
+            <input id="cq-telefono" placeholder="Teléfono" maxlength="40">
+            <button type="submit">Crear</button>
+          </form>
+        </section>
+      </main>
+
+      <aside id="detalle" class="detalle" hidden aria-label="Detalle de la actividad"></aside>
+    </div>
+  </div>
+
+  <dialog id="dialogo-nueva">
+    <form method="dialog" id="form-nueva">
+      <h2>Nueva actividad</h2>
+      <p class="nota">Normalmente llega desde el visor de rutas; aquí se puede crear a mano.</p>
+      <label>Cliente <input name="cliente_nombre" required maxlength="200"></label>
+      <label>Ticket <input name="ticket" maxlength="64"></label>
+      <label>Código de cliente <input name="codigo_cliente" maxlength="64"></label>
+      <label>Contacto <input name="contacto_nombre" maxlength="200"></label>
+      <label>Teléfono del contacto <input name="contacto_telefono" maxlength="64"></label>
+      <label>Coordenada (lat, lon) <input name="coordenada" required placeholder="12.1364, -86.2514"></label>
+      <label>Dirección <input name="direccion" maxlength="300"></label>
+      <p id="nueva-error" class="error" hidden></p>
+      <div class="acciones"><button type="submit" class="primario">Crear</button><button type="button" id="nueva-cancelar" class="secundario">Cancelar</button></div>
+    </form>
+  </dialog>
+
+  <script src="lib/leaflet/leaflet.js"></script>
+  <script src="planificacion.js"></script>
+</body>
+</html>

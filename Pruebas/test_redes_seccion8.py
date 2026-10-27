@@ -107,7 +107,9 @@ def test_schema_architecture_rules(base_redes, con_redes):
                        "migracion_visio_corridas", "migracion_visio_log",         # logs: only inserted
                    "lugares_adjuntos", "lugares_compartidas",
                    "kmz_importacion_detalle",
-                   "almacen_archivos"}                       # files by (space, key): replaced whole, deleted by age                # images / shares: replaced or logically deleted by their owner; the rows of an import go away with it
+                   "almacen_archivos",
+                   "plan_empresas", "plan_cuadrilla_miembros", "plan_control_catalogo",          # planning: a list, a link and a catalog
+                   "plan_actividad_control", "plan_actividad_historial", "plan_mensajes"}        # the state of each control point (replaced) and two logs (only inserted)                       # files by (space, key): replaced whole, deleted by age                # images / shares: replaced or logically deleted by their owner; the rows of an import go away with it
     for tabla, cols in columnas.items():
         if tabla in sin_version or tabla.startswith(("geography_", "geometry_")):
             continue

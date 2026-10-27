@@ -12,11 +12,11 @@ import recalc
 from excel_generator import generar_excel
 
 ROOT = Path(__file__).resolve().parent.parent
-TEMPLATE = ROOT / "templates" / "PlantilaEjemploPresupuesto.xlsx"
+TEMPLATE = ROOT / "templates" / "Plantilla.xlsx"
 SOFFICE = recalc.find_soffice()
 pytestmark = pytest.mark.skipif(SOFFICE is None or not TEMPLATE.is_file(),
                                 reason="LibreOffice or the company template not available")
-ROUTE_LABEL = "Instalacion de Fibra Optica Aerea ADSS-FLAT/FTTH (6H - 12H)"
+ROUTE_LABEL = "Instalacion de Fibra Optica Area ADSS (24H - 48H)"
 
 
 def _budget(tmp_path: Path) -> Path:
@@ -36,7 +36,8 @@ def test_pdf_has_route_and_budget_pages_with_computed_totals(tmp_path):
     route_page, budget_page = (page.extract_text() for page in reader.pages)
     assert "ESQUEMA DE RUTA PROYECTADA" in route_page and "PRESUPUESTO DE OBRA - Cliente PDF" in route_page
     assert "MANO DE OBRA" in budget_page and "MATERIALES" in budget_page
-    assert "842.00" in budget_page                     # 100 m x C$ 8.42, computed by the template formulas
+    assert "1,172.00" in budget_page                   # 100 m x C$ 11.72 (ADSS 24H-48H), computed by the template formulas
+    assert "COSTOS" not in budget_page and "Variación de costos" not in budget_page         # the price catalogs are visible sheets of the template, not in the PDF
 
 
 def test_pdf_is_reused_until_the_excel_changes(tmp_path):

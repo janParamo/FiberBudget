@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f222a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Cuadrilla">
+  <base href="/cuadrilla/">
+  <title>Cuadrilla – Fiber Budget</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icono-apple.png">
+  <link rel="icon" type="image/png" href="icono-192.png">
+  <link rel="stylesheet" href="cuadrilla.css">
+</head>
+<body>
+  <main id="pantalla-clave" class="clave" hidden>
+    <div class="clave-caja">
+      <img src="icono-192.png" alt="" width="72" height="72">
+      <h1>Cuadrilla</h1>
+      <p>Escriba la clave que le dio el administrador. Se guarda en este teléfono.</p>
+      <label for="clave">Clave</label>
+      <input id="clave" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <p id="clave-error" class="error" role="alert" hidden></p>
+      <button id="clave-entrar" type="button" class="grande primario">Entrar</button>
+    </div>
+  </main>
+
+  <div id="app" hidden>
+    <header class="barra">
+      <div><h1 id="nombre-cuadrilla">Cuadrilla</h1><span id="nombre-empresa" class="nota"></span></div>
+      <div class="barra-der"><span id="estado" class="nota" role="status"></span><span id="gps" class="nota"></span><button id="salir" type="button" class="chico">Salir</button></div>
+    </header>
+    <p id="aviso" class="aviso" role="alert" hidden></p>
+    <main id="contenido" class="contenido"></main>
+  </div>
+
+  <script src="cuadrilla.js"></script>
+</body>
+</html>

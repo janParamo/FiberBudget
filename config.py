@@ -109,7 +109,7 @@ def get_settings() -> Settings:
         db_password=_require("DB_PASSWORD"),
         google_api_key=_require("GOOGLE_API_KEY"),
         service_api_key=_require("SERVICE_API_KEY"),
-        template_path=_path("TEMPLATE_PATH", "templates/PlantilaEjemploPresupuesto.xlsx"),
+        template_path=_path("TEMPLATE_PATH", "templates/Plantilla.xlsx"),
         output_dir=_path("OUTPUT_DIR", "output"),
         rules_path=_path("RULES_PATH", "business_rules.yaml"),
         log_file=_path("LOG_FILE", "logs/service.log"),

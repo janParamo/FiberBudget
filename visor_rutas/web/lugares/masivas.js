@@ -17,7 +17,7 @@
   const ESTADOS = { ok: ["válida", "#2ca02c"], invertida: ["al revés", "#fb8c00"], fuera: ["fuera de Nicaragua", "#e53935"], invalida: ["no válida", "#e53935"], duplicada: ["duplicada", "#9aa0ab"] };
   const num = (n, d = 0) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US", { maximumFractionDigits: d }));
   const ms = { ctx: null, vista: "inicio", nombre: "", formato: "", puntos: [], avisos: [], lote: null, resultados: [], sondeo: null, orden: { campo: "n", dir: 1 },
-               estado: "", tipoEstado: "", capa: null, capaRuta: null, modo: "local", conRutas: true, ocupado: false, seleccionado: null };
+               estado: "", tipoEstado: "", comentario: "", capa: null, capaRuta: null, modo: "local", conRutas: true, ocupado: false, seleccionado: null };
   const llamar = (m, a) => window.Redes.llamar(m, a);
   const aviso = (t, tipo) => ms.ctx.aviso(t, tipo);
 
@@ -52,6 +52,7 @@
   const estado = (texto, tipo = "") => { ms.estado = texto; ms.tipoEstado = tipo; pintar(); };
 
   async function leer(nombre, base64, subidaId) {
+    if ($("ms-comentario")) ms.comentario = $("ms-comentario").value;
     ms.ocupado = true;
     estado(`Leyendo ${nombre}…`, "cargando");
     const r = await ms.ctx.api().masivas_leer(nombre, base64 || "", subidaId || null).catch((e) => ({ ok: false, error: String(e) }));
@@ -106,7 +107,7 @@
                                 `con un límite por minuto (configurable en business_rules.yaml) y genera un Excel con LibreOffice, así que puede tardar. Se puede cancelar.`, "Calcular"))) return;
     ms.ocupado = true;
     estado("Iniciando el lote…", "cargando");
-    const r = await ms.ctx.api().masivas_iniciar(ms.nombre, ms.puntos).catch((e) => ({ ok: false, error: String(e) }));
+    const r = await ms.ctx.api().masivas_iniciar(ms.nombre, ms.puntos, ms.comentario).catch((e) => ({ ok: false, error: String(e) }));
     ms.ocupado = false;
     if (!r.ok) { estado(r.error, "error"); return; }
     ms.lote = r.lote; ms.resultados = []; ms.vista = "progreso"; estado("");
@@ -120,10 +121,17 @@
     if (!r.ok) { clearInterval(ms.sondeo); ms.sondeo = null; estado(r.error, "error"); return; }
     ms.resultados = ms.resultados.concat(r.lote.resultados);
     ms.lote = { ...r.lote, resultados: [] };
+    const haciendoPdf = (r.lote.pdf || {}).estado === "convirtiendo";
     if (r.lote.estado !== "corriendo") {
-      clearInterval(ms.sondeo); ms.sondeo = null;
+      if (ms.vista !== "resultados") aviso(`Lote ${r.lote.estado}: ${ms.resultados.filter((x) => x.ok).length} de ${r.lote.total} presupuestos`, r.lote.estado === "error" ? "error" : "ok");
       ms.vista = "resultados";
-      aviso(`Lote ${r.lote.estado}: ${ms.resultados.filter((x) => x.ok).length} de ${r.lote.total} presupuestos`, r.lote.estado === "error" ? "error" : "ok");
+      if (!haciendoPdf) {
+        clearInterval(ms.sondeo); ms.sondeo = null;
+        if (ms.pdfAvisado !== (r.lote.pdf || {}).estado && ["listo", "error"].includes((r.lote.pdf || {}).estado)) {
+          ms.pdfAvisado = r.lote.pdf.estado;
+          aviso(r.lote.pdf.error || "PDF listos: ya se pueden descargar", r.lote.pdf.estado === "listo" && !r.lote.pdf.error ? "ok" : "error");
+        }
+      }
     }
     pintar();
   }
@@ -135,8 +143,14 @@
       if (ms.modo === "remoto") return accion("zip");
       const r = await ms.ctx.api().masivas_abrir_carpeta(ms.lote.id);
       if (!r.ok) estado(r.error, "error");
-    } else if (a === "zip") {
-      const r = await ms.ctx.api().masivas_descargar(ms.lote.id);
+    } else if (a === "pdf") {
+      const r = await ms.ctx.api().masivas_pdf(ms.lote.id, ms.cualesPdf || "ambos").catch((e) => ({ ok: false, error: String(e) }));
+      if (!r.ok) { estado(r.error, "error"); return; }
+      ms.lote = { ...ms.lote, pdf: r.lote.pdf };
+      if (!ms.sondeo) ms.sondeo = setInterval(sondear, 1500);
+      estado("");
+    } else if (a === "zip" || a === "zip_pdf") {
+      const r = await ms.ctx.api().masivas_descargar(ms.lote.id, a === "zip_pdf" ? "pdf" : "xlsx");
       if (!r.ok) { estado(r.error, "error"); return; }
       const g = await Redes.guardarArchivo(r.nombre, r.datos, "zip");
       if (g.ok) estado(`Guardado en ${g.ruta}`, "ok"); else if (!g.cancelado) estado(g.error, "error");
@@ -180,6 +194,11 @@
     return `<p class="ik-ayuda">Suba un archivo con coordenadas (<b>Excel</b>, <b>CSV</b>, <b>Word</b> o <b>texto</b>) o pegue el texto. Se buscan las columnas de latitud / longitud (o una de coordenadas),
         el nombre y el código; en Word y texto se leen los formatos del buscador (decimal y grados).</p>
       <button type="button" class="btn btn-primario" data-ms="elegir" ${ms.ocupado ? "disabled" : ""}>Elegir archivo…</button>
+      <h3 class="ik-titulo">Comentario del ticket (opcional)</h3>
+      <p class="ik-ayuda">Los datos del cliente y del vendedor, escritos como <b>Campo: valor</b> (uno por línea o varios en la misma): <i>Código cliente, Nombre de contacto, Teléfono contacto, Ejecutivo de ventas</i> (y Persona de contacto, Celular, Vendedor). Llenan la primera página de cada presupuesto. Del <i>Ancho de banda</i> solo se cambia la línea del comentario de la segunda hoja (menos de 100 queda en 100 Residencial); el comentario no se escribe en el Excel ni cambia el cálculo.
+        Si el comentario separa a cada cliente en su propio párrafo (con su ticket, código o nombre), cada presupuesto toma solo el suyo.
+        El documento se llama <b>ticket_tienda.xlsx</b>: el ticket y el nombre de la tienda salen de las columnas del archivo (si falta alguno, del comentario).</p>
+      <textarea id="ms-comentario" data-ms="comentario" class="ms-pegado" rows="4" placeholder="Código cliente: C12345&#10;Nombre de contacto: Juan Mora&#10;Teléfono contacto: 8888-0000&#10;Ejecutivo de ventas: Ana López">${esc(ms.comentario)}</textarea>
       <h3 class="ik-titulo">O pegue las coordenadas</h3>
       <textarea id="ms-pegado" class="ms-pegado" rows="6" placeholder="Casa Pérez 12.1364, -86.2514&#10;12°8'11&quot;N 86°15'5&quot;O Tienda Ana"></textarea>
       <button type="button" class="btn" data-ms="leer_pegado" ${ms.ocupado ? "disabled" : ""}>Leer lo pegado</button>`;
@@ -188,7 +207,8 @@
   function filaPrevia(p) {
     const [texto, color] = ESTADOS[p.estado] || ESTADOS.invalida;
     return `<tr class="${p.incluir ? "" : "ik-rechazado"}"><td>${p.n}</td><td><input type="checkbox" data-ms="incluir" data-n="${p.n}" ${p.incluir ? "checked" : ""} ${p.estado !== "ok" ? "disabled" : ""}></td>
-      <td><input class="ms-in" data-ms="nombre" data-n="${p.n}" value="${esc(p.nombre)}" placeholder="nombre"></td>
+      <td><input class="ms-in ms-corto" data-ms="ticket" data-n="${p.n}" value="${esc(p.ticket)}" placeholder="ticket"></td>
+      <td><input class="ms-in" data-ms="nombre" data-n="${p.n}" value="${esc(p.nombre)}" placeholder="nombre del cliente"></td>
       <td><input class="ms-in ms-corto" data-ms="codigo" data-n="${p.n}" value="${esc(p.codigo)}" placeholder="C#####"></td>
       <td><input class="ms-in" data-ms="texto" data-n="${p.n}" value="${esc(p.texto)}" title="${esc(p.motivo)}"></td>
       <td><span class="ms-estado" style="--c:${color}" title="${esc(p.motivo)}">${texto}</span>${p.estado === "invertida" && p.sugerencia ? ` <button type="button" class="btn btn-chico" data-ms="usar_sugerida" data-n="${p.n}">Usar ${p.sugerencia[0].toFixed(4)}, ${p.sugerencia[1].toFixed(4)}</button>` : ""}</td></tr>`;
@@ -200,7 +220,7 @@
     return `<div class="ik-archivo"><b>${esc(ms.nombre)}</b> <span class="nota">${esc(ms.formato)} · ${ms.puntos.length} coordenadas</span></div>${ms.avisos.map((a) => `<div class="nota error">${esc(a)}</div>`).join("")}
       <div class="ik-chips"><span class="ik-chip" style="--c:#2ca02c"><b>${cuenta("ok")}</b> válidas</span><span class="ik-chip" style="--c:#fb8c00"><b>${cuenta("invertida")}</b> al revés</span>
         <span class="ik-chip" style="--c:#e53935"><b>${cuenta("fuera") + cuenta("invalida")}</b> con problema</span><span class="ik-chip" style="--c:#9aa0ab"><b>${cuenta("duplicada")}</b> duplicadas</span></div>
-      <div class="ms-tabla"><table class="ms-t"><thead><tr><th>#</th><th></th><th>Nombre</th><th>Código</th><th>Coordenada</th><th>Estado</th></tr></thead><tbody>${ms.puntos.map(filaPrevia).join("")}</tbody></table></div>
+      <div class="ms-tabla"><table class="ms-t"><thead><tr><th>#</th><th></th><th>Ticket</th><th>Cliente</th><th>Código</th><th>Coordenada</th><th>Estado</th></tr></thead><tbody>${ms.puntos.map(filaPrevia).join("")}</tbody></table></div>
       <div class="ik-pie"><button type="button" class="btn btn-primario" data-ms="calcular" ${incl && !ms.ocupado ? "" : "disabled"}>Calcular ${incl} presupuesto(s)</button>
         <button type="button" class="btn" data-ms="volver">Volver</button></div>`;
   }
@@ -227,13 +247,25 @@
       `<tr class="ms-error"><td>${r.n}</td><td>${esc(r.nombre)}</td><td colspan="8">${esc(r.error)}</td></tr>`).join("")}</tbody></table>`;
   }
 
+  function botonPdf(ok) {
+    const pdf = (ms.lote && ms.lote.pdf) || {};
+    if (pdf.estado === "convirtiendo") return `<button type="button" class="btn" disabled>Convirtiendo a PDF… ${pdf.hechos} de ${pdf.total}</button>`;
+    if (pdf.estado === "listo") return `<button type="button" class="btn btn-primario" data-ms="zip_pdf">Descargar los PDF (.zip)</button>`;
+    const cuales = ms.cualesPdf || "ambos";
+    return `<select data-ms="cuales_pdf" aria-label="Qué convertir a PDF"><option value="ambos" ${cuales === "ambos" ? "selected" : ""}>Aprobados y desaprobados</option>
+      <option value="aprobados" ${cuales === "aprobados" ? "selected" : ""}>Solo aprobados (menos de 2 km)</option>
+      <option value="desaprobados" ${cuales === "desaprobados" ? "selected" : ""}>Solo desaprobados (más de 2 km)</option></select>
+      <button type="button" class="btn" data-ms="pdf" ${ok ? "" : "disabled"}>${pdf.estado === "error" ? "Reintentar PDF" : "Convertir a PDF"}</button>`;
+  }
+
   function vistaResultados() {
     const l = ms.lote, ok = ms.resultados.filter((r) => r.ok).length;
     return `<div class="ik-archivo"><b>${esc(l.nombre)}</b> <span class="nota">${esc(l.estado)} · ${ok} de ${l.total} presupuestos · ${Math.floor(l.segundos / 60)} min ${l.segundos % 60} s</span></div>
       ${l.mensaje ? `<div class="nota error">${esc(l.mensaje)}</div>` : ""}<div class="ms-tabla">${tablaResultados(true)}</div>
-      <p class="nota">Clic en una fila para ver su ruta en el mapa. Los Excel (uno por coordenada y un Resumen.xlsx) están en ${ms.modo === "remoto" ? "el servidor" : esc(l.carpeta)}.</p>
+      <p class="nota">Clic en una fila para ver su ruta en el mapa. Los Excel (uno por coordenada, en las carpetas aprobados —ruta de menos de 2 km— y desaprobados, y un Resumen.xlsx) están en ${ms.modo === "remoto" ? "el servidor" : esc(l.carpeta)}.</p>
       <div class="ik-pie"><button type="button" class="btn btn-primario" data-ms="carpeta" ${ok ? "" : "disabled"}>${ms.modo === "remoto" ? "Descargar .zip" : "Abrir carpeta"}</button>
         ${ms.modo === "remoto" ? "" : '<button type="button" class="btn" data-ms="zip">Guardar .zip…</button>'}
+        ${botonPdf(ok)}
         <button type="button" class="btn" data-ms="proyecto" ${ok ? "" : "disabled"}>Guardar como proyecto</button><button type="button" class="btn" data-ms="lugares" ${ok ? "" : "disabled"}>Guardar en Mis lugares</button>
         <label class="nota"><input type="checkbox" data-ms="con_rutas" ${ms.conRutas ? "checked" : ""}> con las rutas</label><button type="button" class="btn" data-ms="volver">Otro archivo</button></div>`;
   }
@@ -258,7 +290,7 @@
     else if (a === "calcular") calcular();
     else if (a === "volver") {
       if (ms.sondeo) { clearInterval(ms.sondeo); ms.sondeo = null; }
-      ms.vista = "inicio"; ms.puntos = []; ms.lote = null; ms.resultados = []; ms.seleccionado = null; estado("");
+      ms.vista = "inicio"; ms.puntos = []; ms.lote = null; ms.pdfAvisado = ""; ms.resultados = []; ms.seleccionado = null; estado("");
       dibujarPuntos(); mostrarRuta(null);
     } else if (a === "usar_sugerida") {
       const p = ms.puntos.find((x) => x.n === Number(b.dataset.n));
@@ -270,7 +302,7 @@
     } else if (a === "ver_ruta") {
       const r = ms.resultados.find((x) => x.n === Number(b.dataset.n));
       ms.seleccionado = r ? r.n : null; mostrarRuta(r); pintar();
-    } else if (["cancelar", "carpeta", "zip", "lugares", "proyecto"].includes(a)) accion(a);
+    } else if (["cancelar", "carpeta", "zip", "zip_pdf", "pdf", "lugares", "proyecto"].includes(a)) accion(a);
   }
 
   function alCambiar(e) {
@@ -281,8 +313,11 @@
     if (a === "incluir" && p) { p.incluir = b.checked; dibujarPuntos(); pintar(); }
     else if (a === "nombre" && p) { p.nombre = b.value.trim(); dibujarPuntos(); }
     else if (a === "codigo" && p) p.codigo = b.value.trim();
+    else if (a === "ticket" && p) p.ticket = b.value.trim();
+    else if (a === "comentario") ms.comentario = b.value;
     else if (a === "texto" && p) editarCoordenada(p, b.value);
     else if (a === "con_rutas") ms.conRutas = b.checked;
+    else if (a === "cuales_pdf") ms.cualesPdf = b.value;
   }
 
   function iniciar(ctx) {

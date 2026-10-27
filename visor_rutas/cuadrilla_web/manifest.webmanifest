@@ -1,0 +1,16 @@
+{
+  "name": "Cuadrilla – Fiber Budget",
+  "short_name": "Cuadrilla",
+  "description": "Instalaciones asignadas a la cuadrilla: cola, puntos de control y avance",
+  "lang": "es",
+  "start_url": "/cuadrilla/",
+  "scope": "/cuadrilla/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#1f222a",
+  "icons": [
+    {"src": "icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}

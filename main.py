@@ -147,6 +147,12 @@ import visor_rutas.campo_api as campo_api  # noqa: E402
 app.include_router(campo_api.router)
 app.include_router(campo_api.pagina)
 
+# Crew planning (activities assigned to the crews, states, control points, times): /visor/planificacion/*, same keys as the field app.
+import visor_rutas.planificacion_api as planificacion_api  # noqa: E402
+
+app.include_router(planificacion_api.router)
+app.include_router(planificacion_api.pagina)
+
 
 def _route_linestring_wkt(points: list[tuple[float, float]]) -> str:
     """Convert route points from (latitude, longitude) to EPSG:4326 WKT."""
@@ -165,6 +171,8 @@ class TicketRequest(BaseModel):
     contact_name: str = Field(min_length=1, max_length=200)
     contact_phone: str = Field(min_length=1, max_length=64)
     raw_comment: str = Field(max_length=30000)   # written verbatim; Excel caps a cell at 32767 chars
+    # Optional, for the viewer's bulk coordinates: values to replace in the template's own comment ({"bandwidth": "100 mbps", "plan": "Residencial"}).
+    comment_edits: dict[str, str] | None = None
     # Optional: omitted, null or "" all mean "not requested".
     technology: Literal["gpon", "metro"] | None = Field(
         default=None, description="Forces GPON or Metro; otherwise taken from the comment or bandwidth")
@@ -697,7 +705,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     required_poles = existing_poles + quantities[new_pole_label]
     final_distance_m = calcular_metraje_final(route.distance_m, rules)
     reserve_m = round(final_distance_m - route.distance_m, 2)
-    materials = calcular_materiales(final_distance_m, required_poles, rules)
+    materials = calcular_materiales(final_distance_m, required_poles, rules, existing_poles=existing_poles)
     log.info("Route audit: raw_distance_m=%.2f reserve_m=%.2f final_distance_m=%.2f",
              route.distance_m, reserve_m, final_distance_m)
     log.info(
@@ -763,11 +771,11 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
 
     # 4) Excel quantities, materials and technical route header.
     excel_data = {
-        "route_map_png": map_png,
         "budget_id": secrets.token_hex(16),
         "ticket_id": req.ticket_id,
         "client_name": req.client_name,
         "raw_comment": req.raw_comment,
+        "comment_edits": req.comment_edits,
         "quantities": quantities,
         "materials": {**equipment, **pole_material},
         "hardware": hardware_fibra(rules, materials["cable_key"], bool(duct_spans)),
@@ -784,6 +792,8 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
             "contact_phone": req.contact_phone,
         },
     }
+    if rules.get("route_map", {}).get("enabled", True):
+        excel_data["route_map_png"] = map_png          # absent (route_map.enabled: false) = the "ESQUEMA DE RUTA PROYECTADA" box stays blank
     generated = generar_excel(excel_data, rules, settings.template_path, output_dir)
     missing_equipment = [item for item in generated.missing_materials if item in equipment]
     warnings = origin_warnings + marked_warnings + list(generated.warnings)

@@ -349,6 +349,7 @@ async def subida_parte(request: Request, subida: str = PathParam(pattern=r"^[A-Z
 class MasivasIniciarPedido(BaseModel):
     nombre: str = Field(max_length=200)
     puntos: list[dict[str, Any]] = Field(min_length=1, max_length=2000)
+    comentario: str = Field(default="", max_length=20000)
 
 
 @router.post("/masivas/leer")
@@ -365,7 +366,7 @@ def masivas_iniciar(pedido: MasivasIniciarPedido, persona: str = Depends(persona
     for _ in range(validos):
         limitador.registrar(persona, limite_por_hora())
     with _registro(persona, "masivas.iniciar") as estado:
-        return _resultado_ok(_para_remoto(api_local().masivas_iniciar(pedido.nombre, pedido.puntos)), estado)
+        return _resultado_ok(_para_remoto(api_local().masivas_iniciar(pedido.nombre, pedido.puntos, pedido.comentario)), estado)
 
 
 @router.get("/masivas/{lote}")
@@ -380,11 +381,20 @@ def masivas_cancelar(lote: str = PathParam(pattern=r"^[0-9-]{1,30}$"), persona: 
         return _resultado_ok(_para_remoto(api_local().masivas_cancelar(lote)), estado)
 
 
+@router.post("/masivas/{lote}/pdf")
+def masivas_pdf(lote: str = PathParam(pattern=r"^[0-9-]{1,30}$"), cuales: str = Query(default="ambos", pattern=r"^(aprobados|desaprobados|ambos)$"),
+                persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Starts the PDF of the aprobados, the desaprobados or both of a finished batch (background; progress in the batch state)."""
+    with _registro(persona, "masivas.pdf") as estado:
+        return _resultado_ok(_para_remoto(api_local().masivas_pdf(lote, cuales)), estado)
+
+
 @router.post("/masivas/{lote}/descargar")
-def masivas_descargar(lote: str = PathParam(pattern=r"^[0-9-]{1,30}$"), persona: str = Depends(persona_visor)) -> dict[str, Any]:
-    """The budgets of a finished batch as a .zip (base64)."""
+def masivas_descargar(lote: str = PathParam(pattern=r"^[0-9-]{1,30}$"), tipo: str = Query(default="xlsx", pattern=r"^(xlsx|pdf)$"),
+                      persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The budgets of a finished batch as a .zip (base64): the Excel files or, with tipo=pdf, the PDFs."""
     with _registro(persona, "masivas.descargar") as estado:
-        return _resultado_ok(_para_remoto(api_local().masivas_descargar(lote)), estado)
+        return _resultado_ok(_para_remoto(api_local().masivas_descargar(lote, tipo)), estado)
 
 
 class FusionPedido(BaseModel):
@@ -439,6 +449,39 @@ def presupuesto(pedido: PresupuestoPedido, persona: str = Depends(persona_limita
     """Full budget from the viewer form (TicketRequest validation); files in output/visor."""
     with _registro(persona, "presupuesto", str(pedido.campos.get("coordenada") or "")) as estado:
         return _resultado_ok(_para_remoto(api_local().generar_presupuesto(pedido.campos)), estado)
+
+
+class PdfPedido(BaseModel):
+    archivos: list[str] = Field(default_factory=list, max_length=600)
+    carpetas: list[str] = Field(default_factory=list, max_length=100)
+
+
+@router.get("/pdf/carpetas")
+def pdf_carpetas(persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The batch folders of the server's output/visor with their groups, for choosing which to convert to PDF."""
+    with _registro(persona, "pdf.carpetas") as estado:
+        return _resultado_ok(_para_remoto(api_local().pdf_carpetas()), estado)
+
+
+@router.post("/pdf/convertir")
+def pdf_convertir(pedido: PdfPedido, persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Starts the PDF of budgets that already exist: Excel files ("remoto:<id>" as the history gives them) and/or batch folders (masivo_X[/aprobados])."""
+    archivos = [(a[len(PREFIJO_ARCHIVO):] + ".xlsx") if a.startswith(PREFIJO_ARCHIVO) else a for a in pedido.archivos]
+    with _registro(persona, "pdf.convertir") as estado:
+        return _resultado_ok(_para_remoto(api_local().pdf_convertir(archivos, pedido.carpetas)), estado)
+
+
+@router.get("/pdf/{trabajo}")
+def pdf_estado(trabajo: str = PathParam(pattern=r"^[0-9-]{1,30}$"), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    with _registro(persona, "pdf.estado") as estado:
+        return _resultado_ok(_para_remoto(api_local().pdf_estado(trabajo)), estado)
+
+
+@router.post("/pdf/{trabajo}/descargar")
+def pdf_descargar(trabajo: str = PathParam(pattern=r"^[0-9-]{1,30}$"), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The PDFs of a finished conversion as a .zip (base64)."""
+    with _registro(persona, "pdf.descargar") as estado:
+        return _resultado_ok(_para_remoto(api_local().pdf_descargar(trabajo)), estado)
 
 
 @router.get("/presupuestos")

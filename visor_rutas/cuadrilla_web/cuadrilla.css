@@ -1,0 +1,57 @@
+:root {
+  --fondo: #f1f3f7; --panel: #fff; --borde: #d9dee8; --texto: #1f2430; --suave: #5b6270; --primario: #1f6feb; --ok: #2ca02c; --aviso: #fb8c00; --error: #e53935;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --fondo: #14171d; --panel: #1d2129; --borde: #343a46; --texto: #e6e9ef; --suave: #98a1b3; }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100%; }
+body { font: 16px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; background: var(--fondo); color: var(--texto); padding-bottom: env(safe-area-inset-bottom); }
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); }
+button:disabled { opacity: .5; }
+button.primario { background: var(--primario); border-color: var(--primario); color: #fff; }
+button.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+button.peligro { color: var(--error); border-color: var(--error); }
+button.chico { min-height: 34px; padding: 4px 10px; font-size: 14px; }
+button.grande { width: 100%; min-height: 50px; font-weight: 600; }
+input { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); }
+.nota { color: var(--suave); font-size: 13px; }
+.error { color: var(--error); }
+
+.clave { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--fondo); padding: 16px; }
+.clave-caja { background: var(--panel); border: 1px solid var(--borde); border-radius: 14px; padding: 20px; width: min(360px, 100%); display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.clave-caja img { align-self: center; }
+.clave-caja h1 { margin: 0; text-align: center; }
+
+.barra { position: sticky; top: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 14px 8px; background: #1f222a; color: #fff; }
+.barra h1 { margin: 0; font-size: 18px; }
+.barra .nota { color: #b6bdcc; }
+.barra-der { display: flex; align-items: center; gap: 8px; text-align: right; font-size: 12px; }
+.barra button { background: transparent; color: #fff; border-color: #4a5160; }
+.aviso { margin: 10px 14px 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--error) 14%, var(--panel)); border: 1px solid var(--error); }
+.contenido { padding: 12px 14px 28px; display: flex; flex-direction: column; gap: 12px; }
+h2.seccion { margin: 6px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--suave); }
+
+.tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.tarjeta.actual { border: 2px solid var(--primario); }
+.tarjeta h3 { margin: 0; font-size: 18px; }
+.etiqueta { display: inline-block; padding: 2px 10px; border-radius: 12px; color: #fff; font-size: 13px; background: var(--c, #9aa0ab); }
+.fila { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fila > * { flex: 1 1 auto; }
+.datos { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+.datos dt { color: var(--suave); }
+.datos dd { margin: 0; overflow-wrap: anywhere; }
+.datos a { color: var(--primario); font-weight: 600; text-decoration: none; }
+.tiempos { display: flex; gap: 16px; font-size: 14px; }
+.tiempos b { font-size: 18px; display: block; }
+.controles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.controles button { width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; min-height: 48px; }
+.controles .casilla { width: 24px; height: 24px; border-radius: 6px; border: 2px solid var(--borde); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+.controles .hecho .casilla { background: var(--ok); border-color: var(--ok); color: #fff; }
+.controles .hecho span.texto { text-decoration: line-through; color: var(--suave); }
+.controles small { margin-left: auto; color: var(--suave); }
+.barra-avance { height: 8px; border-radius: 4px; background: var(--borde); overflow: hidden; }
+.barra-avance i { display: block; height: 100%; background: var(--ok); }
+.vacio { text-align: center; padding: 28px 12px; color: var(--suave); }

@@ -33,9 +33,12 @@ STUBS = """(() => {
       Object.assign({texto: 'MUFA FERRETERIA LA PRINCIPAL', x_cm: 12, y_cm: 8}, %s), Object.assign({texto: 'HACIA FERRETERIA', x_cm: 48, y_cm: 22}, %s)]};
     if (/^12\\./.test(t)) return {ok: true, modo: 'coordenada', total: 1, resultados: [
       Object.assign({texto: 'MF OTRA / 12.12346, -86.23457', x_cm: 20, y_cm: 10, distancia_m: 3.2, coordenada: {lat: 12.12346, lon: -86.23457}}, %s)]};
+    if (t.includes('mufa uno')) return {ok: true, modo: 'texto', total: 2, mufas_en_diagrama: 5, resultados: [
+      Object.assign({texto: 'MF UNO', x_cm: 20, y_cm: 10, mufa: {nombre: 'MF UNO', tipo: 'MUFA', lat: 12.1, lon: -86.2, estimada: false}}, %s),
+      Object.assign({texto: 'MF DOS', x_cm: 40, y_cm: 12, distancia_m: 120.5, mufa: {nombre: 'MF DOS', tipo: 'MUFA', lat: 12.2, lon: -86.3, estimada: true}}, %s)]};
     return {ok: true, modo: 'texto', total: 0, resultados: []};
   };
-  return true; })()""" % (json.dumps(MUFA), json.dumps(DETALLE), json.dumps(DATA_URL), json.dumps(PAGINA), json.dumps(PAGINA), json.dumps(PAGINA))
+  return true; })()""" % (json.dumps(MUFA), json.dumps(DETALLE), json.dumps(DATA_URL), json.dumps(PAGINA), json.dumps(PAGINA), json.dumps(PAGINA), json.dumps(PAGINA), json.dumps(PAGINA))
 
 
 async def _escribir(p, selector, texto):
@@ -96,6 +99,14 @@ async def _recorrido():
         await _escribir(p, BUS, "12.12346, -86.23457")
         await p.esperar("document.querySelector('#pd-busqueda .dg-bus-info').textContent === '1 de 1'", 5)
         assert "a 3.2 m" in await p.evaluar("document.querySelector('#pd-busqueda .dg-bus-fila').innerText")
+        # ---- the mufas drawn in the diagram come as «Mufa» with their coordinate (and how far they are from a coordinate)
+        await _escribir(p, BUS, "mufa uno")
+        await p.esperar("document.querySelector('#pd-busqueda .dg-bus-info').textContent === '1 de 2 · mufa'", 5)
+        filas = await p.evaluar("[...document.querySelectorAll('#pd-busqueda .dg-bus-fila')].map((f) => f.innerText.replace(/\s+/g, ' ').trim())")
+        assert filas[0].startswith("MUFA MF UNO") and "12.10000, -86.20000" in filas[0] and "(estimada)" not in filas[0]
+        assert "MF DOS" in filas[1] and "12.20000, -86.30000 (estimada)" in filas[1] and "a 120.5 m" in filas[1]
+        assert await p.evaluar("document.querySelectorAll('#pd-busqueda .dg-bus-mufa').length") == 2
+        assert await p.evaluar("document.querySelector('#pd-busqueda .dg-bus-texto').placeholder") == "Buscar en el diagrama: texto, mufa o coordenada"
         # ---- nothing found: it says so and no ring is left from the previous search
         await _escribir(p, BUS, "zzzz")
         await p.esperar("document.querySelector('#pd-busqueda .dg-bus-info').textContent.includes('No está en este diagrama')", 5)

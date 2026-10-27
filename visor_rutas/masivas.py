@@ -30,7 +30,7 @@ from xml.etree import ElementTree as ET
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from visor_rutas import almacen_archivos, coordenadas
+from visor_rutas import almacen_archivos, comentario_ticket, coordenadas
 
 log = logging.getLogger(__name__)
 
@@ -57,9 +57,9 @@ def _normal(texto: Any) -> str:
 
 # --------------------------------------------------------------------------- lectura
 
-def _punto(n: int, texto: str, nombre: str = "", codigo: str = "") -> dict[str, Any]:
+def _punto(n: int, texto: str, nombre: str = "", codigo: str = "", ticket: str = "") -> dict[str, Any]:
     r = coordenadas.interpretar(texto)
-    p: dict[str, Any] = {"n": n, "nombre": nombre.strip()[:160], "codigo": codigo.strip()[:40], "texto": texto.strip()[:200], "lat": None, "lon": None,
+    p: dict[str, Any] = {"n": n, "ticket": ticket.strip()[:40], "nombre": nombre.strip()[:160], "codigo": codigo.strip()[:40], "texto": texto.strip()[:200], "lat": None, "lon": None,
                          "estado": INVALIDA, "motivo": "", "sugerencia": None, "incluir": False}
     if r.estado == coordenadas.OK:
         p.update(lat=r.lat, lon=r.lon, estado=OK, incluir=True)
@@ -196,10 +196,16 @@ def _columnas(fila: list[Any]) -> dict[str, int]:
             cols.setdefault("lon", i)
         elif t in ENCABEZADOS_COORD or t.startswith("coordenada"):
             cols.setdefault("coord", i)
+        elif "ticket" in t or t in ("caso", "no caso", "numero de caso", "tkt"):
+            cols.setdefault("ticket", i)
         elif "codigo" in t or t in ("cod", "code", "id", "id cliente", "c#"):
             cols.setdefault("codigo", i)
-        elif any(k in t for k in ("nombre", "cliente", "sitio", "ticket", "name", "descripcion", "direccion")):
+        elif t in ("tienda", "tiendas", "nombre de tienda", "nombre tienda", "nombre de la tienda", "sucursal", "local", "store") or t.startswith("tienda"):
+            cols.setdefault("tienda", i)                            # the store's name: the name of the budget whenever the file has it
+        elif any(k in t for k in ("nombre", "cliente", "sitio", "name")):
             cols.setdefault("nombre", i)
+        elif any(k in t for k in ("descripcion", "direccion")):
+            cols.setdefault("direccion", i)                         # only names the point when the file has no store / name column
     return cols
 
 
@@ -216,13 +222,18 @@ def _desde_tabla(filas: list[list[Any]]) -> list[dict[str, Any]]:
         celdas = [_celda(c) for c in fila]
         if cols:
             def en(k: str) -> str:
+                if k == "nombre":
+                    return next((en_(n) for n in ("tienda", "nombre", "direccion") if en_(n)), "")
+                return en_(k)
+
+            def en_(k: str) -> str:
                 return celdas[cols[k]] if k in cols and cols[k] < len(celdas) else ""
             texto = f"{_decimal(en('lat'))}, {_decimal(en('lon'))}" if "lat" in cols and "lon" in cols else en("coord")
             if not texto.strip(", "):
                 if any(celdas):
-                    puntos.append({**_punto(len(puntos) + 1, "", en("nombre"), en("codigo")), "motivo": "La fila no tiene coordenada"})
+                    puntos.append({**_punto(len(puntos) + 1, "", en("nombre"), en("codigo"), en("ticket")), "motivo": "La fila no tiene coordenada"})
                 continue
-            puntos.append(_punto(len(puntos) + 1, texto, en("nombre"), en("codigo")))
+            puntos.append(_punto(len(puntos) + 1, texto, en("nombre"), en("codigo"), en("ticket")))
             continue
         # no header: one cell with a coordinate, or two adjacent numeric cells
         encontrada, usadas = None, set()
@@ -282,7 +293,7 @@ def revisar(puntos: Any) -> list[dict[str, Any]]:
     salida = []
     for i, p in enumerate(puntos[:MAX_PUNTOS_LEIDOS], 1):
         p = p if isinstance(p, dict) else {}
-        nuevo = _punto(i, str(p.get("texto") or ""), str(p.get("nombre") or ""), str(p.get("codigo") or ""))
+        nuevo = _punto(i, str(p.get("texto") or ""), str(p.get("nombre") or ""), str(p.get("codigo") or ""), str(p.get("ticket") or ""))
         if not p.get("incluir", nuevo["incluir"]):
             nuevo["incluir"] = False
         salida.append(nuevo)
@@ -319,14 +330,83 @@ class CacheLimitada:
         return self._cache(origin, destination)
 
 
-def _seguro(texto: str) -> str:
+def _seguro(texto: str, largo: int = 50) -> str:
     t = "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", t).strip("_")[:50] or "lote"
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", t).strip("_")[:largo] or "lote"
+
+
+_RE_CODIGO_COMENTARIO = (
+    re.compile(r"c[oó]d(?:igo|\.)?\s*(?:de\s+|del\s+)?cliente\s*[:#=\-]?\s*([A-Za-z]{0,3}\s?\d[\w\-]*)", re.I),
+    re.compile(r"cliente\s*(?:c[oó]d(?:igo)?|id|n[oú]m(?:ero)?\.?|no\.?|#)\s*[:#=\-]?\s*([A-Za-z]{0,3}\s?\d[\w\-]*)", re.I),
+    re.compile(r"c[oó]d(?:igo|\.)?\s*[:#=]\s*([A-Za-z]{0,3}\s?\d[\w\-]*)", re.I),
+    re.compile(r"\b(C\s?\d{3,8})\b"),
+)
+
+
+def comentario_del_punto(comentario: str, p: dict[str, Any]) -> str:
+    """The part of the general comment that is about this point: the blocks (separated by a blank line) or lines that name its ticket, code or
+    name; the whole comment when none does (one comment for every client)."""
+    comentario = (comentario or "").strip()
+    if not comentario:
+        return ""
+    claves = [str(p.get(k) or "").strip().casefold() for k in ("ticket", "codigo", "nombre")]
+    claves = [k for k in claves if len(k) >= 3]
+    if not claves:
+        return comentario
+    for trozos in (re.split(r"\n\s*\n", comentario), comentario.splitlines()):
+        propios = [t for t in trozos if any(k in t.casefold() for k in claves)]
+        if propios and len(propios) < len(trozos):
+            return "\n".join(t.strip() for t in propios)
+    return comentario
+
+
+def codigo_cliente(p: dict[str, Any], comentario: str) -> str:
+    """The client code: the file's column, else the one written in the comment ("Código cliente: C12345")."""
+    if str(p.get("codigo") or "").strip():
+        return str(p["codigo"]).strip()
+    escrito = comentario_ticket.extraer_campos(comentario).get("client_code")
+    if escrito:
+        return escrito[:40]
+    for patron in _RE_CODIGO_COMENTARIO:
+        m = patron.search(comentario or "")
+        if m:
+            return re.sub(r"\s+", "", m.group(1))[:40]
+    return ""
+
+
+def _cambios_al_comentario(comentario: str) -> dict[str, str]:
+    """What goes into the template's comment box (second sheet) from the ticket's comment: the bandwidth it writes ("Ancho de banda: 20M" ->
+    "20 mbps"); below visor_masivo.ancho_banda_minimo_mbps (100) it is left as that minimum and "Residencial"."""
+    mbps = comentario_ticket.ancho_de_banda_mbps(comentario)
+    if mbps is None:
+        return {}
+    from visor_rutas import presupuesto_visor
+    reglas = presupuesto_visor.main.load_rules(presupuesto_visor.main.settings.rules_path).get("visor_masivo") or {}
+    minimo = float(reglas.get("ancho_banda_minimo_mbps", 100))
+    if mbps < minimo:
+        return {"bandwidth": f"{minimo:g} mbps", "plan": str(reglas.get("plan_ancho_bajo", "Residencial"))}
+    return {"bandwidth": f"{mbps:g} mbps"}
+
+
+def nombre_documento(p: dict[str, Any], codigo: str, usados: set[str], con_codigo: bool = False) -> str:
+    """«ticket_tienda.xlsx»: the ticket number and the name of the store (the name column of the file); with `con_codigo`
+    (visor_masivo.nombre_con_codigo) «ticket_código_tienda.xlsx». A missing part is left out and a repeated name gets _2, _3…"""
+    partes = [_seguro(str(x), 60) for x in (p.get("ticket"), codigo if con_codigo else "", p.get("nombre")) if str(x or "").strip()]
+    base = "_".join(partes) or f"punto_{p['n']:02d}"
+    nombre, k = base, 1
+    while nombre.casefold() in usados:
+        k += 1
+        nombre = f"{base}_{k}"
+    usados.add(nombre.casefold())
+    return f"{nombre}.xlsx"
 
 
 class Lote:
-    def __init__(self, id_: str, nombre: str, puntos: list[dict[str, Any]], carpeta: Path):
+    def __init__(self, id_: str, nombre: str, puntos: list[dict[str, Any]], carpeta: Path, comentario: str = ""):
         self.id = id_
+        self.comentario = comentario
+        self.usados: set[str] = set()
+        self.pdf: dict[str, Any] = {"estado": "", "hechos": 0, "total": 0, "error": "", "cuales": ""}      # ""|convirtiendo|listo|error
         self.nombre = nombre
         self.puntos = puntos
         self.carpeta = carpeta
@@ -343,7 +423,7 @@ class Lote:
     def publico(self, desde: int = 0) -> dict[str, Any]:
         hechos = len(self.resultados)
         return {"id": self.id, "nombre": self.nombre, "estado": self.estado, "total": len(self.puntos), "hechos": hechos, "actual": self.actual,
-                "mensaje": self.mensaje, "esperando_s": self.esperando_s, "carpeta": str(self.carpeta), "segundos": round((self.fin or time.time()) - self.inicio),
+                "mensaje": self.mensaje, "pdf": dict(self.pdf), "esperando_s": self.esperando_s, "carpeta": str(self.carpeta), "segundos": round((self.fin or time.time()) - self.inicio),
                 "resultados": self.resultados[max(0, int(desde or 0)):]}
 
 
@@ -354,18 +434,46 @@ def _total(resumen: dict[str, Any] | None) -> float | None:
     return None
 
 
-def procesar_punto(p: dict[str, Any], carpeta: Path, cache: Any, bloqueo: Any, ahora: datetime | None = None) -> dict[str, Any]:
-    """Route + approximate budget of one point (the same calculation as the viewer's «Presupuesto aproximado»). The Excel goes to `carpeta`."""
+def completar_punto(p: dict[str, Any], comentario: str) -> dict[str, Any]:
+    """The point with what its row of the file does not say (ticket, client's name, code) filled from the comment; what the file says is kept.
+    Also gives the contact, phone and sales executive the comment writes (`datos`)."""
+    propio = comentario_del_punto(comentario, p)
+    escrito = comentario_ticket.extraer_campos(propio)
+    return {**p, "ticket": str(p.get("ticket") or "").strip() or escrito.get("ticket_id", "")[:40],
+            "nombre": str(p.get("nombre") or "").strip() or escrito.get("client_name", "")[:160],
+            "codigo": codigo_cliente(p, propio), "comentario_propio": propio, "datos": escrito}
+
+
+def procesar_punto(p: dict[str, Any], carpeta: Path, cache: Any, bloqueo: Any, ahora: datetime | None = None,
+                   comentario: str = "", usados: set[str] | None = None) -> dict[str, Any]:
+    """Route + approximate budget of one point (the same calculation as the viewer's «Presupuesto aproximado»). The Excel goes to `carpeta`.
+
+    With ticket data (the file's columns + the general `comentario`) the budget carries them: ticket number, client name and code; what the file lacks
+    is filled from the comment. The document is named ticket_tienda.xlsx."""
     from visor_rutas import calculo, presupuesto_visor
-    base = {"n": p["n"], "nombre": p["nombre"], "codigo": p["codigo"], "lat": p["lat"], "lon": p["lon"]}
+    p = completar_punto(p, comentario)                            # the comment fills what the row of the file lacks
+    propio, codigo, del_comentario = p["comentario_propio"], p["codigo"], p["datos"]
+    base = {"n": p["n"], "ticket": p["ticket"], "nombre": p["nombre"], "codigo": codigo, "lat": p["lat"], "lon": p["lon"],
+            "contacto": del_comentario.get("contact_name", ""), "telefono": del_comentario.get("contact_phone", ""), "ejecutivo": del_comentario.get("sales_exec", "")}
     datos = calculo.calcular_ruta(p["lat"], p["lon"], get_route=cache)
     ruta = datos["ruta"]
+    # First page of the Excel: what the comment writes (client code, contact, phone, sales executive); the columns of the file (ticket, client's
+    # name, code) win over it. The comment itself is NOT written in the budget (its box keeps the template's text) nor used in the calculation.
+    ticket = {**del_comentario, **{k: v for k, v in {"ticket_id": p["ticket"], "client_name": p["nombre"], "client_code": codigo}.items() if v}}
+    ticket = {k: v for k, v in ticket.items() if v}
+    cambios = _cambios_al_comentario(propio)
+    if cambios:
+        ticket["comment_edits"] = cambios
     with bloqueo:
-        est = presupuesto_visor.estimar(p["lat"], p["lon"], ruta["metraje_final_m"], cache)
+        est = presupuesto_visor.estimar(p["lat"], p["lon"], ruta["metraje_final_m"], cache, ticket=ticket)
     resultado = presupuesto_visor.resultado_para_visor(est["respuesta"])
     origen = Path(resultado["archivo"])
-    nombre = f"{p['n']:02d}_{_seguro(p['nombre'] or p['codigo'] or 'punto')}.xlsx"
-    destino = carpeta / nombre
+    reglas = presupuesto_visor.main.load_rules(presupuesto_visor.main.settings.rules_path).get("visor_masivo") or {}
+    nombre = nombre_documento(p, codigo, usados if usados is not None else set(), bool(reglas.get("nombre_con_codigo")))
+    # the budget goes to "aprobados" (route shorter than the limit, 2 km) or "desaprobados" (longer)
+    grupo = "aprobados" if float(ruta["distancia_m"]) < float(reglas.get("umbral_aprobado_m", 2000)) else "desaprobados"
+    destino = carpeta / grupo / nombre
+    destino.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(origen), destino)
     almacen_archivos.borrar("visor", origen.name)                 # generar() stored it at the top level; the batch keeps it in its folder
     avisos = list(dict.fromkeys(list(datos.get("avisos") or []) + list(resultado.get("avisos") or [])))
@@ -373,10 +481,10 @@ def procesar_punto(p: dict[str, Any], carpeta: Path, cache: Any, bloqueo: Any, a
             "distancia_m": ruta["distancia_m"], "metraje_final_m": ruta["metraje_final_m"], "tipo_cable": ruta["tipo_cable"],
             "aproximada": ruta["aproximada"], "ruta": [list(x) for x in ruta["puntos"]], "postes_existentes": len(datos["postes_existentes"]),
             "postes_nuevos": datos["postes_nuevos"]["cantidad"], "mufas": len(datos["mufas_intervenidas"]), "total": _total(resultado.get("resumen")),
-            "calculado": resultado["calculado"], "archivo": str(destino), "nombre_archivo": nombre, "avisos": avisos}
+            "calculado": resultado["calculado"], "archivo": str(destino), "nombre_archivo": nombre, "grupo": grupo, "avisos": avisos}
 
 
-COLUMNAS_RESUMEN = [("#", "n", 5), ("Nombre", "nombre", 28), ("Código", "codigo", 12), ("Latitud", "lat", 12), ("Longitud", "lon", 12),
+COLUMNAS_RESUMEN = [("#", "n", 5), ("Ticket", "ticket", 14), ("Cliente", "nombre", 28), ("Código cliente", "codigo", 14), ("Latitud", "lat", 12), ("Longitud", "lon", 12),
                     ("Punto de conexión", "conexion", 26), ("Distancia por ruta (m)", "distancia_m", 14), ("Metraje final (m)", "metraje_final_m", 14),
                     ("Cable", "tipo_cable", 14), ("Postes existentes", "postes_existentes", 10), ("Postes nuevos", "postes_nuevos", 10),
                     ("Mufas intervenidas", "mufas", 10), ("Total", "total", 14), ("Presupuesto", "nombre_archivo", 30), ("Avisos / error", "avisos", 60)]
@@ -397,7 +505,7 @@ def escribir_resumen(carpeta: Path, nombre: str, resultados: list[dict[str, Any]
     for r in resultados:
         fila = []
         for _, clave, _ in COLUMNAS_RESUMEN:
-            v = r.get(clave) if r.get("ok") or clave in ("n", "nombre", "codigo", "lat", "lon", "avisos", "error") else None
+            v = r.get(clave) if r.get("ok") or clave in ("n", "ticket", "nombre", "codigo", "lat", "lon", "avisos", "error") else None
             if clave == "avisos":
                 v = "; ".join(r.get("avisos") or []) if r.get("ok") else (r.get("error") or "")
             fila.append(v)
@@ -418,7 +526,8 @@ class GestorLotes:
         self._lock = threading.Lock()
         self._activo: Lote | None = None
 
-    def iniciar(self, nombre: str, puntos: list[dict[str, Any]], carpeta_base: Path, por_minuto: int, maximo: int, bloqueo: Any, cache_factory: Any) -> Lote:
+    def iniciar(self, nombre: str, puntos: list[dict[str, Any]], carpeta_base: Path, por_minuto: int, maximo: int, bloqueo: Any, cache_factory: Any,
+                comentario: str = "") -> Lote:
         puntos = [p for p in puntos if p.get("incluir") and p.get("estado") in (OK,)]
         if not puntos:
             raise ValueError("No hay coordenadas válidas marcadas para calcular")
@@ -431,7 +540,7 @@ class GestorLotes:
             id_ = f"{ahora:%Y%m%d-%H%M%S}"
             carpeta = carpeta_base / f"masivo_{id_}_{_seguro(Path(nombre).stem)}"
             carpeta.mkdir(parents=True, exist_ok=True)
-            lote = Lote(id_, Path(nombre).stem or "lote", puntos, carpeta)
+            lote = Lote(id_, Path(nombre).stem or "lote", puntos, carpeta, str(comentario or "")[:20000])
             self._lotes[id_] = lote
             self._activo = lote
             for viejo in sorted(self._lotes)[:-MAX_LOTES_GUARDADOS]:
@@ -449,14 +558,15 @@ class GestorLotes:
                     break
                 lote.actual = p["nombre"] or p["texto"]
                 try:
-                    lote.resultados.append(procesar_punto(p, lote.carpeta, limitada, bloqueo))
+                    lote.resultados.append(procesar_punto(p, lote.carpeta, limitada, bloqueo, comentario=lote.comentario, usados=lote.usados))
                 except InterruptedError:
                     break
                 except Exception as exc:                                    # one point failing never stops the batch
                     log.warning("Bulk: point %s failed (%s: %s)", p["n"], type(exc).__name__, exc)
                     error = str(exc) if exc.__class__.__name__ in ("VisorError", "SinPuntoConexion", "PresupuestoError", "CoordenadaInvalida") else \
                         f"No se pudo calcular ({type(exc).__name__}): {exc}"
-                    lote.resultados.append({"n": p["n"], "nombre": p["nombre"], "codigo": p["codigo"], "lat": p["lat"], "lon": p["lon"], "ok": False, "error": error})
+                    c = completar_punto(p, lote.comentario)
+                    lote.resultados.append({"n": p["n"], "ticket": c["ticket"], "nombre": c["nombre"], "codigo": c["codigo"], "lat": p["lat"], "lon": p["lon"], "ok": False, "error": error})
             final = "cancelado" if lote.cancelar.is_set() else "terminado"
         except Exception as exc:
             log.exception("Bulk: the batch failed")
@@ -469,7 +579,7 @@ class GestorLotes:
             except Exception:
                 log.exception("Bulk: could not write Resumen.xlsx")
             try:
-                almacen_archivos.subir_carpeta("visor", lote.carpeta.parent, patron=f"{lote.carpeta.name}/*", excluir=("mapas",))
+                almacen_archivos.subir_carpeta("visor", lote.carpeta.parent, patron=f"{lote.carpeta.name}/**/*", excluir=("mapas",))
             except Exception:
                 log.exception("Bulk: could not store the batch in the database")
             lote.fin = time.time()
@@ -483,12 +593,54 @@ class GestorLotes:
             raise KeyError("El lote ya no existe (el visor o el servicio se reinició)")
         return lote
 
-    def comprimir(self, id_: str) -> tuple[str, bytes]:
+    def comprimir(self, id_: str, tipo: str = "xlsx") -> tuple[str, bytes]:
+        """The batch as a .zip: the Excel files and the summary, or (tipo "pdf") the PDFs made by convertir_pdf."""
         lote = self.obtener(id_)
         if lote.estado == "corriendo":
             raise ValueError("El lote todavía está calculando")
+        if tipo == "pdf" and lote.pdf["estado"] != "listo":
+            raise ValueError("Los PDF todavía no están listos: use «Convertir todos a PDF»")
         salida = io.BytesIO()
         with zipfile.ZipFile(salida, "w", zipfile.ZIP_DEFLATED) as z:
-            for archivo in sorted(lote.carpeta.glob("*.xlsx")):
-                z.write(archivo, archivo.name)
-        return f"{lote.carpeta.name}.zip", salida.getvalue()
+            for archivo in sorted(lote.carpeta.rglob("*.pdf" if tipo == "pdf" else "*.xlsx")):
+                if archivo.name.startswith("~$"):
+                    continue
+                z.write(archivo, archivo.relative_to(lote.carpeta).as_posix())              # aprobados/..., desaprobados/... (or the *_pdf folders)
+        return f"{lote.carpeta.name}{'_PDF' if tipo == 'pdf' else ''}.zip", salida.getvalue()
+
+    def convertir_pdf(self, id_: str, convertir: Any, cuales: str = "ambos") -> None:
+        """Starts, in the background, the PDF of the budgets of the finished batch (`convertir(xlsx, carpeta_pdf) -> pdf path`, e.g. pdf_export.xlsx_a_pdf).
+        `cuales`: "aprobados", "desaprobados" or "ambos". The PDFs of aprobados/ are saved in aprobados_pdf/ and those of desaprobados/ in
+        desaprobados_pdf/ (inside the batch's folder); progress is in lote.pdf."""
+        lote = self.obtener(id_)
+        if lote.estado == "corriendo":
+            raise ValueError("El lote todavía está calculando")
+        if lote.pdf["estado"] == "convirtiendo":
+            raise ValueError("Los PDF ya se están convirtiendo")
+        if cuales not in ("aprobados", "desaprobados", "ambos"):
+            raise ValueError("Elija aprobados, desaprobados o ambos")
+        grupos = ("aprobados", "desaprobados") if cuales == "ambos" else (cuales,)
+        # the Excel files that are in the folders now (edited, renamed or added by hand), each group to its own *_pdf folder
+        libros = [(p, lote.carpeta / f"{g}_pdf") for g in grupos if (lote.carpeta / g).is_dir()
+                  for p in sorted((lote.carpeta / g).glob("*.xlsx")) if not p.name.startswith("~$")]
+        if not libros:
+            raise ValueError("No hay presupuestos en " + (" ni en ".join(grupos)) + " para convertir")
+        lote.pdf = {"estado": "convirtiendo", "hechos": 0, "total": len(libros), "error": "", "cuales": cuales}
+
+        def trabajo() -> None:
+            fallos = []
+            for libro, destino_pdf in libros:
+                try:
+                    convertir(libro, destino_pdf)
+                except Exception as exc:                                    # one budget failing never stops the rest
+                    log.warning("Bulk PDF: %s failed (%s: %s)", libro.name, type(exc).__name__, exc)
+                    fallos.append(libro.name)
+                lote.pdf["hechos"] += 1
+            lote.pdf["error"] = f"No se pudo convertir: {', '.join(fallos)}" if fallos else ""
+            lote.pdf["estado"] = "listo" if len(fallos) < len(libros) else "error"
+            try:
+                almacen_archivos.subir_carpeta("visor", lote.carpeta.parent, patron=f"{lote.carpeta.name}/**/*.pdf", excluir=("mapas",))
+            except Exception:
+                log.exception("Bulk PDF: could not store the PDFs in the database")
+
+        threading.Thread(target=trabajo, name=f"lote-pdf-{id_}", daemon=True).start()

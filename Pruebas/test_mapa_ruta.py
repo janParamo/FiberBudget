@@ -102,7 +102,7 @@ def test_missing_street_labels_still_give_a_satellite_map(tmp_path, monkeypatch)
     assert mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [], True, tmp_path / "m.png") is not None
 
 
-REAL_TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "PlantilaEjemploPresupuesto.xlsx"
+REAL_TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "Plantilla.xlsx"
 
 
 @pytest.mark.skipif(not REAL_TEMPLATE.is_file(), reason="company template not available")
@@ -120,9 +120,9 @@ def test_picture_joins_the_real_template_drawing_without_losing_its_logos(tmp_pa
         rels = archive.read("xl/drawings/_rels/drawing1.xml.rels").decode()
         assert archive.read("xl/media/mapa_ruta.png") == png.read_bytes()
     assert drawing.count("<xdr:pic>") + drawing.count("<xdr:pic ") == before.count("<xdr:pic>") + 1
-    assert all(shape in drawing for shape in ("image1.png", "image2.png", "Shape 3"))
+    assert all(shape in drawing for shape in ("Imagen 8", "Imagen 9", "AutoShape 1"))        # the logos and shapes of the current template
     assert "../media/mapa_ruta.png" in rels
     # The map is the first (bottom) layer, so the template's north arrow stays in front of it.
-    assert drawing.index("Mapa ruta recomendada") < min(drawing.index(n) for n in ("image1.png", "image2.png"))
+    assert drawing.index("Mapa ruta recomendada") < min(drawing.index(n) for n in ("Imagen 8", "Imagen 9"))
     workbook = load_workbook(copy)
-    assert len(workbook["Ruta proyectada"]._images) == 3     # two logos + the map
+    assert len(workbook["Ruta proyectada"]._images) == len(load_workbook(REAL_TEMPLATE)["Ruta proyectada"]._images) + 1     # the template's pictures + the map

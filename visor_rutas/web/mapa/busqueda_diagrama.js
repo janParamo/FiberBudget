@@ -1,5 +1,6 @@
 /* Buscar dentro del diagrama de Visio (visor): un campo sobre el diagrama que se está viendo, para encontrar un texto (el nombre de una mufa, un
- * cliente, un splitter, «PUERTO 3»…) o una coordenada, y un interruptor para mostrar u ocultar el círculo que marca lo encontrado.
+ * cliente, un splitter, «PUERTO 3»…), una mufa del diagrama o una coordenada, y un interruptor para mostrar u ocultar el círculo que marca lo encontrado.
+ * Las MUFAS que salen en el diagrama aparecen en la lista con la insignia «Mufa», su coordenada y, si se buscó una coordenada, a cuántos metros están.
  *
  * El servidor busca en los textos del diagrama (visor_rutas/fusion.py: buscar_en_diagrama): palabras (sin acentos ni mayúsculas; MF, MC y MUFA son lo
  * mismo) o una coordenada en cualquier formato del buscador, que halla los textos que escriben una coordenada a menos de 25 m. Cada resultado trae dónde
@@ -15,7 +16,7 @@
 
   function montar(contenedor, ctx) {
     contenedor.innerHTML = `<div class="dg-bus">
-      <input type="search" class="dg-bus-texto" placeholder="Buscar en el diagrama: texto o coordenada" aria-label="Buscar en el diagrama" autocomplete="off" spellcheck="false">
+      <input type="search" class="dg-bus-texto" placeholder="Buscar en el diagrama: texto, mufa o coordenada" aria-label="Buscar en el diagrama" autocomplete="off" spellcheck="false">
       <button type="button" class="btn btn-chico dg-bus-ant" title="Anterior (Mayús+Enter)" aria-label="Resultado anterior" disabled>▲</button>
       <button type="button" class="btn btn-chico dg-bus-sig" title="Siguiente (Enter)" aria-label="Resultado siguiente" disabled>▼</button>
       <span class="nota dg-bus-info" role="status"></span>
@@ -31,7 +32,9 @@
     const refrescarBotones = () => { ant.disabled = sig.disabled = e.resultados.length < 2; };
 
     function pintarLista() {
-      lista.innerHTML = e.resultados.map((r, i) => `<li class="dg-bus-fila${i === e.indice ? " activa" : ""}" data-i="${i}">${esc(r.texto)}` +
+      lista.innerHTML = e.resultados.map((r, i) => `<li class="dg-bus-fila${i === e.indice ? " activa" : ""}" data-i="${i}">` +
+        `${r.mufa ? `<span class="dg-bus-mufa">Mufa</span> ` : ""}${esc(r.texto)}` +
+        `${r.mufa && r.mufa.lat != null ? ` <span class="nota">· ${r.mufa.lat.toFixed(5)}, ${r.mufa.lon.toFixed(5)}${r.mufa.estimada ? " (estimada)" : ""}</span>` : ""}` +
         `${r.distancia_m !== undefined ? ` <span class="nota">· a ${r.distancia_m.toLocaleString("en-US", { maximumFractionDigits: 1 })} m</span>` : ""}</li>`).join("");
       lista.hidden = !e.resultados.length || document.activeElement !== campo;
       const activa = lista.querySelector(".activa");
@@ -42,7 +45,7 @@
       if (!e.resultados.length) return;
       e.indice = (i + e.resultados.length) % e.resultados.length;
       ctx.visor().irA(e.resultados[e.indice]);
-      info.textContent = `${e.indice + 1} de ${e.resultados.length}${e.total > e.resultados.length ? "+" : ""}`;
+      info.textContent = `${e.indice + 1} de ${e.resultados.length}${e.total > e.resultados.length ? "+" : ""}${e.resultados[e.indice].mufa ? " · mufa" : ""}`;
       pintarLista();
     }
 
@@ -62,7 +65,7 @@
       e.resultados = r.resultados; e.total = r.total; e.modo = r.modo;
       refrescarBotones();
       if (!e.resultados.length) {
-        info.textContent = r.modo === "coordenada" ? "Esa coordenada no está escrita en este diagrama" : "No está en este diagrama";
+        info.textContent = r.modo === "coordenada" ? "Ninguna mufa de este diagrama a menos de 500 m, ni un texto con esa coordenada" : "No está en este diagrama";
         pintarLista();
         return;
       }

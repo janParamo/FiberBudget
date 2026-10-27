@@ -138,7 +138,7 @@ def _esperar(lote, hasta="terminado", seg=10):
 
 
 def test_the_batch_runs_in_the_background_keeps_going_after_an_error_and_writes_the_summary(tmp_path, monkeypatch):
-    def falso(p, carpeta, cache, bloqueo, ahora=None):
+    def falso(p, carpeta, cache, bloqueo, ahora=None, **_):
         if p["n"] == 2:
             raise RuntimeError("Google no respondió")
         archivo = carpeta / f"{p['n']:02d}_x.xlsx"
@@ -157,7 +157,7 @@ def test_the_batch_runs_in_the_background_keeps_going_after_an_error_and_writes_
     assert g.obtener(lote.id).publico(desde=2)["resultados"][0]["n"] == 3                                  # the page asks only for what is new
     hoja = load_workbook(lote.carpeta / "Resumen.xlsx")["Resumen"]
     filas = [[c.value for c in f] for f in hoja.iter_rows(min_row=4)]
-    assert [f[0] for f in filas] == [1, 2, 3] and filas[0][5] == "MF X" and filas[0][12] == 5000.0 and filas[0][14] == "Uno; Dos" and "Google no respondió" in filas[1][14] and filas[1][12] is None
+    assert [f[0] for f in filas] == [1, 2, 3] and filas[0][6] == "MF X" and filas[0][13] == 5000.0 and filas[0][15] == "Uno; Dos" and "Google no respondió" in filas[1][15] and filas[1][13] is None
     nombre, datos = g.comprimir(lote.id)
     assert nombre == lote.carpeta.name + ".zip" and sorted(zipfile.ZipFile(io.BytesIO(datos)).namelist()) == ["01_x.xlsx", "03_x.xlsx", "Resumen.xlsx"]
     with pytest.raises(KeyError):
@@ -167,7 +167,7 @@ def test_the_batch_runs_in_the_background_keeps_going_after_an_error_and_writes_
 def test_one_batch_at_a_time_a_limit_of_points_and_cancel(tmp_path, monkeypatch):
     soltar = threading.Event()
 
-    def lento(p, carpeta, cache, bloqueo, ahora=None):
+    def lento(p, carpeta, cache, bloqueo, ahora=None, **_):
         soltar.wait(5)
         return {"n": p["n"], "nombre": p["nombre"], "codigo": "", "lat": p["lat"], "lon": p["lon"], "ok": True, "avisos": []}
     monkeypatch.setattr(masivas, "procesar_punto", lento)
@@ -205,3 +205,42 @@ def test_google_routes_are_asked_at_most_a_number_per_minute_and_the_wait_is_vis
         limitada((5, 5), (6, 6))
     espera.join()
     assert cache.llamadas == 3
+
+
+def test_the_store_column_names_the_point_not_the_address():
+    crudo = xlsx([[None, None, None, None, None, None],
+                  [None, "Item", "Tienda", "Dirección", "Coordenadas", "Departamento"],
+                  [None, 1, "DARIO 1", "Dario, Laboratorio frente al mercado", "12.727598953106815, -86.12564475426055", "Matagalpa"],
+                  [None, 2, "", "Bo pancasan fte al gallo", "12.836523553222946, -85.46287452676088", "Matagalpa"]])
+    p1, p2 = masivas.extraer("tiendas.xlsx", crudo)["puntos"]
+    assert (p1["nombre"], p1["lat"]) == ("DARIO 1", 12.727598953106815)
+    assert p2["nombre"] == "Bo pancasan fte al gallo"                       # no store name on that row: the address is the fallback
+    sin_tienda = masivas.extraer("a.xlsx", xlsx([["Dirección", "Coordenadas"], ["Casa azul", "12.1364, -86.2514"]]))["puntos"][0]
+    assert sin_tienda["nombre"] == "Casa azul"
+
+
+def test_the_pdf_conversion_takes_the_excel_files_that_are_in_the_folder_now(tmp_path):
+    import time as _t
+    g = masivas.GestorLotes()
+    lote = masivas.Lote("20261026-000001", "x", [], tmp_path)
+    lote.estado = "terminado"
+    g._lotes[lote.id] = lote
+    for grupo, n in (("aprobados", "A.xlsx"), ("aprobados", "B.xlsx"), ("aprobados", "~$A.xlsx"), ("desaprobados", "C.xlsx"), ("", "Resumen.xlsx")):
+        (tmp_path / grupo).mkdir(exist_ok=True)
+        (tmp_path / grupo / n).write_bytes(b"x")                       # B was renamed by hand; "Resumen" and the temporary Excel file are not budgets
+
+    def convertir(cuales):
+        hechos = []
+        g.convertir_pdf(lote.id, lambda x, d: hechos.append((x.parent.name, x.name, d.name)) or d.mkdir(exist_ok=True) or (d / (x.stem + ".pdf")).write_bytes(b"%PDF"), cuales)
+        t0 = _t.time()
+        while lote.pdf["estado"] == "convirtiendo" and _t.time() - t0 < 10:
+            _t.sleep(0.02)
+        return hechos
+    assert convertir("aprobados") == [("aprobados", "A.xlsx", "aprobados_pdf"), ("aprobados", "B.xlsx", "aprobados_pdf")] and lote.pdf["estado"] == "listo"
+    assert not (tmp_path / "desaprobados_pdf").exists()
+    assert convertir("desaprobados") == [("desaprobados", "C.xlsx", "desaprobados_pdf")]
+    assert [h[2] for h in convertir("ambos")] == ["aprobados_pdf", "aprobados_pdf", "desaprobados_pdf"]
+    nombre, datos = g.comprimir(lote.id, "pdf")
+    assert sorted(zipfile.ZipFile(io.BytesIO(datos)).namelist()) == ["aprobados_pdf/A.pdf", "aprobados_pdf/B.pdf", "desaprobados_pdf/C.pdf"]
+    with pytest.raises(ValueError):
+        g.convertir_pdf(lote.id, lambda *a: None, "otro")

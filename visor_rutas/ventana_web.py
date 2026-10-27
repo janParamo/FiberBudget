@@ -44,7 +44,7 @@ try:   # local mode: the service code, its .env and databases (not in the remote
     import red_fibra_pg
     from config import get_settings
     from mapa_ruta import DROP_MIN_M, IMAGERY_URL, LABELS_URL
-    from visor_rutas import fusion, kmz_capas, masivas, medicion, presupuesto_visor, red, ruta_fusion_plan, subidas
+    from visor_rutas import fusion, kmz_capas, masivas, medicion, pdf_lote, presupuesto_visor, red, ruta_fusion_plan, subidas
     from visor_rutas.exportar_fusion import exportar_fusion
     from visor_rutas.calculo import RutaFija, VisorError, calcular_con_ruta, calcular_ruta, parsear_coordenadas, usando_rutas
     from visor_rutas.redes.api import ServicioRedes
@@ -200,6 +200,7 @@ class Api:
         self._lock_presupuesto = threading.Lock()      # one budget (LibreOffice) at a time
         self._lock_fusion = threading.Lock()           # one write to the workbook of fusion routes at a time
         self._lotes = masivas.GestorLotes() if LOCAL_DISPONIBLE else None      # bulk coordinates batches (this process)
+        self._pdfs = pdf_lote.GestorPdf() if LOCAL_DISPONIBLE else None        # PDF of budgets that already exist (this process)
         self._redes = None              # ServicioRedes (network design module), created on first use
         self._ventana = None            # pywebview window (save dialogs); set by abrir()
         self._lock_campo = threading.Lock()
@@ -235,6 +236,31 @@ class Api:
         """The "Configuración" screen: mode, server URL and whether a key is saved (never the key)."""
         return {"modo": self._modo, "url": self._config.url, "clave_guardada": bool(self._config.clave),
                 "local_disponible": not self._forzar_remoto, "archivo": str(config_visor.archivo_config())}
+
+    def planificacion_acceso(self) -> dict[str, Any]:
+        """Where the planning app is (/planificacion/ of the service) and the key to enter it, for the «Planificación» window of the viewer.
+        Server mode: the server and the key of the configuration. Local mode: this computer's service (API_HOST / API_PORT) and the viewer key of the .env
+        of the person «planificacion» (else of this Windows user, else the first one)."""
+        import getpass
+        import urllib.request
+        import visor_api
+        if self._modo == "remoto":
+            if not self._config.remoto_completo:
+                return {"ok": False, "error": "Falta la dirección del servidor y la clave: se ponen en Configuración"}
+            return {"ok": True, "url": self._config.url, "clave": self._config.clave, "modo": "remoto"}
+        ajustes = get_settings()
+        host = "127.0.0.1" if ajustes.api_host in ("", "0.0.0.0", "::") else ajustes.api_host
+        url = f"http://{host}:{ajustes.api_port}"
+        try:
+            urllib.request.urlopen(f"{url}/planificacion/", timeout=3).close()
+        except Exception as exc:
+            if getattr(exc, "code", None) == 404:
+                return {"ok": False, "error": "El servicio está en marcha pero la planificación está apagada: falta VISOR_API_KEYS en el .env"}
+            return {"ok": False, "error": f"El servicio no responde en {url}: abra start_service.bat y vuelva a intentar"}
+        claves = visor_api.claves_visor()                                  # {key: person}
+        usuario = getpass.getuser().casefold()
+        clave = next((k for nombre in ("planificacion", usuario) for k, persona in claves.items() if persona.casefold() == nombre), next(iter(claves), ""))
+        return {"ok": True, "url": url, "clave": clave, "modo": "local"}
 
     def probar_conexion(self, url: str, clave: str = "") -> dict[str, Any]:
         """"Probar conexión": GET /visor/info with that URL and key (empty key = the saved one)."""
@@ -692,14 +718,15 @@ class Api:
             log.exception("Visor web: bulk file could not be read")
             return {"ok": False, "error": f"No se pudo leer el archivo ({type(exc).__name__})"}
 
-    def masivas_iniciar(self, nombre: str, puntos: list[dict[str, Any]]) -> dict[str, Any]:
-        """Starts the batch (one approximate budget per valid point, in the background). Returns its state; ask for it with masivas_estado."""
+    def masivas_iniciar(self, nombre: str, puntos: list[dict[str, Any]], comentario: str = "") -> dict[str, Any]:
+        """Starts the batch (one approximate budget per valid point, in the background). Returns its state; ask for it with masivas_estado.
+        `comentario`: the general ticket comment (client code, data of each client); each budget takes the part about its client."""
         if self._modo == "remoto":
-            return self._remota("masivas_iniciar", nombre, puntos)
+            return self._remota("masivas_iniciar", nombre, puntos, comentario)
         try:
             reglas = presupuesto_visor.main.load_rules(get_settings().rules_path).get("visor_masivo") or {}
             lote = self._lotes.iniciar(str(nombre or "lote"), masivas.revisar(puntos), presupuesto_visor.carpeta_visor(), int(reglas.get("google_por_minuto", 30)),
-                                       int(reglas.get("max_puntos", 200)), self._lock_presupuesto, presupuesto_visor.CacheRutas)
+                                       int(reglas.get("max_puntos", 200)), self._lock_presupuesto, presupuesto_visor.CacheRutas, str(comentario or ""))
             return {"ok": True, "lote": lote.publico()}
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
@@ -722,15 +749,121 @@ class Api:
         except KeyError as exc:
             return {"ok": False, "error": str(exc.args[0])}
 
-    def masivas_descargar(self, id: str) -> dict[str, Any]:
-        """The Excel of every budget and the summary, as a .zip (base64)."""
+    def masivas_pdf(self, id: str, cuales: str = "ambos") -> dict[str, Any]:
+        """Starts converting the budgets of the finished batch to PDF: the aprobados, the desaprobados or both (in the background; progress in
+        masivas_estado -> lote.pdf). The PDFs go to the aprobados_pdf / desaprobados_pdf folders of the batch."""
         if self._modo == "remoto":
-            return self._remota("masivas_descargar", id)
+            return self._remota("masivas_pdf", id, cuales)
         try:
-            nombre, datos = self._lotes.comprimir(id)
+            from recalc import find_soffice
+            import pdf_export
+            soffice = find_soffice(get_settings().libreoffice_path)
+            if soffice is None:
+                return {"ok": False, "error": "LibreOffice no está instalado en este equipo: no se pueden hacer PDF"}
+            self._lotes.convertir_pdf(id, lambda xlsx, destino: pdf_export.xlsx_a_pdf(xlsx, soffice, carpeta_pdf=destino), str(cuales or "ambos"))
+            return {"ok": True, "lote": self._lotes.obtener(id).publico()}
+        except (KeyError, ValueError) as exc:
+            return {"ok": False, "error": str(exc.args[0])}
+
+    def masivas_descargar(self, id: str, tipo: str = "xlsx") -> dict[str, Any]:
+        """The Excel of every budget and the summary (tipo "xlsx"), or the PDFs (tipo "pdf"), as a .zip (base64)."""
+        if self._modo == "remoto":
+            return self._remota("masivas_descargar", id, tipo)
+        try:
+            nombre, datos = self._lotes.comprimir(id, "pdf" if tipo == "pdf" else "xlsx")
             return {"ok": True, "nombre": nombre, "datos": base64.b64encode(datos).decode("ascii")}
         except (KeyError, ValueError) as exc:
             return {"ok": False, "error": str(exc.args[0])}
+
+    # ---- PDF de presupuestos que ya existen (Excel sueltos o carpetas de coordenadas masivas)
+    def pdf_carpetas(self) -> dict[str, Any]:
+        """The batch folders of output/visor with their groups (aprobados / desaprobados) and how many Excel and PDF each has."""
+        if self._modo == "remoto":
+            return self._remota("pdf_carpetas")
+        try:
+            return {"ok": True, "carpetas": pdf_lote.carpetas(presupuesto_visor.carpeta_visor())}
+        except OSError as exc:
+            return {"ok": False, "error": f"No se pudo leer output/visor: {exc}"}
+
+    def pdf_elegir(self, tipo: str = "archivos") -> dict[str, Any]:
+        """File explorer to choose by hand the Excel budgets ("archivos", several at once) or a folder ("carpeta") to convert to PDF (this computer)."""
+        if self._modo == "remoto":
+            return {"ok": False, "error": "Con el servidor solo se pueden elegir los presupuestos de su lista: el explorador ve las carpetas de este equipo"}
+        if self._ventana is None:
+            return {"ok": False, "error": "El explorador de archivos no está disponible"}
+        try:
+            import webview
+            inicio = str(presupuesto_visor.carpeta_visor() if presupuesto_visor.carpeta_visor().is_dir() else Path.home() / "Documents")
+            if tipo == "carpeta":
+                elegido = self._ventana.create_file_dialog(webview.FileDialog.FOLDER, directory=inicio)
+            else:
+                elegido = self._ventana.create_file_dialog(webview.FileDialog.OPEN, directory=inicio, allow_multiple=True, file_types=("Excel (*.xlsx)",))
+            if not elegido:
+                return {"ok": True, "cancelado": True}
+            return {"ok": True, "rutas": [str(r) for r in elegido]}
+        except Exception as exc:
+            log.exception("Visor web: file explorer for PDF failed")
+            return {"ok": False, "error": f"No se pudo abrir el explorador ({type(exc).__name__})"}
+
+    def pdf_convertir(self, archivos: list[str], carpetas: list[str], externos: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Starts, in the background, the PDF of the chosen Excel files and/or of the chosen batch folders (their groups) and of what was chosen in the
+        file explorer (`externos`: {"archivos": [...], "carpetas": [...]}, absolute paths; this computer only). Ask with pdf_estado."""
+        if self._modo == "remoto":
+            if externos and (externos.get("archivos") or externos.get("carpetas")):
+                return {"ok": False, "error": "Con el servidor no se pueden usar archivos de este equipo: elija de la lista"}
+            return self._remota("pdf_convertir", archivos, carpetas)
+        try:
+            base = presupuesto_visor.carpeta_visor().resolve()
+            claves = []
+            for a in archivos or []:
+                ruta = Path(str(a))
+                claves.append(ruta.resolve().relative_to(base).as_posix() if ruta.is_absolute() else str(a))
+            externos = externos or {}
+            plan = []
+            if claves or carpetas:
+                plan += pdf_lote.planificar(base, claves, [str(c) for c in carpetas or []])
+            if externos.get("archivos") or externos.get("carpetas"):
+                plan += pdf_lote.planificar_externo([str(a) for a in externos.get("archivos") or []], [str(c) for c in externos.get("carpetas") or []])
+            if not plan:
+                return {"ok": False, "error": "No hay nada marcado para convertir"}
+            soffice = recalc.find_soffice(get_settings().libreoffice_path)
+            if soffice is None:
+                return {"ok": False, "error": "LibreOffice no está instalado en este equipo: no se pueden hacer PDF"}
+            trabajo = self._pdfs.iniciar(base, plan, lambda xlsx, destino: pdf_export.xlsx_a_pdf(xlsx, soffice, carpeta_pdf=destino))
+            return {"ok": True, "trabajo": trabajo.publico()}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def pdf_estado(self, id: str) -> dict[str, Any]:
+        if self._modo == "remoto":
+            return self._remota("pdf_estado", id)
+        try:
+            return {"ok": True, "trabajo": self._pdfs.obtener(id).publico()}
+        except KeyError as exc:
+            return {"ok": False, "error": str(exc.args[0])}
+
+    def pdf_descargar(self, id: str) -> dict[str, Any]:
+        """The PDFs made, as a .zip (base64) keeping their folders."""
+        if self._modo == "remoto":
+            return self._remota("pdf_descargar", id)
+        try:
+            nombre, datos = self._pdfs.comprimir(id)
+            return {"ok": True, "nombre": nombre, "datos": base64.b64encode(datos).decode("ascii")}
+        except (KeyError, ValueError) as exc:
+            return {"ok": False, "error": str(exc.args[0])}
+
+    def pdf_abrir_carpeta(self, id: str) -> dict[str, Any]:
+        """Opens in Explorer the folder of the first PDF made (local mode)."""
+        if self._modo == "remoto":
+            return {"ok": False, "error": "Los PDF están en el servidor: use «Descargar .zip»"}
+        try:
+            salidas = self._pdfs.obtener(id).salidas
+            if not salidas:
+                return {"ok": False, "error": "No se hizo ningún PDF"}
+            _abrir_en_explorador(None, salidas[0].parent)
+            return {"ok": True}
+        except (KeyError, OSError) as exc:
+            return {"ok": False, "error": f"No se pudo abrir la carpeta: {exc}"}
 
     def masivas_abrir_carpeta(self, id: str) -> dict[str, Any]:
         """Opens the folder of the batch in Explorer (local mode: the folder is on this PC)."""
@@ -837,8 +970,11 @@ class Api:
         if soffice is None:
             raise pdf_export.PdfExportError("LibreOffice no disponible")
         pdf_previo = xlsx.with_suffix(".pdf")
-        try:                                                   # a PDF already made is kept in the database: no need to convert again
-            almacen_archivos.restaurar("visor", pdf_previo.relative_to(presupuesto_visor.carpeta_visor().resolve()).as_posix(), pdf_previo)
+        try:                                                   # a PDF already made is kept in the database: no need to convert again, unless the Excel was edited since
+            clave = pdf_previo.relative_to(presupuesto_visor.carpeta_visor().resolve()).as_posix()
+            guardado = almacen_archivos.info("visor", clave)
+            if guardado is not None and guardado["modificado_en"].timestamp() >= xlsx.stat().st_mtime:
+                almacen_archivos.restaurar("visor", clave, pdf_previo)
         except ValueError:
             pass
         pdf = pdf_export.xlsx_a_pdf(xlsx, soffice)

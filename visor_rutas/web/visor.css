@@ -385,6 +385,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .dg-bus-lista[hidden] { display: none; }
 .dg-bus-fila { padding: 5px 10px; font-size: 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dg-bus-fila:hover, .dg-bus-fila.activa { background: #e7f0ff; }
+.dg-bus-mufa { display: inline-block; padding: 0 5px; margin-right: 3px; border-radius: 3px; background: #1e88e5; color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 @keyframes latido { 50% { transform: scale(1.12); opacity: .7; } }
 
 @media (max-width: 1150px) {
@@ -476,6 +477,8 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   background: var(--fondo); border-bottom: 1px solid var(--borde);
 }
 .vp-cabecera h1 { margin: 0; font-size: 17px; white-space: nowrap; }
+.plan-marco { flex: 1; width: 100%; border: 0; background: var(--fondo); }
+#vista-planificacion .vacio { padding: 32px 16px; text-align: center; }
 .vp-nota { flex: 1; color: var(--texto-suave); font-size: 12px; }
 .vp-cuerpo { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; }
 .vp-izquierda { width: 380px; flex: none; min-height: 0; display: flex; flex-direction: column; gap: 6px; }

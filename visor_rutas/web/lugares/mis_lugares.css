@@ -144,6 +144,15 @@ body.editando-red .barra-herramientas { display: none; }
 
 /* Coordenadas masivas (lugares/masivas.js) */
 .ms-ventana { width: 680px; }
+#pdfx-ventana { z-index: var(--z-modal); }      /* above the full-screen views (Presupuestos), which are at --z-vista */
+.pdfx-scroll { flex: 1; min-height: 160px; overflow: auto; border: 1px solid var(--borde); border-radius: 8px; padding: 6px 10px; }
+.pdfx-lote { margin: 4px 0 8px; }
+.pdfx-grupo { display: flex; align-items: center; gap: 6px; margin: 2px 0 2px 14px; font-size: 13px; }
+.pdfx-lista { list-style: none; margin: 0; padding: 0; }
+.pdfx-lista li { padding: 2px 0; border-bottom: 1px solid var(--borde); font-size: 13px; }
+.pdfx-lista label { display: flex; align-items: baseline; gap: 6px; cursor: pointer; }
+.pdfx-filtro { display: flex; gap: 6px; margin-bottom: 6px; }
+.pdfx-filtro input[type="search"] { flex: 1; min-width: 0; }
 .ms-pegado { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; }
 .ms-tabla { flex: 1; min-height: 140px; overflow: auto; border: 1px solid var(--borde); border-radius: 8px; }
 .ms-t { border-collapse: collapse; width: 100%; font-size: 12px; }

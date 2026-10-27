@@ -182,3 +182,42 @@ def test_synchronization_records_survive_a_lost_cache(almacen_pruebas, tmp_path,
     import shutil
     shutil.rmtree(datos)
     assert [r["id"] for r in actualizar_red._registros()] == [registro["id"]]
+
+
+def test_an_edit_that_keeps_the_size_is_also_sent_to_the_database(almacen_pruebas, tmp_path):
+    """The Excel of a budget edited by hand (a number changed for another of the same length) must replace the stored copy: it is what comes back
+    when the local copy is cleaned up, and what the PDF is made from."""
+    archivo = tmp_path / "a" / "uno.xlsx"
+    archivo.parent.mkdir()
+    archivo.write_bytes(b"AAAA")
+    assert alm.subir_carpeta("visor", tmp_path)["subidos"] == 1
+    assert alm.subir_carpeta("visor", tmp_path)["iguales"] == 1                               # nothing changed
+    time.sleep(1.2)
+    archivo.write_bytes(b"BBBB")                                                              # same size, edited later
+    assert alm.subir_carpeta("visor", tmp_path)["subidos"] == 1
+    assert alm.leer("visor", "a/uno.xlsx") == b"BBBB"
+    time.sleep(1.2)
+    archivo.write_bytes(b"BBBB")                                                              # saved again with no change in content
+    assert alm.subir_carpeta("visor", tmp_path)["iguales"] == 1
+
+
+def test_a_pdf_kept_in_the_database_is_not_used_after_the_excel_was_edited(almacen_pruebas, tmp_path, monkeypatch):
+    from visor_rutas import presupuesto_visor as pv
+    from visor_rutas import ventana_web
+    import pdf_export
+    import recalc
+    carpeta = tmp_path / "visor"
+    carpeta.mkdir()
+    monkeypatch.setattr(pv, "carpeta_visor", lambda: carpeta)
+    monkeypatch.setattr(recalc, "find_soffice", lambda *a, **k: "soffice")
+    hechos = []
+    monkeypatch.setattr(pdf_export, "xlsx_a_pdf", lambda x, s: hechos.append(x.name) or x.with_suffix(".pdf").write_bytes(b"%PDF nuevo") and x.with_suffix(".pdf"))
+    xlsx = (carpeta / "Uno_12.1_-86.2_20261026-100000.xlsx")
+    xlsx.write_bytes(b"excel")
+    alm.guardar("visor", xlsx.with_suffix(".pdf").name, b"%PDF viejo")                          # made before the edit
+    time.sleep(1.2)
+    xlsx.write_bytes(b"excel editado")
+    api = ventana_web.Api.__new__(ventana_web.Api)
+    pdf = api._pdf(xlsx.resolve())
+    assert hechos == [xlsx.name] and pdf.read_bytes() == b"%PDF nuevo"                           # converted again, the old one was not restored
+    assert alm.leer("visor", pdf.name) == b"%PDF nuevo"                                          # and the database has the new one
