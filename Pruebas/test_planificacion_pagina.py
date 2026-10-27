@@ -122,6 +122,13 @@ async def _recorrido(main_, con):
         await p.esperar("document.querySelector('#detalle [data-control=llegada]') !== null", 15)               # the detail is drawn again a moment after the table
         await p.evaluar("document.querySelector('#detalle [data-control=llegada]').click(); true")
         await p.esperar("document.querySelector('#tabla tbody tr td:nth-child(8)').textContent.trim() === '1/6'", 15)
+        # the chat of the activity: what the crew writes shows up live, and planning answers from the panel
+        id_actividad = con.execute("SELECT id FROM redes.plan_actividades WHERE ticket = 'XKJ-1'").fetchone()["id"]
+        con.execute("INSERT INTO redes.plan_mensajes (actividad_id, de_usuario, de_origen, texto) VALUES (%s, %s, 'cuadrilla', 'Ya llegamos al sitio')", (id_actividad, juan["id"]))
+        await p.esperar("document.getElementById('chat-lista').innerText.includes('Ya llegamos al sitio')", 10)
+        await p.evaluar("(() => { const c = document.getElementById('chat-texto'); c.value = 'Perfecto, marquen la llegada'; document.getElementById('chat-form').requestSubmit(); return true; })()")
+        await p.esperar("document.getElementById('chat-lista').innerText.includes('Perfecto, marquen la llegada') && document.getElementById('chat-texto').value === ''", 10)
+        assert con.execute("SELECT count(*) AS n FROM redes.plan_mensajes WHERE actividad_id = %s AND de_origen = 'planificacion'", (id_actividad,)).fetchone()["n"] == 1
         # the clock keeps running in the page
         await p.esperar("document.querySelector('[data-reloj]') !== null", 5)
         # the map has the activity; the crews tab lists the six crews

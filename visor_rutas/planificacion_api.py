@@ -69,6 +69,10 @@ class EstadoPedido(BaseModel):
     forzar: bool = False
 
 
+class MensajePedido(BaseModel):
+    texto: str = Field(max_length=1000)
+
+
 class ControlPedido(BaseModel):
     clave: str = Field(max_length=40)
     estado: str = Field(default="hecho", max_length=12)
@@ -171,6 +175,16 @@ def actividad(id: int, p: str = Depends(persona)) -> dict[str, Any]:
 @router.post("/actividades/{id}/estado")
 def estado(id: int, pedido: EstadoPedido, p: str = Depends(persona)) -> dict[str, Any]:
     return _ejecutar(p, planificacion.cambiar_estado, "planificacion/actividades/estado", id=id, a=pedido.a, motivo=pedido.motivo, forzar=pedido.forzar)
+
+
+@router.get("/actividades/{id}/mensajes")
+def mensajes(id: int, desde_id: int = 0, p: str = Depends(persona)) -> dict[str, Any]:
+    return _ejecutar(p, planificacion.mensajes, "planificacion/actividades/mensajes", actividad_id=id, desde_id=desde_id)
+
+
+@router.post("/actividades/{id}/mensajes")
+def enviar_mensaje(id: int, pedido: MensajePedido, p: str = Depends(persona)) -> dict[str, Any]:
+    return _ejecutar(p, planificacion.enviar_mensaje, "planificacion/actividades/enviar", actividad_id=id, texto=pedido.texto)
 
 
 @router.post("/actividades/{id}/control")

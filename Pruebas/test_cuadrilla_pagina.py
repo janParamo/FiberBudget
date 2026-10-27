@@ -105,6 +105,16 @@ async def _recorrido(puerto, con, id_, plan_actor):
                 break
             await asyncio.sleep(0.25)
         assert con.execute("SELECT ST_Y(ubicacion) AS lat FROM redes.campo_ubicaciones").fetchone()["lat"] == pytest.approx(LAT, abs=0.001)
+        # the chat: planning writes, the crew sees the badge live, opens the chat, reads and answers
+        pl.enviar_mensaje(con, plan_actor, actividad_id=id_, texto="Buen día, avisen al llegar")
+        await p.esperar("document.querySelector('[data-chat] .insignia') !== null && document.querySelector('[data-chat] .insignia').textContent === '1'", 8)
+        await p.evaluar("document.querySelector('[data-chat]').click(); true")
+        await p.esperar("document.getElementById('chat-lista').innerText.includes('Buen día, avisen al llegar')", 10)
+        await p.evaluar("(() => { document.getElementById('chat-texto').value = 'Enterado, vamos en camino'; document.getElementById('chat-form').requestSubmit(); return true; })()")
+        await p.esperar("document.getElementById('chat-lista').innerText.includes('Enterado, vamos en camino')", 10)
+        assert con.execute("SELECT texto FROM redes.plan_mensajes WHERE actividad_id = %s AND de_origen = 'cuadrilla'", (id_,)).fetchone()["texto"] == "Enterado, vamos en camino"
+        assert con.execute("SELECT count(*) AS n FROM redes.plan_mensajes WHERE leido_en IS NULL AND de_origen = 'planificacion'").fetchone()["n"] == 0       # opening it read the message
+        await p.evaluar("document.querySelector('[data-chat-cerrar]').click(); true")
         # review first: the control points appear; «Llegó al lugar» is marked with the place
         await p.evaluar("document.querySelector('[data-a=en_revision]').click(); true")
         await p.esperar("document.querySelectorAll('[data-control]').length === 6", 15)

@@ -54,4 +54,12 @@ h2.seccion { margin: 6px 0 0; font-size: 13px; text-transform: uppercase; letter
 .controles small { margin-left: auto; color: var(--suave); }
 .barra-avance { height: 8px; border-radius: 4px; background: var(--borde); overflow: hidden; }
 .barra-avance i { display: block; height: 100%; background: var(--ok); }
+.insignia { display: inline-block; padding: 0 7px; border-radius: 10px; background: var(--primario); color: #fff; font-size: 12px; font-weight: 600; }
+.chat { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto; padding: 8px; border: 1px solid var(--borde); border-radius: 10px; background: var(--fondo); }
+.burbuja { max-width: 88%; padding: 6px 10px; border-radius: 14px; font-size: 15px; overflow-wrap: anywhere; }
+.burbuja .quien { display: block; font-size: 11px; opacity: .75; }
+.burbuja.mia { align-self: flex-end; background: var(--primario); color: #fff; border-bottom-right-radius: 3px; }
+.burbuja.otra { align-self: flex-start; background: var(--panel); border: 1px solid var(--borde); border-bottom-left-radius: 3px; }
+.chat-form { display: flex; gap: 6px; }
+.chat-form input { flex: 1; }
 .vacio { text-align: center; padding: 28px 12px; color: var(--suave); }

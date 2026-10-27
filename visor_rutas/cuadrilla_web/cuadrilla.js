@@ -9,7 +9,7 @@
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const COLOR = { asignado: "#5c7cfa", en_revision: "#ab47bc", en_curso: "#1f6feb", pausado: "#fb8c00" };
   const ETIQUETA = { asignado: "Asignado", en_revision: "En revisión", en_curso: "En curso", pausado: "Pausado" };
-  const st = { datos: null, cargadoEn: Date.now(), temporizador: null, ubicacion: null };
+  const st = { datos: null, cargadoEn: Date.now(), temporizador: null, ubicacion: null, chatId: null, mensajes: [] };
 
   const leer = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const guardar = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* private window */ } };
@@ -81,8 +81,10 @@
     try {
       st.datos = await pedir("GET", "/visor/planificacion/mia");
       st.cargadoEn = Date.now();
+      if (st.chatId != null && ![...(st.datos.actual ? [st.datos.actual] : []), ...st.datos.cola].some((x) => x.id === st.chatId)) st.chatId = null;       // it left the crew
       $("estado").textContent = new Date().toLocaleTimeString("es-NI", { timeStyle: "short" });
       pintar();
+      cargarChat();
     } catch (e) {
       if (e.estado === 401) { guardar(CLAVE, null); mostrarClave(e.message); return; }
       if (e.estado === 403) { $("contenido").innerHTML = `<p class="vacio error">${esc(e.message)}</p>`; return; }
@@ -117,11 +119,44 @@
     }
   }
 
+  function burbujas(mensajes) {
+    if (!mensajes.length) return '<span class="nota">Todavía no hay mensajes.</span>';
+    return mensajes.map((m) => `<div class="burbuja ${m.origen === "cuadrilla" ? "mia" : "otra"}"><span class="quien">${esc(m.de)} · ${new Date(m.enviado_en).toLocaleTimeString("es-NI", { timeStyle: "short" })}</span>${esc(m.texto).replace(/\n/g, "<br>")}</div>`).join("");
+  }
+  function chatDe(a) {
+    if (st.chatId !== a.id) return `<button type="button" data-chat="${a.id}" class="chico">💬 Chat con planificación${a.sin_leer ? ` <span class="insignia">${a.sin_leer}</span>` : ""}</button>`;
+    return `<div class="chat" id="chat-lista">${burbujas(st.mensajes)}</div>
+      <form id="chat-form" class="chat-form" data-id="${a.id}"><input id="chat-texto" maxlength="1000" autocomplete="off" placeholder="Escribir a planificación…" aria-label="Mensaje"><button type="submit" class="primario">Enviar</button></form>
+      <button type="button" data-chat-cerrar class="chico">Cerrar el chat</button>`;
+  }
+
+  async function cargarChat() {
+    if (st.chatId == null) return;
+    const id = st.chatId;
+    let r;
+    try { r = await pedir("GET", `/visor/planificacion/actividades/${id}/mensajes`); } catch (e) { return; }
+    if (st.chatId !== id) return;
+    st.mensajes = r.mensajes;
+    const lista = $("chat-lista");
+    if (lista) { const alFinal = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 40 || !lista.dataset.listo; lista.innerHTML = burbujas(r.mensajes); lista.dataset.listo = "1"; if (alFinal) lista.scrollTop = lista.scrollHeight; }
+    const todas = [...(st.datos.actual ? [st.datos.actual] : []), ...st.datos.cola];             // reading them marks them read: the badge goes away
+    const a = todas.find((x) => x.id === id);
+    if (a && a.sin_leer) { a.sin_leer = 0; pintar(); }
+  }
+  async function enviarChat(ev) {
+    ev.preventDefault();
+    const campo = $("chat-texto"), texto = campo.value.trim();
+    if (!texto) return;
+    aviso("");
+    try { await pedir("POST", `/visor/planificacion/actividades/${ev.target.dataset.id}/mensajes`, { texto }); campo.value = ""; await cargarChat(); }
+    catch (e) { aviso(textoError(e)); }
+  }
+
   function tarjeta(a, actual) {
     const conControles = ["en_revision", "en_curso"].includes(a.estado);
     return `<article class="tarjeta ${actual ? "actual" : ""}"><div class="fila"><h3>${esc(a.cliente_nombre)}</h3><span class="etiqueta" style="--c:${COLOR[a.estado]};flex:none">${esc(ETIQUETA[a.estado])}</span></div>
       <div class="tiempos"><div><b>${reloj(a, "espera")}</b>desde que se asignó</div><div><b>${reloj(a, "ejecucion")}</b>haciéndola</div></div>
-      ${datosDe(a)}${conControles ? controlesDe(a) : ""}${botonesDe(a)}</article>`;
+      ${datosDe(a)}${conControles ? controlesDe(a) : ""}${botonesDe(a)}${chatDe(a)}</article>`;
   }
 
   function pintar() {
@@ -131,8 +166,14 @@
     const partes = [];
     if (d.actual) partes.push('<h2 class="seccion">Ahora</h2>' + tarjeta(d.actual, true));
     if (d.cola.length) partes.push(`<h2 class="seccion">En cola (${d.cola.length})</h2>` + d.cola.map((a) => tarjeta(a, false)).join(""));
+    const previo = $("chat-texto");                                         // what was being typed survives the redraw (a live notice redraws everything)
+    const borrador = previo ? { v: previo.value, f: document.activeElement === previo, s: previo.selectionStart } : null;
     $("contenido").innerHTML = partes.join("") || '<p class="vacio">No tiene actividades asignadas.<br>Planificación le avisará cuando le asigne una.</p>';
     tic();
+    const campo = $("chat-texto");
+    if (campo && borrador) { campo.value = borrador.v; if (borrador.f) { campo.focus(); campo.setSelectionRange(borrador.s, borrador.s); } }
+    const lista = $("chat-lista");
+    if (lista) lista.scrollTop = lista.scrollHeight;
   }
 
   // ------------------------------------------------------------------ acciones
@@ -196,7 +237,11 @@
     $("pantalla-clave").hidden = true; $("app").hidden = false;
     if (!conectado) {
       conectado = true;
+      $("contenido").addEventListener("submit", (ev) => { if (ev.target.id === "chat-form") enviarChat(ev); });
       $("contenido").addEventListener("click", (ev) => {
+        const abrir = ev.target.closest("[data-chat]");
+        if (abrir) { st.chatId = Number(abrir.dataset.chat); st.mensajes = []; pintar(); cargarChat().then(() => { const c = $("chat-texto"); if (c) c.focus(); }); return; }
+        if (ev.target.closest("[data-chat-cerrar]")) { st.chatId = null; pintar(); return; }
         const c = ev.target.closest("[data-control]");
         if (c) { marcar(Number(c.dataset.id), c.dataset.control, c.dataset.nuevo); return; }
         const b = ev.target.closest("[data-a]");

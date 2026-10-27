@@ -98,6 +98,14 @@ button.chico { padding: 0 7px; line-height: 1.6; font-size: 12px; }
 .linea-tiempo { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--borde); }
 .linea-tiempo li { margin: 0 0 8px 6px; font-size: 13px; }
 .cerrar { float: right; }
+.insignia { display: inline-block; padding: 0 6px; border-radius: 10px; background: var(--primario); color: #fff; font-size: 11px; font-weight: 600; }
+.chat { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; padding: 6px; border: 1px solid var(--borde); border-radius: 8px; background: var(--fondo); }
+.burbuja { max-width: 85%; padding: 6px 10px; border-radius: 12px; font-size: 13px; overflow-wrap: anywhere; }
+.burbuja .quien { display: block; font-size: 11px; opacity: .75; }
+.burbuja.mia { align-self: flex-end; background: var(--primario); color: #fff; border-bottom-right-radius: 3px; }
+.burbuja.otra { align-self: flex-start; background: var(--panel); border: 1px solid var(--borde); border-bottom-left-radius: 3px; }
+.chat-form { display: flex; gap: 6px; margin-top: 6px; }
+.chat-form input { flex: 1; }
 
 dialog { border: 1px solid var(--borde); border-radius: 12px; background: var(--panel); color: var(--texto); width: min(440px, 92vw); }
 dialog::backdrop { background: rgba(0,0,0,.45); }

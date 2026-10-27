@@ -7,7 +7,7 @@ import main  # noqa: F401  (loads visor_api before the fixtures change the envir
 import pytest
 
 from redes_base import base_redes, con_redes  # noqa: F401  (fixtures)
-from test_campo import LAT, LON
+from test_campo import LAT, LON, MARIA
 from test_campo_revision import mundo as _mundo  # noqa: F401
 from test_campo_trazos import api  # noqa: F401  (fixture of the field app's REST API)
 from test_visor_api import JAN, entorno  # noqa: F401  (fixture of the /visor/* API)
@@ -286,3 +286,60 @@ def test_the_server_sends_the_changes_of_planning_by_sse_to_planning_and_to_a_cr
                 assert r2.status_code == 200
     finally:
         servicio.cerrar()
+
+
+# ------------------------------------------------------------------ chat of an activity
+
+def test_the_chat_between_planning_and_the_crew_with_unread_counts(equipo):
+    con, g = equipo
+    i = actividad(con, g["edu"])
+    otra = actividad(con, g["edu"], nombre="Otra", ticket="T-2")
+    pl.asignar(con, g["edu"], ids=[i], cuadrilla_id=cuadrilla_id(con, "Tamos 1"))
+    pl.asignar(con, g["edu"], ids=[otra], cuadrilla_id=cuadrilla_id(con, "Telenic 1"))
+    pl.enviar_mensaje(con, g["edu"], actividad_id=i, texto="  Buen día, ¿ya llegaron?  ")
+    pl.enviar_mensaje(con, g["edu"], actividad_id=i, texto="Avisen cuando estén en el sitio")
+    # the crew has two unread messages on its activity and none on the other crew's; reading them marks them
+    assert [a["sin_leer"] for a in pl.mi_cuadrilla(con, g["juan"])["cola"]] == [2]
+    assert pl.mi_cuadrilla(con, g["juan"])["cola"][0]["sin_leer"] == 2
+    m = pl.mensajes(con, g["juan"], actividad_id=i)["mensajes"]
+    assert [(x["origen"], x["texto"]) for x in m] == [("planificacion", "Buen día, ¿ya llegaron?"), ("planificacion", "Avisen cuando estén en el sitio")] and m[0]["de"] == "edu"
+    assert pl.mi_cuadrilla(con, g["juan"])["cola"][0]["sin_leer"] == 0
+    # the crew answers: planning sees one unread on that activity (and its own messages are not «unread» for itself)
+    pl.enviar_mensaje(con, g["juan"], actividad_id=i, texto="Ya estamos en camino")
+    assert {a["id"]: a["sin_leer"] for a in pl.actividades(con, g["edu"])["actividades"]} == {i: 1, otra: 0}
+    nuevos = pl.mensajes(con, g["edu"], actividad_id=i, desde_id=m[-1]["id"])["mensajes"]
+    assert [(x["origen"], x["texto"]) for x in nuevos] == [("cuadrilla", "Ya estamos en camino")]
+    assert {a["id"]: a["sin_leer"] for a in pl.actividades(con, g["edu"])["actividades"]} == {i: 0, otra: 0}
+    # the other crew cannot read or write; nobody writes an empty message; a reader cannot enter
+    with pytest.raises(db.SinPermiso):
+        pl.mensajes(con, g["pedro"], actividad_id=i)
+    with pytest.raises(db.SinPermiso):
+        pl.enviar_mensaje(con, g["pedro"], actividad_id=i, texto="hola")
+    with pytest.raises(db.DatosInvalidos):
+        pl.enviar_mensaje(con, g["juan"], actividad_id=i, texto="   ")
+    with pytest.raises(db.SinPermiso):
+        pl.mensajes(con, g["lola"], actividad_id=i)
+    assert len(pl.mensajes(con, g["edu"], actividad_id=i)["mensajes"]) == 3
+    long = pl.enviar_mensaje(con, g["edu"], actividad_id=i, texto="x" * 5000)["id"]
+    assert len(pl.mensajes(con, g["edu"], actividad_id=i, desde_id=long - 1)["mensajes"][0]["texto"]) == pl.MENSAJE_MAX
+
+
+def test_the_chat_over_the_rest_api(api, monkeypatch):  # noqa: F811
+    c, con = api
+    monkeypatch.setenv("CAMPO_API_KEYS", "juan:clave-tecnico-juan")
+    juan = {"X-Visor-Key": "clave-tecnico-juan"}
+    con.execute("UPDATE redes.usuarios SET rol = 'editor' WHERE persona_visor = 'jan'")
+    sembrar_cuadrillas(con)
+    j = con.execute("INSERT INTO redes.usuarios (nombre, persona_visor, rol) VALUES ('juan', 'juan', 'tecnico') RETURNING id").fetchone()["id"]
+    tamos = con.execute("SELECT id FROM redes.plan_cuadrillas WHERE nombre = 'Tamos 1'").fetchone()["id"]
+    con.execute("INSERT INTO redes.plan_cuadrilla_miembros (cuadrilla_id, usuario_id) VALUES (%s, %s)", (tamos, j))
+    i = c.post("/visor/planificacion/actividades", json={"cliente_nombre": "Casa", "lat": LAT, "lon": LON}, headers=JAN).json()["id"]
+    c.post("/visor/planificacion/actividades/asignar", json={"ids": [i], "cuadrilla_id": tamos}, headers=JAN)
+    assert c.post(f"/visor/planificacion/actividades/{i}/mensajes", json={"texto": "Hola cuadrilla"}, headers=JAN).status_code == 200
+    assert c.post(f"/visor/planificacion/actividades/{i}/mensajes", json={"texto": " "}, headers=JAN).status_code == 422
+    assert c.get("/visor/planificacion/mia", headers=juan).json()["cola"][0]["sin_leer"] == 1
+    r = c.get(f"/visor/planificacion/actividades/{i}/mensajes", headers=juan).json()
+    assert r["ok"] and [(m["origen"], m["texto"]) for m in r["mensajes"]] == [("planificacion", "Hola cuadrilla")]
+    assert c.post(f"/visor/planificacion/actividades/{i}/mensajes", json={"texto": "Recibido"}, headers=juan).status_code == 200
+    assert c.get(f"/visor/planificacion/actividades/99999/mensajes", headers=JAN).status_code == 404
+    assert c.get(f"/visor/planificacion/actividades/{i}/mensajes", headers=MARIA).status_code == 403

@@ -145,7 +145,7 @@
     st.marcadas = new Set([...st.marcadas].filter((id) => st.actividades.some((a) => a.id === id)));
     cuerpo.innerHTML = st.actividades.length ? st.actividades.map((a) => `<tr data-id="${a.id}" class="${st.detalleId === a.id ? "sel" : ""}">
       <td><input type="checkbox" data-marca="${a.id}" ${st.marcadas.has(a.id) ? "checked" : ""} ${["inactivo", "asignado", "en_revision"].includes(a.estado) ? "" : "disabled"} aria-label="Marcar"></td>
-      <td>${esc(a.ticket || "—")}</td><td class="cliente"><b>${esc(a.cliente_nombre)}</b><br><span class="nota">${esc(a.codigo_cliente)}</span></td>
+      <td>${esc(a.ticket || "—")}</td><td class="cliente"><b>${esc(a.cliente_nombre)}</b>${a.sin_leer ? ` <span class="insignia" title="Mensajes de la cuadrilla sin leer">💬 ${a.sin_leer}</span>` : ""}<br><span class="nota">${esc(a.codigo_cliente)}</span></td>
       <td>${etiqueta(a.estado)}${a.iniciada_por === "planificacion" && a.estado === "en_curso" ? ' <span class="nota" title="La inició planificación">(plan.)</span>' : ""}</td>
       <td>${esc(a.cuadrilla || "—")}</td><td>${reloj(a, "espera")}</td><td>${reloj(a, "ejecucion")}</td>
       <td><span class="barra-avance"><i style="width:${a.avance.porcentaje}%"></i></span>${a.avance.hechos}/${a.avance.total}</td></tr>`).join("")
@@ -231,6 +231,9 @@
     let d;
     try { d = (await pedir("GET", `/actividades/${id}`)).actividad; } catch (e) { if (!silencioso) estadoConexion(e.message, true); return; }
     const cajas = $("detalle");
+    const previo = $("chat-texto");                                         // what was being typed survives the redraw of the panel (a live notice redraws it)
+    const borrador = previo && st.chatDe === id ? { v: previo.value, f: document.activeElement === previo, s: previo.selectionStart } : null;
+    st.chatDe = id;
     cajas.hidden = false;
     const r = d.resumen || {};
     const reasignable = ["inactivo", "asignado", "en_revision"].includes(d.estado);
@@ -254,9 +257,41 @@
         <span>${esc(c.etiqueta)}${c.obligatorio ? "" : ' <span class="nota">(opcional)</span>'}</span>
         <span class="quien">${c.marcado_en ? `${fechaHora(c.marcado_en)}<br>${esc(c.origen === "planificacion" ? "planificación" : "cuadrilla")}` : ""}</span>
         ${["terminado", "cancelado", "no_viable", "inactivo", "asignado"].includes(d.estado) ? "" : `<button type="button" data-control="${c.clave}" data-nuevo="${c.estado === "hecho" ? "pendiente" : "hecho"}">${c.estado === "hecho" ? "Quitar" : "Marcar"}</button>`}</li>`).join("")}</ul>
+      <h3>Chat con la cuadrilla</h3>
+      <div id="chat-lista" class="chat" aria-live="polite"><span class="nota">Cargando…</span></div>
+      ${d.cuadrilla_id ? `<form id="chat-form" class="chat-form"><input id="chat-texto" maxlength="1000" autocomplete="off" placeholder="Escribir a ${esc(d.cuadrilla)}…" aria-label="Mensaje"><button type="submit">Enviar</button></form>`
+        : '<p class="nota">Asigne la actividad a una cuadrilla para poder escribirle.</p>'}
       <h3>Historial</h3><ul class="linea-tiempo">${d.historial.map((h) => `<li><b>${esc(ETIQUETA[h.a] || h.a)}</b>${h.cuadrilla ? ` · ${esc(h.cuadrilla)}` : ""}<br><span class="nota">${fechaHora(h.en)} · ${esc(h.por || "")} (${esc(h.origen || "")})${h.motivo ? " · " + esc(h.motivo) : ""}</span></li>`).join("")}</ul>`;
     document.querySelectorAll("#tabla tbody tr").forEach((tr) => tr.classList.toggle("sel", Number(tr.dataset.id) === id));
     tic();
+    const campo = $("chat-texto");
+    if (campo && borrador) { campo.value = borrador.v; if (borrador.f) { campo.focus(); campo.setSelectionRange(borrador.s, borrador.s); } }
+    cargarChat(id);
+  }
+
+  // ------------------------------------------------------------------ chat de la actividad
+  function burbujas(mensajes) {
+    if (!mensajes.length) return '<span class="nota">Todavía no hay mensajes.</span>';
+    return mensajes.map((m) => `<div class="burbuja ${m.origen === "planificacion" ? "mia" : "otra"}"><span class="quien">${esc(m.de)} · ${new Date(m.enviado_en).toLocaleString("es-NI", { dateStyle: "short", timeStyle: "short" })}</span>${esc(m.texto).replace(/\n/g, "<br>")}</div>`).join("");
+  }
+  async function cargarChat(id) {
+    let r;
+    try { r = await pedir("GET", `/actividades/${id}/mensajes`); } catch (e) { return; }
+    const lista = $("chat-lista");
+    if (!lista || st.detalleId !== id) return;
+    const alFinal = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 40 || !lista.dataset.listo;
+    lista.innerHTML = burbujas(r.mensajes);
+    lista.dataset.listo = "1";
+    if (alFinal) lista.scrollTop = lista.scrollHeight;
+    const a = st.actividades.find((x) => x.id === id);                     // reading them marks them read: the badge of the table goes away
+    if (a && a.sin_leer) { a.sin_leer = 0; pintarTabla(); }
+  }
+  async function enviarChat(e) {
+    e.preventDefault();
+    const campo = $("chat-texto"), texto = campo.value.trim();
+    if (!texto) return;
+    try { await pedir("POST", `/actividades/${st.detalleId}/mensajes`, { texto }); campo.value = ""; await cargarChat(st.detalleId); }
+    catch (er) { errorDetalle(er); }
   }
 
   function errorDetalle(e) {
@@ -319,6 +354,7 @@
       const fila = e.target.closest("tr[data-id]");
       if (fila) abrirDetalle(Number(fila.dataset.id));
     });
+    $("detalle").addEventListener("submit", (e) => { if (e.target.id === "chat-form") enviarChat(e); });
     $("detalle").addEventListener("click", async (e) => {
       const t = e.target;
       if (t.closest("[data-cerrar]")) { st.detalleId = null; $("detalle").hidden = true; pintarTabla(); return; }

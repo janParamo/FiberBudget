@@ -114,6 +114,17 @@ def _publica(f: dict[str, Any], controles: list[dict[str, Any]]) -> dict[str, An
     return salida
 
 
+def _con_sin_leer(con: Any, quien: str, publicas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Adds `sin_leer` to each activity: the messages of the other side that this side has not read yet (planning reads the crew's, the crew planning's)."""
+    ids = [a["id"] for a in publicas]
+    cuentas = {f["actividad_id"]: f["n"] for f in con.execute(
+        "SELECT actividad_id, count(*) AS n FROM redes.plan_mensajes WHERE actividad_id = ANY(%s) AND leido_en IS NULL AND de_origen <> %s GROUP BY actividad_id",
+        (ids, quien)).fetchall()} if ids else {}
+    for a in publicas:
+        a["sin_leer"] = cuentas.get(a["id"], 0)
+    return publicas
+
+
 def _actividad(con: Any, id_: int, bloquear: bool = False) -> dict[str, Any]:
     f = con.execute(_SELECT + " WHERE a.id = %s AND a.borrado_en IS NULL" + (" FOR UPDATE OF a" if bloquear else ""), (id_,)).fetchone()
     if f is None:
@@ -333,7 +344,7 @@ def actividades(con: Any, actor: dict[str, Any], *, estado: str | None = None, c
         valores += [f"%{buscar}%"] * 3
     filas = con.execute(_SELECT + " WHERE " + " AND ".join(condiciones) + " ORDER BY a.prioridad DESC, a.cola_orden, a.id DESC LIMIT %s", (*valores, max(1, min(int(limite), 2000)))).fetchall()
     controles = _controles(con, [f["id"] for f in filas])
-    return {"actividades": [_publica(f, controles[f["id"]]) for f in filas]}
+    return {"actividades": _con_sin_leer(con, "planificacion" if es_planificacion(actor) else "cuadrilla", [_publica(f, controles[f["id"]]) for f in filas])}
 
 
 def actividad(con: Any, actor: dict[str, Any], *, id: int) -> dict[str, Any]:
@@ -344,6 +355,38 @@ def actividad(con: Any, actor: dict[str, Any], *, id: int) -> dict[str, Any]:
                             for h in con.execute("SELECT h.*, u.nombre AS por_nombre, c.nombre AS cuadrilla FROM redes.plan_actividad_historial h LEFT JOIN redes.usuarios u ON u.id = h.por "
                                                  "LEFT JOIN redes.plan_cuadrillas c ON c.id = h.cuadrilla_id WHERE h.actividad_id = %s ORDER BY h.en, h.id", (id,)).fetchall()]
     return {"actividad": detalle}
+
+
+# --------------------------------------------------------------------------- chat de la actividad
+
+MENSAJE_MAX = 1000
+
+
+def _mensaje_publico(f: dict[str, Any]) -> dict[str, Any]:
+    return {"id": f["id"], "de": f["de_nombre"], "origen": f["de_origen"], "texto": f["texto"], "enviado_en": _iso(f["enviado_en"]), "leido": f["leido_en"] is not None}
+
+
+def mensajes(con: Any, actor: dict[str, Any], *, actividad_id: int, desde_id: int = 0) -> dict[str, Any]:
+    """The chat of an activity (oldest first; `desde_id`: only the newer ones). What the OTHER side wrote becomes «read» when this side asks for it."""
+    f = _actividad(con, actividad_id)
+    quien = _exigir_acceso(con, actor, f)
+    con.execute("UPDATE redes.plan_mensajes SET leido_en = now() WHERE actividad_id = %s AND leido_en IS NULL AND de_origen <> %s", (actividad_id, quien))
+    filas = con.execute("SELECT m.*, u.nombre AS de_nombre FROM redes.plan_mensajes m JOIN redes.usuarios u ON u.id = m.de_usuario "
+                        "WHERE m.actividad_id = %s AND m.id > %s ORDER BY m.id", (actividad_id, int(desde_id or 0))).fetchall()
+    return {"mensajes": [_mensaje_publico(m) for m in filas]}
+
+
+def enviar_mensaje(con: Any, actor: dict[str, Any], *, actividad_id: int, texto: str) -> dict[str, Any]:
+    """Writes in the chat of an activity: planning to the crew and the crew to planning (the crew of that activity only)."""
+    f = _actividad(con, actividad_id)
+    quien = _exigir_acceso(con, actor, f)
+    limpio = "\n".join(linea.rstrip() for linea in str(texto or "").replace("\r", "").strip().split("\n"))[:MENSAJE_MAX]
+    if not limpio:
+        raise DatosInvalidos({"texto": "Escriba el mensaje"})
+    if quien == "cuadrilla" and f["cuadrilla_id"] is None:
+        raise SinPermiso("Esta actividad no está asignada a su cuadrilla")
+    nuevo = con.execute("INSERT INTO redes.plan_mensajes (actividad_id, de_usuario, de_origen, texto) VALUES (%s, %s, %s, %s) RETURNING id", (actividad_id, actor["id"], quien, limpio)).fetchone()
+    return {"id": nuevo["id"]}
 
 
 def asignar(con: Any, actor: dict[str, Any], *, ids: list[int], cuadrilla_id: int) -> dict[str, Any]:
@@ -462,7 +505,7 @@ def mi_cuadrilla(con: Any, actor: dict[str, Any]) -> dict[str, Any]:
     filas = con.execute(_SELECT + " WHERE a.cuadrilla_id = %s AND a.borrado_en IS NULL AND a.estado IN ('asignado', 'en_revision', 'en_curso', 'pausado') "
                         "ORDER BY (a.estado = 'en_curso') DESC, a.prioridad DESC, a.cola_orden, a.id", (c["id"],)).fetchall()
     controles = _controles(con, [f["id"] for f in filas])
-    publicas = [_publica(f, controles[f["id"]]) for f in filas]
+    publicas = _con_sin_leer(con, "cuadrilla", [_publica(f, controles[f["id"]]) for f in filas])
     empresa = con.execute("SELECT nombre FROM redes.plan_empresas WHERE id = %s", (c["empresa_id"],)).fetchone()["nombre"]
     return {"cuadrilla": {"id": c["id"], "nombre": c["nombre"], "empresa": empresa, "telefono": c["telefono"]},
             "actual": next((p for p in publicas if p["estado"] == "en_curso"), None), "cola": [p for p in publicas if p["estado"] != "en_curso"]}
