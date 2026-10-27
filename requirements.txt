@@ -2,6 +2,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 psycopg[binary]==3.2.3
+pymysql==1.1.1          # lectura (solo SELECT) de la base de Kayako: visor_rutas/kayako.py
 python-dotenv==1.0.1
 requests==2.32.3
 tenacity==9.0.0

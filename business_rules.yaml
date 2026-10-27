@@ -312,6 +312,14 @@ splitter_secundario:
 # Ruta de fusión (visor_rutas/ruta_fusion_plan.py): qué mufas se intervienen. Las mufas de `mufas_no_usables` (corte, aérea, punta plana) y los
 # mini nodos NO se tocan: la fusión pasa de largo. La mufa donde entra el cliente siempre se toca. El usuario puede marcar / desmarcar a mano.
 
+# Tickets de Kayako que llegan a planificacion (visor_rutas/kayako.py, base MySQL de solo lectura): la consulta que ya usa n8n.
+kayako:
+  departamento_like: "%Fibra%Optica%"
+  tipo_like: "%Presupuesto%FO%"
+  estados: ["Abierto", "En Espera"]
+  campo_ejecutivo_id: 64        # campo personalizado «Ejecutivo de cuenta»
+  dias_atras: 30                # la vista previa mira la actividad de los ultimos dias
+
 # Coordenadas masivas del visor (visor_rutas/masivas.py): un presupuesto aproximado por cada coordenada, en segundo plano.
 #   google_por_minuto: rutas de Google (Directions) que se piden por minuto; el lote espera si las alcanza
 #   max_puntos: coordenadas que puede tener un lote
