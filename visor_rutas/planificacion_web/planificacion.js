@@ -401,6 +401,37 @@
     $("salir").addEventListener("click", () => { guardar(CLAVE, null); clearInterval(st.temporizador); location.reload(); });
   }
 
+
+  // ------------------------------------------------------------------ avisos en vivo (Server-Sent Events con la clave en la cabecera)
+  const envivo = { activo: false, espera: 1000, parar: false };
+  function escucharAvisos(alCambiar, etiquetaVivo) {
+    async function conectar() {
+      if (envivo.parar) return;
+      try {
+        const r = await fetch("/visor/planificacion/eventos", { headers: { "X-Visor-Key": leer(CLAVE) || "", "ngrok-skip-browser-warning": "1" } });
+        if (!r.ok || !r.body) throw new Error(String(r.status));
+        envivo.activo = true; envivo.espera = 1000; etiquetaVivo(true);
+        alCambiar();                                    // what changed while it was not connected (or before the server was listening)
+        const lector = r.body.getReader(), texto = new TextDecoder();
+        let resto = "";
+        for (;;) {
+          const { done, value } = await lector.read();
+          if (done) break;
+          resto += texto.decode(value, { stream: true });
+          let i;
+          while ((i = resto.indexOf("\n\n")) >= 0) {
+            const bloque = resto.slice(0, i);
+            resto = resto.slice(i + 2);
+            if (bloque.split("\n").some((l) => l.startsWith("data:"))) alCambiar();
+          }
+        }
+      } catch (e) { /* the connection dropped or was refused: try again */ }
+      envivo.activo = false; etiquetaVivo(false);
+      if (!envivo.parar) setTimeout(conectar, envivo.espera = Math.min(30000, envivo.espera * 2));
+    }
+    conectar();
+  }
+
   // ------------------------------------------------------------------ clave y arranque
   function mostrarClave(mensaje) {
     $("app").hidden = true; $("pantalla-clave").hidden = false;
@@ -413,7 +444,10 @@
     if (!conectado) { conectar(); conectado = true; }
     cargar();
     clearInterval(st.temporizador);
-    st.temporizador = setInterval(() => { if (!document.hidden) cargar(); }, REFRESCO_MS);
+    st.temporizador = setInterval(() => { if (!document.hidden && (!envivo.activo || Date.now() - st.cargadoEn > 60000)) cargar(); }, REFRESCO_MS);        // with the live notices the periodic refresh is only for when they are down (and once a minute: a crew's position sends no notice)
+    let espera = null;
+    escucharAvisos(() => { clearTimeout(espera); espera = setTimeout(() => cargar(), 250); },                        // several notices in a row make one refresh
+      (vivo) => { $("vivo").textContent = vivo ? "● en vivo" : "○ sin avisos en vivo"; $("vivo").className = vivo ? "vivo nota" : "nota"; });
     setInterval(tic, 1000);
   }
 

@@ -136,6 +136,15 @@ def _exigir_acceso(con: Any, actor: dict[str, Any], f: dict[str, Any]) -> str:
     return "cuadrilla"
 
 
+def exigir_eventos(con: Any, actor: dict[str, Any]) -> dict[str, Any]:
+    """Who may receive the live notices: planning, or a technician that belongs to a crew."""
+    if es_planificacion(actor):
+        return {}
+    if actor.get("rol") == "tecnico" and actor.get("borrado_en") is None and _cuadrilla_de(con, actor) is not None:
+        return {}
+    raise SinPermiso("Los avisos son de planificación y de las cuadrillas")
+
+
 def catalogo(con: Any, actor: dict[str, Any]) -> dict[str, Any]:
     return {"estados": [{"clave": e, "etiqueta": ETIQUETAS_ESTADO[e]} for e in ESTADOS],
             "controles": [dict(f) for f in con.execute("SELECT clave, etiqueta, orden, obligatorio FROM redes.plan_control_catalogo ORDER BY orden").fetchall()],

@@ -75,6 +75,7 @@ async def escritorio(puerto, cdp=9351):
 
 
 async def _recorrido(main_, con):
+    from visor_rutas import campo_eventos
     sembrar_cuadrillas(con)
     con.execute("UPDATE redes.usuarios SET rol = 'administrador' WHERE persona_visor = 'jan'")                 # an administrator: he also puts technicians in the crews
     from visor_rutas.redes import usuarios
@@ -94,6 +95,13 @@ async def _recorrido(main_, con):
                                                  "app: document.getElementById('app').hidden, n: document.querySelectorAll('.cuadrilla').length})") + " " + str(await p.errores()))
         assert await p.evaluar("[...document.querySelectorAll('.grupo-empresa')].map((e) => e.textContent)") == ["Tamos", "Telenic", "IDEAY (propia)"]
         assert await p.evaluar("document.querySelectorAll('#tablero .carta').length") == 10                      # 8 states + two averages
+        # live notices: what planning creates somewhere else shows up in a moment (not after the 15 s refresh)
+        await p.esperar("document.getElementById('vivo').textContent.includes('en vivo')", 15)
+        assert campo_eventos.escucha("planificacion").conectado.wait(10)                                            # the server is listening to the database
+        otra = pl.crear_actividad(con, jan, cliente_nombre="Creada por otro", lat=12.15, lon=-86.27, ticket="T-OTRO")["id"]
+        await p.esperar("[...document.querySelectorAll('#tabla tbody tr td.cliente b')].some((e) => e.textContent === 'Creada por otro')", 8)
+        con.execute("UPDATE redes.plan_actividades SET borrado_en = now() WHERE id = %s", (otra,))                # it is not part of the rest of the test
+        await p.evaluar("document.getElementById('buscar').dispatchEvent(new Event('input')); true")
         # a new activity by hand
         await p.evaluar("document.getElementById('nueva-actividad').click(); true")
         await p.evaluar("(() => { const f = document.getElementById('form-nueva'); f.cliente_nombre.value = 'Casa Pérez'; f.ticket.value = 'XKJ-1'; f.contacto_nombre.value = 'Grace';"
@@ -148,9 +156,13 @@ servidor_real_puerto = 0
 
 
 @pytest.mark.skipif(not hay_edge() or websockets is None, reason="necesita Edge y la librería websockets")
-def test_planning_in_a_real_browser(mundo, monkeypatch):
+def test_planning_in_a_real_browser(mundo, base_redes, monkeypatch):
     global servidor_real_puerto
     main_, c, con = mundo
+    from visor_rutas import campo_eventos
+    from visor_rutas.redes import db
+    _, params = base_redes
+    monkeypatch.setitem(campo_eventos._otras, "planificacion", campo_eventos.Escucha(lambda: db.conectar(params=params), "planificacion"))      # the live notices of the test database
     with servidor_real(main_.app) as puerto:
         servidor_real_puerto = puerto
         asyncio.run(_recorrido(main_, con))

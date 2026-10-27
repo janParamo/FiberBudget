@@ -3,15 +3,17 @@ de la cuadrilla (clave de técnico: CAMPO_API_KEYS, rol «tecnico» y miembro de
 visor_rutas/redes/planificacion.py; aquí solo se validan los cuerpos y los errores se vuelven códigos HTTP como en la app de campo
 (403 sin permiso, 404 no existe, 422 datos no válidos, 503 sin base). Misma autenticación que /visor/campo/*.
 """
+import json
+import queue
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import visor_api
-from visor_rutas import campo_api
+from visor_rutas import campo_api, campo_eventos
 from visor_rutas.redes import planificacion
 
 router = APIRouter(prefix="/visor/planificacion", tags=["planificación de cuadrillas"])
@@ -109,6 +111,29 @@ def miembro(id: int, pedido: MiembroPedido, p: str = Depends(persona)) -> dict[s
 @router.post("/cuadrillas/{id}/cola")
 def cola(id: int, pedido: ColaPedido, p: str = Depends(persona)) -> dict[str, Any]:
     return _ejecutar(p, planificacion.reordenar_cola, "planificacion/cuadrillas/cola", cuadrilla_id=id, ids=pedido.ids)
+
+
+@router.get("/eventos")
+def eventos(p: str = Depends(persona)) -> Any:
+    """Server-Sent Events with what changes in planning (an activity, a state, a control point, a message): the NOTIFY of the database, {tabla, id, cambio}.
+    The page then asks for what changed. For planning and for the technicians of a crew. A comment line goes out every 15 s so a dead connection is noticed."""
+    permiso = _ejecutar(p, planificacion.exigir_eventos, "planificacion/eventos")
+    if isinstance(permiso, JSONResponse):
+        return permiso
+    cola: queue.Queue = queue.Queue(maxsize=500)
+    quitar = campo_eventos.escucha("planificacion").suscribir(lambda aviso: cola.put_nowait(aviso) if not cola.full() else None)
+
+    def flujo() -> Any:
+        try:
+            yield "retry: 3000\n: conectado\n\n"
+            while True:
+                try:
+                    yield f"data: {json.dumps(cola.get(timeout=15))}\n\n"
+                except queue.Empty:
+                    yield ": latido\n\n"
+        finally:
+            quitar()
+    return StreamingResponse(flujo(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.get("/tecnicos")

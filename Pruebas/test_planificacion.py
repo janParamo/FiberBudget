@@ -226,3 +226,63 @@ def test_the_technicians_to_put_in_a_crew_are_listed_with_their_crew(equipo):
     assert {(t["nombre"], t["cuadrilla"]) for t in pl.tecnicos(con, g["edu"])["tecnicos"]} == {("juan", None), ("pedro", "Telenic 1")}
     with pytest.raises(db.SinPermiso):
         pl.tecnicos(con, g["juan"])
+
+
+# ------------------------------------------------------------------ live notices (Server-Sent Events)
+
+def test_the_server_sends_the_changes_of_planning_by_sse_to_planning_and_to_a_crew_only(base_redes, con_redes, entorno, monkeypatch):  # noqa: F811
+    import json
+    import threading
+
+    import httpx
+
+    from test_campo import MARIA
+    from test_campo_pwa import servidor_real
+    from visor_rutas import campo_eventos
+    from visor_rutas.redes import usuarios
+    from visor_rutas.redes.api import ServicioRedes
+    main_, visor_api, _, _, _ = entorno
+    for nombre, rol in (("jan", "editor"), ("maria", "tecnico"), ("lola", "lector")):
+        u = usuarios.identificar(con_redes, persona_visor=nombre)
+        con_redes.execute("UPDATE redes.usuarios SET rol = %s WHERE id = %s", (rol, u["id"]))
+    sembrar_cuadrillas(con_redes)
+    _, params = base_redes
+    servicio = ServicioRedes(conectar=lambda: db.conectar(params=params))
+    monkeypatch.setattr(visor_api, "_servicio_redes", servicio)
+    escucha = campo_eventos.Escucha(lambda: db.conectar(params=params), "planificacion")
+    monkeypatch.setitem(campo_eventos._otras, "planificacion", escucha)
+    import visor_rutas.campo_api as campo_api
+    campo_api.limitador.reiniciar()
+    try:
+        with servidor_real(main_.app) as puerto:
+            base = f"http://127.0.0.1:{puerto}/visor/planificacion"
+            assert httpx.get(base + "/eventos", headers={"X-Visor-Key": "mala"}).status_code == 401
+            assert httpx.get(base + "/eventos", headers=MARIA).status_code == 403                    # a technician without a crew gets nothing
+            recibidos, listo = [], threading.Event()
+
+            def leer():
+                with httpx.stream("GET", base + "/eventos", headers=JAN, timeout=30) as r:
+                    assert r.status_code == 200 and "text/event-stream" in r.headers["content-type"]
+                    for linea in r.iter_lines():
+                        if linea.startswith(": conectado"):
+                            listo.set()
+                        if linea.startswith("data: "):
+                            recibidos.append(json.loads(linea[6:]))
+                            if len(recibidos) == 2:
+                                return
+            hilo = threading.Thread(target=leer, daemon=True)
+            hilo.start()
+            assert listo.wait(10) and escucha.conectado.wait(10)
+            # planning creates an activity and assigns it: the stream gets both, live
+            r = httpx.post(base + "/actividades", json={"cliente_nombre": "Casa Pérez", "lat": LAT, "lon": LON, "ticket": "T-1"}, headers=JAN).json()
+            tamos = httpx.get(base + "/cuadrillas", headers=JAN).json()["cuadrillas"][0]["id"]
+            assert httpx.post(base + "/actividades/asignar", json={"ids": [r["id"]], "cuadrilla_id": tamos}, headers=JAN).status_code == 200
+            hilo.join(15)
+            assert [a["tabla"] for a in recibidos] == ["plan_actividades", "plan_actividades"] and recibidos[0]["cambio"] == "insert" and recibidos[1]["cambio"] == "update"
+            # a technician that belongs to a crew does get the stream
+            maria = con_redes.execute("SELECT id FROM redes.usuarios WHERE persona_visor = 'maria'").fetchone()["id"]
+            con_redes.execute("INSERT INTO redes.plan_cuadrilla_miembros (cuadrilla_id, usuario_id) VALUES (%s, %s)", (tamos, maria))
+            with httpx.stream("GET", base + "/eventos", headers=MARIA, timeout=10) as r2:
+                assert r2.status_code == 200
+    finally:
+        servicio.cerrar()

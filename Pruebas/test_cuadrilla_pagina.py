@@ -77,7 +77,8 @@ async def movil(puerto, cdp=9361):
         shutil.rmtree(perfil, ignore_errors=True)
 
 
-async def _recorrido(puerto, con, id_):
+async def _recorrido(puerto, con, id_, plan_actor):
+    from visor_rutas import campo_eventos
     async with movil(puerto) as p:
         assert await p.evaluar("!document.getElementById('pantalla-clave').hidden") is True
         await p.evaluar("document.getElementById('clave').value = 'mala'; document.getElementById('clave-entrar').click(); true")
@@ -87,6 +88,15 @@ async def _recorrido(puerto, con, id_):
         assert await p.evaluar("document.getElementById('nombre-cuadrilla').textContent") == "Tamos 1"
         texto = await p.evaluar("document.getElementById('contenido').innerText")
         assert "Casa Pérez" in texto and "8599 9439" in texto and "Cómo llegar" in texto and "Asignado" in texto
+        # live notices: what planning assigns to the crew shows up in a moment (not after the 15 s refresh)
+        await p.esperar("document.getElementById('vivo').textContent.includes('en vivo')", 15)
+        assert campo_eventos.escucha("planificacion").conectado.wait(10)                                            # the server is listening to the database
+        con.execute("UPDATE redes.plan_actividades SET prioridad = 0 WHERE id = %s", (id_,))
+        nueva = pl.crear_actividad(con, plan_actor, cliente_nombre="Llegó en vivo", lat=LAT, lon=LON, ticket="T-VIVO")["id"]
+        pl.asignar(con, plan_actor, ids=[nueva], cuadrilla_id=con.execute("SELECT id FROM redes.plan_cuadrillas WHERE nombre = 'Tamos 1'").fetchone()["id"])
+        await p.esperar("document.querySelectorAll('.tarjeta').length === 2", 8)
+        con.execute("UPDATE redes.plan_actividades SET borrado_en = now() WHERE id = %s", (nueva,))
+        await p.evaluar("document.dispatchEvent(new Event('visibilitychange')); true")
         assert await p.evaluar("document.querySelector('#contenido a[href^=tel]').getAttribute('href')") == "tel:8599 9439"
         # the location of the crew reaches planning
         await p.esperar("document.getElementById('gps').textContent === 'GPS ✓'", 15)
@@ -118,8 +128,12 @@ async def _recorrido(puerto, con, id_):
 
 
 @pytest.mark.skipif(not hay_edge() or websockets is None, reason="necesita Edge y la librería websockets")
-def test_a_crew_works_an_activity_from_its_phone(mundo, monkeypatch):
+def test_a_crew_works_an_activity_from_its_phone(mundo, base_redes, monkeypatch):
     main_, c, con = mundo
+    from visor_rutas import campo_eventos
+    from visor_rutas.redes import db
+    _, params = base_redes
+    monkeypatch.setitem(campo_eventos._otras, "planificacion", campo_eventos.Escucha(lambda: db.conectar(params=params), "planificacion"))      # the live notices of the test database
     monkeypatch.setenv("CAMPO_API_KEYS", "juan:clave-tecnico-juan")
     sembrar_cuadrillas(con)
     admin = usuarios.identificar(con, usuario_windows="jgutierrez")
@@ -131,7 +145,7 @@ def test_a_crew_works_an_activity_from_its_phone(mundo, monkeypatch):
     i = pl.crear_actividad(con, plan, cliente_nombre="Casa Pérez", lat=LAT, lon=LON, ticket="XKJ-1", contacto_nombre="Grace", contacto_telefono="8599 9439")["id"]
     pl.asignar(con, plan, ids=[i], cuadrilla_id=tamos)
     with servidor_real(main_.app) as puerto:
-        asyncio.run(_recorrido(puerto, con, i))
+        asyncio.run(_recorrido(puerto, con, i, plan))
     d = pl.actividad(con, plan, id=i)["actividad"]
     assert d["estado"] == "terminado" and d["iniciada_por"] == "cuadrilla" and d["avance"]["hechos"] == 5 and d["ejecucion_s"] is not None
     assert [h["a"] for h in d["historial"]] == ["inactivo", "asignado", "en_revision", "en_curso", "terminado"]

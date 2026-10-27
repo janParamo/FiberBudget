@@ -240,7 +240,7 @@ class Api:
     def planificacion_acceso(self) -> dict[str, Any]:
         """Where the planning app is (/planificacion/ of the service) and the key to enter it, for the «Planificación» window of the viewer.
         Server mode: the server and the key of the configuration. Local mode: this computer's service (API_HOST / API_PORT) and the viewer key of the .env
-        of the person «planificacion» (else of this Windows user, else the first one)."""
+        of the person «planificacion» (or one whose name has it: «janPlanificacion»), else of this Windows user, else the first one."""
         import getpass
         import urllib.request
         import visor_api
@@ -259,7 +259,10 @@ class Api:
             return {"ok": False, "error": f"El servicio no responde en {url}: abra start_service.bat y vuelva a intentar"}
         claves = visor_api.claves_visor()                                  # {key: person}
         usuario = getpass.getuser().casefold()
-        clave = next((k for nombre in ("planificacion", usuario) for k, persona in claves.items() if persona.casefold() == nombre), next(iter(claves), ""))
+        def preferencia(persona: str) -> int:             # «planificacion», then any name that has it («janPlanificacion»), then this Windows user, then the rest
+            nombre = persona.casefold()
+            return 0 if nombre == "planificacion" else 1 if "planificacion" in nombre else 2 if nombre == usuario else 3
+        clave = min(claves.items(), key=lambda kv: preferencia(kv[1]))[0] if claves else ""
         return {"ok": True, "url": url, "clave": clave, "modo": "local"}
 
     def probar_conexion(self, url: str, clave: str = "") -> dict[str, Any]:

@@ -37,6 +37,8 @@ def test_where_the_planning_app_is_in_each_mode(monkeypatch):
     assert r == {"ok": True, "url": "http://127.0.0.1:9", "clave": "k-yo", "modo": "local"}
     monkeypatch.setattr(visor_api, "claves_visor", lambda: {"k-yo": __import__("getpass").getuser(), "k-plan": "Planificacion"})
     assert api.planificacion_acceso()["clave"] == "k-plan"                                    # the person «planificacion» comes first
+    monkeypatch.setattr(visor_api, "claves_visor", lambda: {"k-yo": __import__("getpass").getuser(), "k-jan": "janPlanificacion", "k-otra": "otra"})
+    assert api.planificacion_acceso()["clave"] == "k-jan"                                     # a name that has «planificacion» comes before this Windows user
     monkeypatch.setattr(visor_api, "claves_visor", lambda: {"k-otra": "otra"})
     assert api.planificacion_acceso()["clave"] == "k-otra"                                    # none is this user's: the first one
     assert ajustes is not None

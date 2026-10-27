@@ -19,6 +19,7 @@ input, select, textarea { padding: 6px 8px; border: 1px solid var(--borde); bord
 .nota { color: var(--suave); font-size: 12px; }
 .error { color: var(--error); }
 .relleno { flex: 1; }
+.vivo { color: var(--ok); }
 
 .clave { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--fondo); z-index: 10; }
 .clave-caja { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 24px; width: min(360px, 92vw); display: flex; flex-direction: column; gap: 8px; }

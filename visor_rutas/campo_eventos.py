@@ -7,6 +7,7 @@ Si la conexión se cae, reconecta sola con espera creciente. El hilo arranca con
 """
 import json
 import logging
+import re
 import threading
 from typing import Any, Callable
 
@@ -19,8 +20,11 @@ SONDEO_S = 5.0                     # how often the listening loop looks at the s
 class Escucha:
     """`conectar()` returns an autocommit psycopg connection (db.conectar)."""
 
-    def __init__(self, conectar: Callable[[], Any]):
+    def __init__(self, conectar: Callable[[], Any], canal: str = "campo"):
+        if not re.fullmatch(r"[a-z_]{3,30}", canal):
+            raise ValueError("Canal no válido")
         self._conectar = conectar
+        self.canal = canal
         self._suscriptores: list[Callable[[dict[str, Any]], None]] = []
         self._lock = threading.Lock()
         self._hilo: threading.Thread | None = None
@@ -33,7 +37,7 @@ class Escucha:
             self._suscriptores.append(funcion)
             if self._hilo is None or not self._hilo.is_alive():
                 self._parar.clear()
-                self._hilo = threading.Thread(target=self._bucle, name="campo-escucha", daemon=True)
+                self._hilo = threading.Thread(target=self._bucle, name=f"{self.canal}-escucha", daemon=True)
                 self._hilo.start()
 
         def quitar() -> None:
@@ -59,7 +63,7 @@ class Escucha:
             con = None
             try:
                 con = self._conectar()
-                con.execute("LISTEN campo")
+                con.execute(f"LISTEN {self.canal}")
                 self.conectado.set()
                 espera = ESPERA_MIN_S
                 while not self._parar.is_set():
@@ -87,21 +91,27 @@ class Escucha:
 
 
 _escucha: Escucha | None = None
+_otras: dict[str, Escucha] = {}
 _lock = threading.Lock()
 
 
-def escucha() -> Escucha:
-    """The listener of this process (the real database: redes.db.conectar)."""
+def escucha(canal: str = "campo") -> Escucha:
+    """The listener of this process for a channel (the real database: redes.db.conectar): «campo» (the field app) or «planificacion» (crew planning)."""
     global _escucha
     with _lock:
-        if _escucha is None:
-            from visor_rutas.redes import db
-            _escucha = Escucha(db.conectar)
-        return _escucha
+        from visor_rutas.redes import db
+        if canal == "campo":
+            if _escucha is None:
+                _escucha = Escucha(db.conectar)
+            return _escucha
+        if canal not in _otras:
+            _otras[canal] = Escucha(db.conectar, canal)
+        return _otras[canal]
 
 
 def reiniciar() -> None:
-    """Tests: forget the listener (it stops when its last subscriber leaves)."""
+    """Tests: forget the listeners (each stops when its last subscriber leaves)."""
     global _escucha
     with _lock:
         _escucha = None
+        _otras.clear()
