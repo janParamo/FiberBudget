@@ -73,6 +73,16 @@ input, select, textarea { padding: 6px 8px; border: 1px solid var(--borde); bord
 #mapa { flex: 1; min-height: 360px; border-radius: 10px; border: 1px solid var(--borde); }
 .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
 .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.tarjeta h4 { margin: 8px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
+.cola { margin: 0; padding: 0; list-style: none; }
+.cola li { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--borde); border-radius: 8px; margin-bottom: 4px; background: var(--fondo); }
+.cola li a { cursor: pointer; flex: 1; min-width: 0; }
+.cola li[draggable="true"] { cursor: grab; }
+.agarre { color: var(--suave); cursor: grab; }
+.flechas { display: flex; gap: 2px; }
+button.chico { padding: 0 7px; line-height: 1.6; font-size: 12px; }
+.miembros { display: flex; flex-wrap: wrap; gap: 6px; }
+.miembro { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border: 1px solid var(--borde); border-radius: 14px; background: var(--fondo); }
 .form-linea { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 10px; }
 
 .detalle h2 { margin: 0 0 2px; font-size: 16px; }

@@ -216,3 +216,13 @@ def test_the_rest_api_planning_and_a_crew_with_its_own_key(api, monkeypatch):  #
     assert c.get("/visor/planificacion/tablero", headers=JAN).json()["por_estado"]["en_curso"] == 1
     assert c.get("/visor/planificacion/actividades?estado=en_curso", headers=JAN).json()["actividades"][0]["iniciada_por"] == "planificacion"
     assert c.get("/visor/planificacion/catalogo", headers=juan).status_code == 200
+
+
+def test_the_technicians_to_put_in_a_crew_are_listed_with_their_crew(equipo):
+    con, g = equipo
+    lista = pl.tecnicos(con, g["edu"])["tecnicos"]
+    assert {(t["nombre"], t["cuadrilla"]) for t in lista} == {("juan", "Tamos 1"), ("pedro", "Telenic 1")}                  # only technicians, with their crew
+    pl.quitar_miembro(con, g["admin"], cuadrilla_id=cuadrilla_id(con, "Tamos 1"), usuario_id=g["juan"]["id"])
+    assert {(t["nombre"], t["cuadrilla"]) for t in pl.tecnicos(con, g["edu"])["tecnicos"]} == {("juan", None), ("pedro", "Telenic 1")}
+    with pytest.raises(db.SinPermiso):
+        pl.tecnicos(con, g["juan"])

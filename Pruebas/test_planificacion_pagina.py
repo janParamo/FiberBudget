@@ -76,7 +76,10 @@ async def escritorio(puerto, cdp=9351):
 
 async def _recorrido(main_, con):
     sembrar_cuadrillas(con)
-    con.execute("UPDATE redes.usuarios SET rol = 'editor' WHERE persona_visor = 'jan'")
+    con.execute("UPDATE redes.usuarios SET rol = 'administrador' WHERE persona_visor = 'jan'")                 # an administrator: he also puts technicians in the crews
+    from visor_rutas.redes import usuarios
+    jan = usuarios.identificar(con, persona_visor="jan")
+    juan = usuarios.identificar(con, persona_visor="juan", rol_inicial="tecnico")
     async with escritorio(servidor_real_puerto) as p:
         # without a key: the key screen; with a wrong one: it says so
         assert await p.evaluar("!document.getElementById('pantalla-clave').hidden && document.getElementById('app').hidden") is True
@@ -103,6 +106,7 @@ async def _recorrido(main_, con):
         await p.esperar("document.querySelector('#tabla tbody tr td:nth-child(5)').textContent === 'Tamos 1'", 15)
         assert "Asignado" in await p.evaluar("document.querySelector('#tabla tbody tr td:nth-child(4)').textContent")
         # planning starts the clock; the state and who started it show
+        await p.esperar("document.querySelector('#detalle [data-a=en_curso]') !== null", 15)                      # the detail is drawn again a moment after the table
         await p.evaluar("document.querySelector('#detalle [data-a=en_curso]').click(); true")
         await p.esperar("document.querySelector('#tabla tbody tr td:nth-child(4)').textContent.includes('En curso')", 15)
         assert "plan." in await p.evaluar("document.querySelector('#tabla tbody tr td:nth-child(4)').textContent")
@@ -117,6 +121,26 @@ async def _recorrido(main_, con):
         await p.esperar("document.querySelectorAll('#mapa .leaflet-interactive').length >= 1", 10)
         await p.evaluar("document.querySelector('[data-vista=cuadrillas]').click(); true")
         assert await p.evaluar("document.querySelectorAll('#lista-cuadrillas .tarjeta').length") == 6
+        # two more activities wait in the queue of Tamos 1: the rows can be moved (arrows; the rows are also draggable)
+        tamos = con.execute("SELECT id FROM redes.plan_cuadrillas WHERE nombre = 'Tamos 1'").fetchone()["id"]
+        a = pl.crear_actividad(con, jan, cliente_nombre="Uno", lat=12.13, lon=-86.25, ticket="T-1")["id"]
+        b = pl.crear_actividad(con, jan, cliente_nombre="Dos", lat=12.14, lon=-86.26, ticket="T-2")["id"]
+        pl.asignar(con, jan, ids=[a, b], cuadrilla_id=tamos)
+        await p.evaluar("document.getElementById('buscar').dispatchEvent(new Event('input')); true")
+        await p.evaluar("window.Planificacion._st.arrastrando = false; true")
+        await p.esperar("document.querySelectorAll('#lista-cuadrillas .cola li').length === 2", 30)                  # the next refresh draws them
+        orden = "[...document.querySelectorAll('#lista-cuadrillas .cola li b')].map((e) => e.textContent)"
+        assert await p.evaluar(orden) == ["Uno", "Dos"]
+        await p.evaluar("document.querySelectorAll('#lista-cuadrillas [data-sube]')[1].click(); true")                # «Dos» goes up
+        await p.esperar(orden + ".join() === 'Dos,Uno'", 15)
+        assert [x["cliente_nombre"] for x in pl.actividades(con, jan, cuadrilla_id=tamos)["actividades"] if x["estado"] == "asignado"] == ["Dos", "Uno"]
+        # a technician is put in a crew from the list and taken out again
+        await p.evaluar("(() => { const s = document.querySelector('#lista-cuadrillas [data-agregar-select]'); s.value = [...s.options].find((o) => o.text.startsWith('juan')).value; "
+                        "document.querySelector('#lista-cuadrillas [data-agregar]').click(); return true; })()")
+        await p.esperar("document.querySelectorAll('#lista-cuadrillas [data-quitar-miembro]').length === 1", 15)
+        assert con.execute("SELECT count(*) AS n FROM redes.plan_cuadrilla_miembros WHERE usuario_id = %s", (juan["id"],)).fetchone()["n"] == 1
+        await p.evaluar("document.querySelector('#lista-cuadrillas [data-quitar-miembro]').click(); true")
+        await p.esperar("document.querySelectorAll('#lista-cuadrillas [data-quitar-miembro]').length === 0", 15)
         assert await p.errores() == []
 
 
@@ -130,4 +154,5 @@ def test_planning_in_a_real_browser(mundo, monkeypatch):
     with servidor_real(main_.app) as puerto:
         servidor_real_puerto = puerto
         asyncio.run(_recorrido(main_, con))
-    assert pl.actividades(con, con.execute("SELECT * FROM redes.usuarios WHERE persona_visor = 'jan'").fetchone())["actividades"][0]["estado"] == "en_curso"
+    jan = con.execute("SELECT * FROM redes.usuarios WHERE persona_visor = 'jan'").fetchone()
+    assert sorted(x["estado"] for x in pl.actividades(con, jan)["actividades"]) == ["asignado", "asignado", "en_curso"]

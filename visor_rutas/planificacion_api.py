@@ -111,6 +111,11 @@ def cola(id: int, pedido: ColaPedido, p: str = Depends(persona)) -> dict[str, An
     return _ejecutar(p, planificacion.reordenar_cola, "planificacion/cuadrillas/cola", cuadrilla_id=id, ids=pedido.ids)
 
 
+@router.get("/tecnicos")
+def tecnicos(p: str = Depends(persona)) -> dict[str, Any]:
+    return _ejecutar(p, planificacion.tecnicos, "planificacion/tecnicos")
+
+
 @router.get("/mia")
 def mia(p: str = Depends(persona)) -> dict[str, Any]:
     """The crew app: the crew of the key, what it is doing now and its queue."""

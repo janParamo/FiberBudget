@@ -210,6 +210,15 @@ def editar_cuadrilla(con: Any, actor: dict[str, Any], *, id: int, cambios: dict[
     return {"id": id}
 
 
+def tecnicos(con: Any, actor: dict[str, Any]) -> dict[str, Any]:
+    """The users with the role «tecnico» and the crew each one belongs to (to put them in a crew). Planning only."""
+    exigir_planificacion(actor)
+    filas = con.execute("SELECT u.id, u.nombre, c.id AS cuadrilla_id, c.nombre AS cuadrilla FROM redes.usuarios u "
+                        "LEFT JOIN redes.plan_cuadrilla_miembros m ON m.usuario_id = u.id LEFT JOIN redes.plan_cuadrillas c ON c.id = m.cuadrilla_id "
+                        "WHERE u.rol = 'tecnico' AND u.borrado_en IS NULL ORDER BY u.nombre").fetchall()
+    return {"tecnicos": [dict(f) for f in filas]}
+
+
 def agregar_miembro(con: Any, actor: dict[str, Any], *, cuadrilla_id: int, usuario_id: int) -> dict[str, Any]:
     """Puts a technician (role «tecnico») in a crew: the crew app shows him what is assigned to it. Administrators only."""
     usuarios.exigir_admin(actor)

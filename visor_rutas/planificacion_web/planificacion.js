@@ -8,7 +8,7 @@
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const COLOR = { inactivo: "#9aa0ab", asignado: "#5c7cfa", en_revision: "#ab47bc", en_curso: "#1f6feb", pausado: "#fb8c00", terminado: "#2ca02c", no_viable: "#8d6e63", cancelado: "#e53935" };
   const ETIQUETA = { inactivo: "Inactivo", asignado: "Asignado", en_revision: "En revisión", en_curso: "En curso", pausado: "Pausado", terminado: "Terminado", no_viable: "No viable", cancelado: "Cancelado" };
-  const st = { catalogo: null, tablero: null, cuadrillas: [], actividades: [], marcadas: new Set(), filtro: { estado: "", cuadrilla: "", buscar: "" }, detalleId: null,
+  const st = { catalogo: null, tablero: null, cuadrillas: [], actividades: [], todas: [], tecnicos: [], marcadas: new Set(), filtro: { estado: "", cuadrilla: "", buscar: "" }, detalleId: null,
                vista: "lista", mapa: null, capaMapa: null, cargadoEn: Date.now(), temporizador: null, ajustado: false };
 
   // The key also lives in memory: inside the viewer's window (pywebview, private mode) the browser may not keep localStorage.
@@ -81,8 +81,11 @@
       if (st.filtro.estado) q.set("estado", st.filtro.estado);
       if (st.filtro.cuadrilla) q.set("cuadrilla_id", st.filtro.cuadrilla);
       if (st.filtro.buscar) q.set("buscar", st.filtro.buscar);
-      const [t, c, a] = await Promise.all([pedir("GET", "/tablero"), pedir("GET", "/cuadrillas"), pedir("GET", "/actividades?" + q.toString())]);
-      st.tablero = t; st.cuadrillas = c.cuadrillas; st.actividades = a.actividades; st.cargadoEn = Date.now();
+      const sinFiltro = !q.toString();
+      const [t, c, a, todas, tec] = await Promise.all([pedir("GET", "/tablero"), pedir("GET", "/cuadrillas"), pedir("GET", "/actividades?" + q.toString()),
+        sinFiltro ? null : pedir("GET", "/actividades"), pedir("GET", "/tecnicos")]);          // the queues are drawn from all the activities, whatever the filter
+      st.tablero = t; st.cuadrillas = c.cuadrillas; st.actividades = a.actividades; st.todas = todas ? todas.actividades : a.actividades; st.tecnicos = tec.tecnicos;
+      st.cargadoEn = Date.now();
       estadoConexion(`Actualizado ${new Date().toLocaleTimeString("es-NI", { timeStyle: "short" })}`);
       pintar();
       if (conDetalle && st.detalleId) abrirDetalle(st.detalleId, true);
@@ -150,13 +153,40 @@
     $("asignar").disabled = !st.marcadas.size || !$("asignar-a").value;
   }
 
+  /** The queue of a crew, in the order the crew will take it (drag a row or use the arrows). */
+  function colaDe(c) {
+    const cola = st.todas.filter((a) => a.cuadrilla_id === c.id && ["asignado", "en_revision", "pausado"].includes(a.estado)).sort((x, y) => x.cola_orden - y.cola_orden || x.id - y.id);
+    if (!cola.length) return '<span class="nota">Cola vacía</span>';
+    return `<ol class="cola" data-cola="${c.id}">${cola.map((a, i) => `<li draggable="true" data-id="${a.id}"><span class="agarre" title="Arrastre para ordenar">⠿</span>
+      <a data-id-abrir="${a.id}"><b>${esc(a.cliente_nombre)}</b></a> <span class="nota">${esc(ETIQUETA[a.estado])}</span>
+      <span class="flechas"><button type="button" class="chico" data-sube="${a.id}" ${i === 0 ? "disabled" : ""} aria-label="Subir">▲</button><button type="button" class="chico" data-baja="${a.id}" ${i === cola.length - 1 ? "disabled" : ""} aria-label="Bajar">▼</button></span></li>`).join("")}</ol>`;
+  }
+
+  function miembrosDe(c) {
+    const libres = st.tecnicos.filter((t) => t.cuadrilla_id !== c.id);
+    return `<div class="miembros">${c.miembros.length ? c.miembros.map((m) => `<span class="miembro">${esc(m.nombre)} <button type="button" class="chico" data-quitar-miembro="${m.usuario_id}" data-cuadrilla-id="${c.id}" aria-label="Quitar a ${esc(m.nombre)}">✕</button></span>`).join("")
+      : '<span class="nota">Sin miembros: nadie ve esta cuadrilla en su teléfono todavía</span>'}</div>
+      ${libres.length ? `<div class="acciones"><select data-agregar-select="${c.id}" aria-label="Técnico"><option value="">Agregar técnico…</option>${libres.map((t) => `<option value="${t.id}">${esc(t.nombre)}${t.cuadrilla ? ` (hoy en ${esc(t.cuadrilla)})` : ""}</option>`).join("")}</select>
+        <button type="button" data-agregar="${c.id}">Agregar</button></div>` : '<span class="nota">No hay más técnicos (los crea un administrador con el rol «técnico»)</span>'}`;
+  }
+
   function pintarCuadrillas() {
+    // not while a row is being dragged or a technician is being chosen: the periodic refresh would take it away from under the hand
+    if (st.arrastrando || (document.activeElement && document.activeElement.matches("#lista-cuadrillas select"))) return;
     $("lista-cuadrillas").innerHTML = st.cuadrillas.map((c) => `<div class="tarjeta"><b>${esc(c.nombre)}</b><span class="nota">${esc(c.empresa)}${c.telefono ? " · " + esc(c.telefono) : ""}</span>
       <span>${c.en_curso ? "1 en curso" : "libre"} · ${c.en_cola} en cola · ${c.terminadas} terminadas</span>
-      <span class="nota">Miembros: ${c.miembros.length ? c.miembros.map((m) => esc(m.nombre)).join(", ") : "ninguno (un administrador los agrega)"}</span>
       <span class="nota">${haceTexto(c.ubicacion)}</span>
+      <h4>Cola</h4>${colaDe(c)}
+      <h4>Miembros</h4>${miembrosDe(c)}
       <div class="acciones"><button type="button" data-activar="${c.id}" data-activa="${c.activa ? 0 : 1}">${c.activa ? "Desactivar" : "Activar"}</button></div></div>`).join("");
   }
+
+  async function guardarCola(cuadrillaId, ids) {
+    try { await pedir("POST", `/cuadrillas/${cuadrillaId}/cola`, { ids }); await cargar(false); }
+    catch (e) { estadoConexion(textoError(e), true); await cargar(false); }
+  }
+  const textoError = (e) => (e.errores ? Object.values(e.errores).join(" · ") : e.message);
+  const idsDeCola = (ol) => [...ol.querySelectorAll("li[data-id]")].map((li) => Number(li.dataset.id));
 
   // ------------------------------------------------------------------ mapa
   function pintarMapa() {
@@ -305,9 +335,49 @@
       }
     });
     $("lista-cuadrillas").addEventListener("click", async (e) => {
+      const mover = e.target.closest("[data-sube], [data-baja]");
+      if (mover) {
+        const li = mover.closest("li"), ol = li.parentElement, id = Number(li.dataset.id), ids = idsDeCola(ol), i = ids.indexOf(id), j = mover.dataset.sube ? i - 1 : i + 1;
+        if (j >= 0 && j < ids.length) { [ids[i], ids[j]] = [ids[j], ids[i]]; await guardarCola(Number(ol.dataset.cola), ids); }
+        return;
+      }
+      const abrir = e.target.closest("[data-id-abrir]");
+      if (abrir) { abrirDetalle(Number(abrir.dataset.idAbrir)); return; }
+      const quitar = e.target.closest("[data-quitar-miembro]");
+      if (quitar) {
+        try { await pedir("POST", `/cuadrillas/${quitar.dataset.cuadrillaId}/miembros`, { usuario_id: Number(quitar.dataset.quitarMiembro), quitar: true }); await cargar(false); }
+        catch (er) { estadoConexion(textoError(er), true); }
+        return;
+      }
+      const agregar = e.target.closest("[data-agregar]");
+      if (agregar) {
+        const sel = agregar.parentElement.querySelector("select");
+        if (!sel.value) { estadoConexion("Elija el técnico que se agrega", true); return; }
+        try { await pedir("POST", `/cuadrillas/${agregar.dataset.agregar}/miembros`, { usuario_id: Number(sel.value) }); await cargar(false); }
+        catch (er) { estadoConexion(textoError(er), true); }
+        return;
+      }
       const b = e.target.closest("[data-activar]");
       if (!b) return;
       try { await pedir("POST", `/cuadrillas/${b.dataset.activar}`, { cambios: { activa: b.dataset.activa === "1" } }); await cargar(false); } catch (er) { estadoConexion(er.message, true); }
+    });
+    // drag a row of a queue to another place of the same queue
+    let arrastrada = null;
+    $("lista-cuadrillas").addEventListener("dragstart", (e) => { const li = e.target.closest("li[data-id]"); if (li) { arrastrada = li; st.arrastrando = true; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", li.dataset.id); } });
+    $("lista-cuadrillas").addEventListener("dragend", () => { arrastrada = null; st.arrastrando = false; });
+    $("lista-cuadrillas").addEventListener("dragover", (e) => {
+      const li = e.target.closest("li[data-id]");
+      if (arrastrada && li && li.parentElement === arrastrada.parentElement) e.preventDefault();
+    });
+    $("lista-cuadrillas").addEventListener("drop", (e) => {
+      const li = e.target.closest("li[data-id]");
+      if (!arrastrada || !li || li === arrastrada || li.parentElement !== arrastrada.parentElement) return;
+      e.preventDefault();
+      const ol = li.parentElement, despues = e.clientY > li.getBoundingClientRect().top + li.offsetHeight / 2;
+      ol.insertBefore(arrastrada, despues ? li.nextSibling : li);
+      const ids = idsDeCola(ol);
+      arrastrada = null; st.arrastrando = false;
+      guardarCola(Number(ol.dataset.cola), ids);
     });
     $("form-cuadrilla").addEventListener("submit", async (e) => {
       e.preventDefault();
