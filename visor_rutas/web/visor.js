@@ -1293,6 +1293,24 @@
       },
       elegir: (item) => seleccionarMufa(item.dato),
     });
+    window.Buscador.registrarFuente({          // a text written INSIDE the diagrams (a client, a splitter, a port, a note...)
+      id: "texto_visio", titulo: "Texto dentro de los diagramas Visio",
+      async buscar(texto) {
+        const res = await api.buscar_texto_diagramas(texto);
+        if (!res.ok) throw new Error(res.error);
+        return res.resultados.map((d) => ({ titulo: d.nombre, dato: d, consulta: texto,
+          detalle: `${d.coincidencias} coincidencia(s) · ${d.texto}` }));
+      },
+      elegir: (item) => abrirDiagramaConTexto(item.dato, item.consulta),
+    });
+  }
+
+  /** A diagram found by its text: opened in the panel with the same text typed in its search box (it goes to the first match). */
+  function abrirDiagramaConTexto(d, texto) {
+    const campo = $("pd-busqueda").querySelector(".dg-bus-texto");
+    if (campo) campo.value = texto;
+    const archivo = { md5: d.md5, nombre: d.nombre, ruta_relativa: d.ruta_relativa, tipo_diagrama: d.tipo_diagrama, rol: "encontrado", diagrama: true, ancla: true };
+    mostrarDiagrama(d.nombre, `<div class="nota">${esc(d.ruta_relativa)}<br>${esc(d.coincidencias)} coincidencia(s) de «${esc(texto)}»</div>`, [archivo], 0, d.nombre);
   }
 
   /** "Usar para generar ruta" of the pin: fills the bottom bar and calculates nothing. */

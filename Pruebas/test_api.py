@@ -300,7 +300,7 @@ def test_reserve_connection_quantities_and_origin_name(client, monkeypatch):
     assert quantities["Instalacion de mufas"] == 1
     assert quantities["Intervencion de Mufa Existente"] == 0
     assert quantities["Sangria de Cable o Buffer"] == 2
-    assert quantities["Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"] == 2
+    assert quantities["Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"] == 1
     assert data["connection_point"]["name"] == "RVA KAREN"
 
     # "Origen de trafico (MF)" is the mufa the node's service comes from, not the connection
@@ -421,6 +421,8 @@ def test_route_map_goes_into_route_sheet_box_and_formulas_stay(client, monkeypat
     data = client.post("/presupuesto", json={**BODY, "ticket_id": "T/77 X"}, headers=HEADERS).json()
 
     assert captured["salida"].name == "T_77_X.png" and captured["salida"].parent.name == "mapas"
+    guardada = captured["salida"].parent.parent / "rutas" / f"{BODY['client_code']}_{' '.join(BODY['client_name'].replace('/', ' ').split())}.png"      # kept: <client code>_<client name> (no "/")
+    assert guardada.is_file() and Image.open(guardada).size == (1000, 700)
     assert captured["origen"]["lat"] == 12.13 and captured["cliente"]["nombre"] == BODY["client_name"]
     assert captured["postes"] == [(12.135, -86.25)]
     assert data["ruta"]["mapa_generado"] is True and data["ruta"]["puntos"] == 3
@@ -559,7 +561,7 @@ def test_traced_diagram_path_sets_intervened_mufas(client, monkeypatch):
     assert data["budget"]["mufa_count_source"] == "diagramas"
     assert quantities["Intervencion de Mufa Existente"] == 5
     assert quantities["Empalme de fibra optica cables de Red Backbone (core/troncal)"] == 5 + 2
-    assert quantities["Rotulacion de Cable de fibra en mufas y ODF"] == 5
+    assert quantities["Rotulacion de Cable de fibra en mufas y ODF"] == 3
     assert [m["name"] for m in data["budget"]["intervened_mufas"]] == [
         "MF EDIFICIO DELTA", *path[1:], None]
 
@@ -614,7 +616,7 @@ def test_mufa_connection_is_used_for_routing_and_route_sheet(client, monkeypatch
     assert data["budget"]["quantities"]["Intervencion de Mufa Existente"] == 1
     assert data["budget"]["quantities"]["Instalacion de mufas"] == 0
     assert data["budget"]["quantities"]["Sangria de Cable o Buffer"] == 0
-    assert data["budget"]["quantities"]["Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"] == 2
+    assert data["budget"]["quantities"]["Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"] == 1
     assert captured["origin"] == (mufa.lat, mufa.lon)
 
     workbook = load_workbook(data["excel_path"], data_only=False)

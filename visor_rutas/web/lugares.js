@@ -609,6 +609,7 @@
       return `<div class="lg-fila carpeta${e === "empty" ? " vacia" : ""}${sel}" style="${top}" data-fila="${k}" title="${esc(rutaCorta(c.ruta))}">
         ${s.busqueda ? "" : flecha}<input type="checkbox" class="lg-casilla" data-casilla="${f.id}" ${e === "on" ? "checked" : ""} ${e === "empty" ? "disabled" : ""} data-parcial="${e === "partial" ? 1 : 0}">
         ${muestra(c.estilo)}<span class="lg-nombre">${resaltarTexto(c.nombre)}</span><span class="lg-cuenta">${c.total ? c.total.toLocaleString("en-US") : ""}</span>
+        ${c.bbox ? `<button type="button" class="lg-ir" data-ir-carpeta="${esc(f.id)}" title="Ir a esta carpeta en el mapa" aria-label="Ir a esta carpeta en el mapa">⌖</button>` : ""}
         ${f.ruta ? `<span class="lg-ruta">${esc(rutaCorta(c.ruta))}</span>` : ""}</div>`;
     }
     if (f.t === "elemento") {
@@ -620,6 +621,7 @@
       return `<div class="lg-fila elemento${sel}" style="${top}" data-fila="${k}" title="${esc(nombre)}">
         <span class="lg-flecha"></span><input type="checkbox" class="lg-casilla" data-elemento="${f.id}:${f.i}" ${visible ? "checked" : ""}>
         ${muestra(est)}<span class="lg-nombre">${resaltarTexto(nombre)}</span>
+        <button type="button" class="lg-ir" data-ir="${esc(f.id)}:${f.i}" title="Volar a su coordenada en el mapa" aria-label="Volar a su coordenada en el mapa">⌖</button>
         ${f.ruta ? `<span class="lg-ruta">${esc(rutaCorta(c.ruta))}</span>` : ""}</div>`;
     }
     const texto = f.t === "cargando" ? "Cargando…" : f.texto;
@@ -825,6 +827,16 @@
         refrescar();
         return;
       }
+      const ir = e.target.closest("[data-ir]");
+      if (ir) {                                          // the button of an element: select it and fly to its coordinate
+        const [id, i] = ir.dataset.ir.split(":");
+        s.seleccion = { id, i: Number(i) };
+        pintar();
+        volarA(id, Number(i));
+        return;
+      }
+      const irCarpeta = e.target.closest("[data-ir-carpeta]");
+      if (irCarpeta) { s.seleccion = { id: irCarpeta.dataset.irCarpeta, i: undefined }; pintar(); encuadrar(irCarpeta.dataset.irCarpeta); return; }
       const flecha = e.target.closest("[data-expandir]");
       if (flecha) { expandir(flecha.dataset.expandir); return; }
       const casilla = e.target.closest("[data-casilla]");

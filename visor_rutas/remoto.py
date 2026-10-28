@@ -217,6 +217,9 @@ class ProveedorRemoto:
             return {"ok": False, "error": "Mufa no válida"}
         return self._seguro(lambda: self._json("GET", f"/visor/mufa/{nodo}"))
 
+    def buscar_texto_diagramas(self, texto: str) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", "/visor/diagramas/buscar", params={"texto": str(texto or "")}))
+
     def buscar_en_diagrama(self, md5: str, texto: str) -> dict[str, Any]:
         md5 = str(md5 or "").lower()
         if not re.fullmatch(r"[0-9a-f]{32}", md5):

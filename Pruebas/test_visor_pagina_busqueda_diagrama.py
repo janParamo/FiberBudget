@@ -130,3 +130,32 @@ async def _recorrido():
 
 def test_search_inside_the_visio_diagram_and_the_circle_switch():
     asyncio.run(_recorrido())
+
+
+STUBS_TEXTO = STUBS + """;(() => {
+  window.__stubs.buscar_texto_diagramas = (texto) => ({ok: true, total: 1, resultados: texto.toLowerCase().includes('ferre')
+    ? [{md5: %s, nombre: 'MF.vsd', ruta_relativa: 'MANAGUA/MF.vsd', tipo_diagrama: 'mufa', coincidencias: 2, texto: 'MUFA FERRETERIA LA PRINCIPAL'}] : []});
+  return true; })()""" % json.dumps(MD5)
+
+
+async def _texto_en_todos():
+    async with pagina_edge(1366, 768) as p:
+        await p.esperar("window.visor && window.visor.mapa && window.BusquedaDiagrama", 20)
+        await p.evaluar(STUBS_TEXTO)
+        await _escribir(p, "#buscar-mufa", "ferreteria")
+        await p.esperar("document.querySelectorAll('#buscar-resultados li[data-i]').length > 0", 5)
+        assert "MF.vsd" in await p.evaluar("document.getElementById('buscar-resultados').textContent")
+        assert "Texto dentro de los diagramas Visio" in await p.evaluar("document.getElementById('buscar-resultados').textContent")
+        assert "2 coincidencia(s)" in await p.evaluar("document.getElementById('buscar-resultados').textContent")
+        await p.evaluar("(() => { const li = [...document.querySelectorAll('#buscar-resultados li[data-i]')].find(x => x.textContent.includes('MF.vsd')); "
+                        "li.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true})); return true; })()")
+        # the diagram opens in the panel with the same text in its own search box, and goes to the first match
+        await p.esperar("!document.getElementById('pd-img').hidden && document.getElementById('pd-img').naturalWidth > 0", 15)
+        assert await p.evaluar("document.querySelector('#pd-busqueda .dg-bus-texto').value") == "ferreteria"
+        await p.esperar("document.querySelector('#pd-busqueda .dg-bus-info').textContent === '1 de 2'", 5)
+        assert [MD5, "ferreteria"] in await p.evaluar("window.__busquedas")
+        assert await p.errores() == []
+
+
+def test_search_a_text_in_all_the_visio_diagrams_opens_the_diagram_with_that_text():
+    asyncio.run(_texto_en_todos())

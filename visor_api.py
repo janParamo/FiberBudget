@@ -534,6 +534,13 @@ def archivo(nombre: str = PathParam(max_length=210), persona: str = Depends(pers
         return FileResponse(pdf, filename=pdf.name, media_type="application/pdf")
 
 
+@router.get("/diagramas/buscar")
+def diagramas_buscar(texto: str = Query(default="", max_length=100), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Search a text in ALL the Visio diagrams (read-only)."""
+    with _registro(persona, "diagramas.buscar"):
+        return api_local().buscar_texto_diagramas(texto)
+
+
 @router.get("/diagrama/{md5}/buscar")
 def diagrama_buscar(md5: str = PathParam(pattern=r"^[0-9a-fA-F]{32}$"), texto: str = Query(default="", max_length=100),
                     persona: str = Depends(persona_visor)) -> dict[str, Any]:

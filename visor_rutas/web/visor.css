@@ -657,6 +657,10 @@ table.xl td.sin-calculo { color: #9a9a9a; text-align: center; }
 .lg-casilla { flex: none; margin: 0 2px 0 0; width: 14px; height: 14px; }
 .lg-nombre { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .lg-nombre mark { background: #ffe066; padding: 0; }
+.lg-ir { flex: none; margin-left: auto; width: 20px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--texto-suave); font-size: 14px; line-height: 1; cursor: pointer; }
+.lg-ir:hover { background: #cfe0ff; color: #1a1a1a; }
+.lg-ir + .lg-ruta, .lg-cuenta + .lg-ir { margin-left: 4px; }
+.lg-fila.elemento .lg-ir { margin-left: auto; }
 .lg-cuenta { margin-left: auto; padding-left: 6px; color: var(--texto-suave); font-size: 11px; font-variant-numeric: tabular-nums; }
 .lg-ruta { margin-left: 6px; color: var(--texto-suave); font-size: 11px; overflow: hidden; text-overflow: ellipsis; min-width: 40px; }
 .lg-fila.carpeta .lg-ruta { margin-left: 6px; }

@@ -341,6 +341,12 @@ def test_diagram_search_goes_through_the_server_like_the_local_one(entorno, tmp_
         return {"modo": "texto", "resultados": [{"texto": "MUFA UNO", "pagina": 0, "x_cm": 5.0, "y_cm": 6.0, "ancho_cm": 60.0, "alto_cm": 30.0}], "total": 1}
 
     monkeypatch.setattr(fusion, "buscar_en_diagrama", falsa)
+    monkeypatch.setattr(fusion, "buscar_texto_en_diagramas", lambda texto, visio_con=None, archivo_sqlite=None, limite=40: {
+        "resultados": [{"md5": "a" * 32, "nombre": "D.vsd", "ruta_relativa": "Z/D.vsd", "tipo_diagrama": "mufa", "coincidencias": 2, "texto": texto.upper()}], "total": 1})
+    assert cliente.get("/visor/diagramas/buscar", params={"texto": "olt x"}).status_code == 401
+    todos = cliente.get("/visor/diagramas/buscar", params={"texto": "olt x"}, headers=JAN)
+    assert todos.status_code == 200 and todos.json()["resultados"][0]["texto"] == "OLT X", todos.text
+    assert _api_remota(main, tmp_path).buscar_texto_diagramas("olt x") == json.loads(json.dumps(ventana_web.Api().buscar_texto_diagramas("olt x")))
     md5 = "a" * 32
     assert cliente.get(f"/visor/diagrama/{md5}/buscar", params={"texto": "mufa uno"}).status_code == 401         # a key is required
     directa = cliente.get(f"/visor/diagrama/{md5}/buscar", params={"texto": "mufa uno"}, headers=JAN)

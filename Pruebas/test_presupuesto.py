@@ -182,7 +182,7 @@ def test_fixed_events_scale_by_route_mufas_and_new_connection():
     assert quantities["Empalme de Fibra Optica Red de Acceso, Ultima Milla"] == 1
     assert quantities["Instalacion de Caja Terminal / ODF"] == 1
     assert quantities["Rotulacion de Cable de fibra en mufas y ODF"] == 3
-    assert quantities["Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"] == 2
+    assert quantities["Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"] == 1
 
 
 def _production_rules():

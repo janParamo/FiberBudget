@@ -96,6 +96,9 @@ def crear_api_prueba(con=None, usuario="jgutierrez") -> object:
         def buscar_mufa(self, texto):
             return {"ok": True, "resultados": []}
 
+        def buscar_texto_diagramas(self, texto):
+            return {"ok": True, "resultados": [], "total": 0}
+
     return ApiPrueba()
 
 

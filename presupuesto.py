@@ -336,10 +336,13 @@ def calcular_presupuesto(
         quantities[odf["odf_row_label"]] = int(is_corporate)
     if events.get("rotulation_row_label"):
         # Label the cable in every mufa it passes (intervened or new), at least once per connection.
-        quantities[events["rotulation_row_label"]] = max(
-            int(new_connections) * int(events.get("labeling_min_per_new_connection", 1)),
-            effective_mufa_count + new_mufas,
-        )
+        if "rotulation_per_project" in events:
+            quantities[events["rotulation_row_label"]] = int(events["rotulation_per_project"])
+        else:
+            quantities[events["rotulation_row_label"]] = max(
+                int(new_connections) * int(events.get("labeling_min_per_new_connection", 1)),
+                effective_mufa_count + new_mufas,
+            )
     if events.get("otdr_row_label"):
         # Always certified once per project, regardless of the connection type.
         quantities[events["otdr_row_label"]] = int(events.get("otdr_certification_per_project", 1))

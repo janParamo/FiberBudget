@@ -78,7 +78,7 @@
           `${item.sinCoord ? ' · <span class="sin-coord">sin coordenadas</span>' : ""}</span></li>`);
       });
     });
-    mostrar(trozos.length ? trozos.join("") : `<li class="vacio">Nada con ese texto (mufas, lugares o coordenada)</li>`);
+    mostrar(trozos.length ? trozos.join("") : `<li class="vacio">Nada con ese texto (mufas, lugares, diagramas o coordenada)</li>`);
   }
 
   function marcarResultado(i) {

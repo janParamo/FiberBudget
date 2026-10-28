@@ -156,7 +156,8 @@ fixed_events:
   last_mile_splice_per_new_connection: 1
   odf_per_new_connection: 1
   labeling_min_per_new_connection: 1
-  otdr_certification_per_project: 2   # always 2 per budget
+  otdr_certification_per_project: 1   # always 1 per budget (2026-10-28)
+  rotulation_per_project: 3           # always 3 per budget (2026-10-28), whatever the mufas
   route_mufa_search_buffer_m: 50
   rotulation_row_label: "Rotulacion de Cable de fibra en mufas y ODF"
   otdr_row_label: "Caracterizacion de la fibra optica  - Pruebas de OTDR y VFL"

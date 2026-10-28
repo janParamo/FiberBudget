@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import tempfile
 import threading
@@ -506,7 +507,7 @@ def _route_map(req: TicketRequest, seg: db.Segment, route: routing.Route, busque
     alternativas = [n for n in nodes
                     if origen._distance_m(seg.lat, seg.lon, n["lat"], n["lon"]) > config.get("same_point_m", 15)]
     safe_ticket = re.sub(r"[^A-Za-z0-9_-]", "_", req.ticket_id)[:64] or "ticket"
-    return mapa_ruta.generar_mapa_ruta(
+    png = mapa_ruta.generar_mapa_ruta(
         route.points,
         {"nombre": seg.nombre or seg.tipo, "lat": seg.lat, "lon": seg.lon},
         {"nombre": req.client_name, "lat": req.latitude, "lon": req.longitude},
@@ -519,6 +520,23 @@ def _route_map(req: TicketRequest, seg: db.Segment, route: routing.Route, busque
         timeout_s=float(config.get("tile_timeout_s", 10)),
         max_zoom=int(config.get("max_zoom", mapa_ruta.MAX_ZOOM)),
     )
+    if png is not None:
+        _guardar_ruta(png, req, output_dir)
+    return png
+
+
+def _guardar_ruta(png: Path, req: TicketRequest, output_dir: Path | None) -> None:
+    """Keeps the generated route picture, named <client code>_<client name>.png, in <output_dir>/rutas (mapas/ is cleaned after a few hours); never blocks."""
+    def limpio(texto: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r'[\\/:*?"<>|\x00-\x1f]', " ", texto)).strip(" .")
+    codigo, cliente = limpio(req.client_code), limpio(req.client_name)
+    nombre = codigo if codigo.lower() == cliente.lower() else f"{codigo}_{cliente}"
+    try:
+        carpeta = (output_dir or settings.output_dir) / "rutas"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(png, carpeta / f"{nombre[:150] or 'ruta'}.png")
+    except OSError as exc:
+        log.warning("Could not keep the route picture (%s)", type(exc).__name__)
 
 
 def _generar_presupuesto(req: TicketRequest) -> dict[str, Any]:

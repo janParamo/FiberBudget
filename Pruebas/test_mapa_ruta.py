@@ -86,6 +86,7 @@ def test_drop_line_joins_route_end_to_client_only_when_apart(tmp_path, monkeypat
     snapped = ROUTE[:-1] + [(12.153550, -86.263400)]
     apart = mapa_ruta.generar_mapa_ruta(snapped, ORIGEN, CLIENTE, [], False, tmp_path / "apart.png")
     assert mapa_ruta.DROP_COLOR in _colors(apart)
+    assert mapa_ruta.DROP_COLOR == (0, 230, 90)                           # dotted green, as the viewer's acometida
     # The route already ends on the client: no drop.
     joined = mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [], False, tmp_path / "joined.png")
     assert mapa_ruta.DROP_COLOR not in _colors(joined)

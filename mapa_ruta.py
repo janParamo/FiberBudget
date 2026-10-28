@@ -36,7 +36,8 @@ ORIGIN_COLOR, CLIENT_COLOR = (0, 200, 70), (230, 30, 30)          # the connecti
 ORIGIN_TEXT_COLOR = (0, 170, 60)
 POLE_COLOR, NEW_POLE_COLOR = (255, 255, 255), (154, 154, 154)       # existing poles (white dots) and new ones (grey dots)
 PIN_R = 20                  # radius of the head of the pins (px of the 1000 px picture)
-DROP_COLOR = (255, 238, 120)   # last street point of the route -> the client's coordinate (a thin light-yellow line)
+DROP_COLOR = (0, 230, 90)      # last street point of the route -> the client's coordinate: a dotted green line, as the viewer's acometida
+DROP_DASH, DROP_GAP = 18, 14   # px of line / px of gap
 DROP_MIN_M = 1.0            # closer than this the route already reaches the client
 HALO, OUTLINE = (255, 255, 255), (0, 0, 0)
 
@@ -71,6 +72,20 @@ def _zoom_for(points: list[LatLon], width: int, height: int, max_zoom: int) -> i
 
 
 # --- markers (x, y = the point on the map) -----------------------------------------------------
+
+def _dashed(draw, a, b, fill, width):
+    """Dashed straight line from a to b (DROP_DASH px on, DROP_GAP px off)."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = math.hypot(dx, dy)
+    if length == 0:
+        return
+    ux, uy = dx / length, dy / length
+    pos = 0.0
+    while pos < length:
+        end = min(pos + DROP_DASH, length)
+        draw.line([(a[0] + ux * pos, a[1] + uy * pos), (a[0] + ux * end, a[1] + uy * end)], fill=fill, width=width)
+        pos += DROP_DASH + DROP_GAP
+
 
 def _pin(draw: Draw, x: float, y: float, r: float, fill: tuple) -> None:
     """Map pin (teardrop): its tip on the point, the round head above it with a white hole."""
@@ -199,8 +214,8 @@ def generar_mapa_ruta(
         drop_m = _distance_m(route[-1], client_point)
         if drop_m >= DROP_MIN_M:
             drop = [px(route[-1]), px(client_point)]
-            draw.line(drop, fill=ROUTE_EDGE, width=12)
-            draw.line(drop, fill=DROP_COLOR, width=6)
+            _dashed(draw, drop[0], drop[1], ROUTE_EDGE, 9)
+            _dashed(draw, drop[0], drop[1], DROP_COLOR, 6)
 
         for pole in postes_nuevos:                      # grey: new poles to install
             _dot(draw, *px(pole), NEW_POLE_COLOR)

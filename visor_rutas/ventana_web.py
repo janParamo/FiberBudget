@@ -580,6 +580,23 @@ class Api:
             return {"ok": False, "error": f"No se pudo buscar ({type(exc).__name__})"}
         return {"ok": True, **a_json(respuesta)}
 
+    def buscar_texto_diagramas(self, texto: str) -> dict[str, Any]:
+        """Search a text in ALL the Visio diagrams: {"resultados": [{md5, nombre, ruta_relativa, coincidencias, texto}], "total"}."""
+        if self._modo == "remoto":
+            return self._remota("buscar_texto_diagramas", texto)
+        try:
+            with self._lock:
+                respuesta = fusion.buscar_texto_en_diagramas(str(texto or ""), visio_con=self._conexion_visio(),
+                                                             archivo_sqlite=get_settings().red_fibra_db)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        except FileNotFoundError:
+            return {"ok": False, "error": "No se encontró la base de diagramas (red_fibra)"}
+        except Exception as exc:
+            log.exception("Visor web: text search in the diagrams failed")
+            return {"ok": False, "error": f"No se pudo buscar ({type(exc).__name__})"}
+        return {"ok": True, **a_json(respuesta)}
+
     def configuracion(self) -> dict[str, Any]:
         """Tile URLs and constants shared with the Tkinter window and the Excel map, plus the mode."""
         modo = {"modo": self._modo, "local_disponible": not self._forzar_remoto,

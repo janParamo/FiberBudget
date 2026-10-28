@@ -650,6 +650,63 @@ def buscar_en_diagrama(md5: str, texto: str, visio_con: Any = None, archivo_sqli
     return {"modo": "texto", "resultados": resultados[:limite], "total": len(resultados), "mufas_en_diagrama": len({_plano(n[0]) for n in nodos})}
 
 
+MAX_DIAGRAMAS_TEXTO = 40               # diagrams listed by the search of a text in ALL the diagrams
+MAX_FILAS_TEXTO = 20000                # texts read from the database before the exact filter
+_VOCALES = str.maketrans({c: "_" for c in "AEIOUN"})
+
+
+def _patron_palabra(palabra: str) -> str:
+    """LIKE pattern of a word: vowels and N become «_» so an accented text (PÉREZ, PEQUEÑA) is still read; the exact filter is done after."""
+    return "%" + palabra.upper().translate(_VOCALES) + "%"
+
+
+def buscar_texto_en_diagramas(texto: str, visio_con: Any = None, archivo_sqlite: Path | None = None,
+                              limite: int = MAX_DIAGRAMAS_TEXTO) -> dict[str, Any]:
+    """The Visio diagrams that WRITE the typed text (a client, a splitter, a port, a note...), read from `textos_crudos`.
+
+    Every word must be in the same text (accents and case ignored; MF / MC / MUFA are the same word). Returns {"resultados": [{md5, nombre,
+    ruta_relativa, tipo_diagrama, coincidencias, texto}], "total"}: one entry per diagram (a diagram repeated under several names counts once),
+    the diagrams with the most matches first; `texto` is the first match, so the viewer shows what was found. Opening the diagram and searching the
+    same text there (buscar_en_diagrama) goes to each place."""
+    consulta = " ".join((texto or "").split())
+    if len(consulta) < 3:
+        return {"resultados": [], "total": 0}
+    palabras = _plano(consulta).split()
+    if not palabras:
+        return {"resultados": [], "total": 0}
+    grupos = [_SINONIMOS_MUFA if p in _SINONIMOS_MUFA else {p} for p in palabras]
+    if archivo_sqlite is None:
+        archivo_sqlite = get_settings().red_fibra_db
+    fuente = _Fuente(visio_con, archivo_sqlite)
+    if not fuente.disponible:
+        raise FileNotFoundError("base de diagramas no disponible")
+    patrones = [_patron_palabra(p) for p, g in zip(palabras, grupos) if g is not _SINONIMOS_MUFA]
+    if not patrones:                                      # only MF / MUFA words: nothing narrows the search in the database
+        raise ValueError("Escriba además otra palabra (solo «mufa» sale en casi todos los diagramas)")
+    try:
+        filas = fuente.filas(
+            "SELECT f.md5, f.ruta_relativa, f.tipo_diagrama, t.texto FROM textos_crudos t JOIN archivos f ON f.id = t.archivo_id "
+            f"WHERE f.estado = 'ok' AND f.formato <> 'xlsx' AND {' AND '.join(['upper(t.texto) LIKE ?'] * len(patrones))} LIMIT {MAX_FILAS_TEXTO}",
+            tuple(patrones))
+    finally:
+        fuente.cerrar()
+    por_diagrama: dict[str, dict[str, Any]] = {}
+    frase = " ".join(palabras)
+    for md5, ruta, tipo, t in filas:
+        plano = _plano(t or "")
+        if not plano or not all(any(a in plano for a in alternativas) for alternativas in grupos):
+            continue
+        d = por_diagrama.get(md5)
+        if d is None:
+            d = por_diagrama[md5] = {"md5": md5, "nombre": Path(ruta).name, "ruta_relativa": ruta, "tipo_diagrama": tipo, "coincidencias": 0,
+                                     "texto": _limpio(t)[:160], "_exacto": plano == frase}
+        d["coincidencias"] += 1
+        if plano == frase and not d["_exacto"]:
+            d["texto"], d["_exacto"] = _limpio(t)[:160], True
+    ordenados = sorted(por_diagrama.values(), key=lambda d: (not d["_exacto"], -d["coincidencias"], d["nombre"]))
+    return {"resultados": [{k: v for k, v in d.items() if not k.startswith("_")} for d in ordenados[:limite]], "total": len(ordenados)}
+
+
 def _mufas_del_diagrama(nodos: list[tuple], filas: list[tuple], item: Any, lat: float | None, lon: float | None,
                         grupos: list[set[str]] | None = None) -> list[dict[str, Any]]:
     """The mufas drawn in the diagram that answer the search: by name (`grupos`: the words of a text search) or, with a coordinate, the

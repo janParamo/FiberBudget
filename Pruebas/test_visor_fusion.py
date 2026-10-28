@@ -181,6 +181,24 @@ def test_buscar_mufas_por_palabras_sin_importar_mayusculas(entorno, base):
     assert (m["nombre"], m["tipo"], m["lat"]) == ("MF A", "MUFA", 12.1030)
 
 
+def test_buscar_texto_en_todos_los_diagramas(entorno, base):
+    _, fusion, _ = entorno
+    buscar = lambda texto: fusion.buscar_texto_en_diagramas(texto, archivo_sqlite=base)
+    r = buscar("puerto 3 olt x")
+    assert r["total"] == 1 and r["resultados"][0]["md5"] == "a" * 32 and r["resultados"][0]["nombre"] == "1 MUFA PEQUENA.vsd"
+    assert r["resultados"][0]["texto"] == "SPL 1/16 PUERTO 3 OLT X" and r["resultados"][0]["coincidencias"] == 1
+    # accents and case ignored (the diagram writes PEQUEÑA, MF = MUFA), a text of two diagrams lists both, the one with more matches first
+    assert [d["md5"] for d in buscar("mufa pequena")["resultados"]] == ["a" * 32]
+    assert {d["md5"] for d in buscar("olt")["resultados"]} == {"a" * 32, "b" * 32}
+    assert [d["md5"] for d in buscar("MF CONEXION")["resultados"]] == ["b" * 32]
+    # the Excel of rings is not a diagram; a text that is nowhere, too short, or only «mufa» (nothing to narrow it) never lists everything
+    assert buscar("no existe") == {"resultados": [], "total": 0} and buscar("x") == {"resultados": [], "total": 0}
+    with pytest.raises(ValueError):
+        buscar("mufa")
+    with pytest.raises(FileNotFoundError):
+        fusion.buscar_texto_en_diagramas("olt", archivo_sqlite=base.parent / "no_hay.db")
+
+
 def test_normalizar_busqueda_como_el_importador():
     from visor_rutas import fusion
     assert fusion.normalizar_busqueda("MF Puma de las Colinas") == ["PUMA", "COLINAS"]
