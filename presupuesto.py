@@ -28,6 +28,44 @@ def count_turns(points: list[LatLon], threshold_deg: float) -> int:
     return turns
 
 
+def _metros(a: LatLon, b: LatLon) -> float:
+    p1, p2 = math.radians(a[0]), math.radians(b[0])
+    h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(b[1] - a[1]) / 2) ** 2
+    return 2 * 6371000 * math.asin(math.sqrt(h))
+
+
+def new_pole_points(route_points: list[LatLon], distance_m: float, rules: dict[str, Any], existing_positions_m: list[float],
+                    duct_spans: list[tuple[float, float]] | None = None) -> list[LatLon]:
+    """Where the new poles of the route go, to draw them on the map: the poles that fill the gaps (the same positions that are counted as new poles) placed along
+    the route line, and one at each corner (the extra poles of a corner)."""
+    poles = rules["poles"]
+    if duct_spans:
+        posiciones = new_pole_positions_in_spans(tramos_aereos(distance_m, duct_spans), poles["spacing_m"], existing_positions_m,
+                                                 poles.get("max_span_m"), poles.get("max_span_between_existing_m"))
+    else:
+        posiciones = new_pole_positions_by_gaps(distance_m, poles["spacing_m"], existing_positions_m, poles.get("max_span_m"), poles.get("max_span_between_existing_m"))
+    trazo = [p for i, p in enumerate(route_points) if i == 0 or p != route_points[i - 1]]
+    if len(trazo) < 2 or distance_m <= 0:
+        return []
+    acumulado = [0.0]
+    for a, b in zip(trazo, trazo[1:]):
+        acumulado.append(acumulado[-1] + _metros(a, b))
+    escala = acumulado[-1] / distance_m                     # the line's own length vs the distance Google reports
+    puntos: list[LatLon] = []
+    for m in posiciones:
+        objetivo = min(max(m * escala, 0.0), acumulado[-1])
+        i = max(1, next((k for k, v in enumerate(acumulado) if v >= objetivo), len(acumulado) - 1))
+        tramo = acumulado[i] - acumulado[i - 1]
+        f = 0.0 if tramo <= 0 else (objetivo - acumulado[i - 1]) / tramo
+        puntos.append((trazo[i - 1][0] + f * (trazo[i][0] - trazo[i - 1][0]), trazo[i - 1][1] + f * (trazo[i][1] - trazo[i - 1][1])))
+    if poles.get("extra_poles_per_corner", 0):
+        for i in range(1, len(trazo) - 1):
+            delta = abs(_bearing(trazo[i], trazo[i + 1]) - _bearing(trazo[i - 1], trazo[i]))
+            if min(delta, 360 - delta) >= poles["corner_angle_deg"]:
+                puntos.append(trazo[i])
+    return puntos
+
+
 def new_pole_positions_by_gaps(
     distance_m: float,
     spacing_m: float,

@@ -278,10 +278,11 @@ traffic_origin:
 # Satellite map of the route (Esri World Imagery + street labels), placed in the
 # "ESQUEMA DE RUTA PROYECTADA" box of the route sheet. If the tiles cannot be downloaded
 # the box says "Mapa no disponible" and the budget is still produced.
-# The picture of the route in the "ESQUEMA DE RUTA PROYECTADA" box. false (2026-10-23): no map is made and the box is left BLANK, so the route is
-# checked and the picture is put in by hand. (With true and the tiles failing, the box says "Mapa no disponible".)
+# The picture of the route in the "ESQUEMA DE RUTA PROYECTADA" box, in the style of the example of 2026-10-28 (satellite image, yellow route, green pin at the connection mufa,
+# yellow pin at the client with its coordinate, white dots for existing poles, grey dots for new ones; no legend). false: no map is made and the box is left BLANK
+# (to put the picture in by hand). (With true and the tiles failing, the box says "Mapa no disponible".)
 route_map:
-  enabled: false
+  enabled: true
   tile_timeout_s: 10
   max_zoom: 19          # closest zoom; where Esri has no zoom-19 imagery it falls back to 18
   same_point_m: 15      # nearby network nodes closer than this to the connection point are not drawn
@@ -442,16 +443,9 @@ migracion_visio:
       # from its centre. Listed so that they are not mistaken for «far from Managua» trunk mufas (the 22 elements found on 2026-10-22).
       "Red existente – Managua": ["Red Masachapa", "RED MONTELIMAR", "RED VILLA EL CARMEN", "RED SAN BENITO"]
 
-# Note printed on every page of every budget (API/n8n and viewer): written on each visible
-# sheet (Ruta proyectada and Presupuesto, one page each), `rows_below_last` rows under the
-# last cell with content (the signatures), in that sheet's wide left-aligned column (a
-# centred column would spill the text off the page). Remove this block to drop it.
-budget_note:
-  text: "Sujeto a disponibilidad de postes de concreto sobre la ruta"
-  columns:
-    "Ruta proyectada": "D"
-    "Presupuesto": "E"
-  rows_below_last: 2
+# Sentence added to the comment of the second sheet (Presupuesto), on the line under «*Medio: …» (2026-10-28). It used to be printed at the foot of both
+# sheets (the `budget_note` block, now removed). Remove this line to drop it.
+comment_note: "Sujeto a disponibilidad de postes de concreto sobre la ruta"
 
 # Labels are searched in the route sheet; the value is written to the first
 # empty cell to the right of the matching label.

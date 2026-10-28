@@ -35,16 +35,20 @@ def test_map_is_drawn_from_tiles_with_route_and_markers(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mapa_ruta._session, "get", fake_get)
     out = mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [{"nombre": "ALT", "lat": 12.1535, "lon": -86.2648}],
-                                      False, tmp_path / "mapas" / "T1.png", postes=[(12.1536, -86.2638)],
+                                      False, tmp_path / "mapas" / "T1.png", postes=[(12.1536, -86.2638)], postes_nuevos=[(12.15345, -86.26365)],
                                       distancia_ruta_m=95.0)
     assert out == tmp_path / "mapas" / "T1.png"
     image = Image.open(out).convert("RGB")
     assert image.size == mapa_ruta.SIZE
     assert any("World_Imagery/MapServer/tile/18/" in url for url, _ in requested)      # zoom capped at 18
-    assert any("World_Transportation" in url for url, _ in requested)
+    assert not any("World_Transportation" in url for url, _ in requested)                  # satellite only, like the example: no street labels
     assert all(kwargs["timeout"] == 10 and "User-Agent" in kwargs["headers"] for _, kwargs in requested)
     colors = {color for _, color in image.getcolors(maxcolors=image.width * image.height)}
-    assert mapa_ruta.ROUTE_COLOR in colors and mapa_ruta.ORIGIN_COLOR in colors and mapa_ruta.CLIENT_COLOR in colors
+    # the route (yellow), the pin of the connection mufa (green), the pin of the client (yellow-orange), the existing pole (white dot), the new pole (grey dot)
+    assert all(c in colors for c in (mapa_ruta.ROUTE_COLOR, mapa_ruta.ORIGIN_COLOR, mapa_ruta.CLIENT_COLOR, mapa_ruta.POLE_COLOR, mapa_ruta.NEW_POLE_COLOR))
+    assert mapa_ruta.ALTERNATIVE_COLOR not in colors if hasattr(mapa_ruta, "ALTERNATIVE_COLOR") else True        # the other mufas of the network are not drawn
+    # no legend: the bottom-left corner is still the satellite image (the old legend was a white box there)
+    assert image.getpixel((40, image.height - 40)) != (255, 255, 255) and image.getpixel((200, image.height - 80)) != (255, 255, 255)
 
 
 def test_zoom_19_where_esri_has_imagery_else_18(tmp_path, monkeypatch):
@@ -100,6 +104,8 @@ def test_missing_street_labels_still_give_a_satellite_map(tmp_path, monkeypatch)
     monkeypatch.setattr(mapa_ruta._session, "get", lambda url, **k: _FakeResponse(
         404 if "World_Transportation" in url else 200, _tile_bytes()))
     assert mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [], True, tmp_path / "m.png") is not None
+    # the labels are only drawn when a URL for them is given (they are not part of the standard picture)
+    assert mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [], True, tmp_path / "n.png", labels_url=mapa_ruta.LABELS_URL) is not None
 
 
 REAL_TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "Plantilla.xlsx"

@@ -375,6 +375,15 @@ def _con_valor(texto: str, etiqueta: str, valor: str) -> str:
     return re.sub(rf"(?im)^(\s*\*?\s*{re.escape(etiqueta)}\s*:\s*).*$", lambda m: m.group(1) + valor, texto, count=1)
 
 
+def _con_nota_bajo_medio(texto: str, nota: str) -> str:
+    """The note on its own line right under «*Medio: …» (at the end of the comment when the template has no such line)."""
+    lineas = texto.rstrip().split("\n")
+    for i, linea in enumerate(lineas):
+        if re.match(r"\s*\*?\s*medio\s*:", linea, re.I):
+            return "\n".join(lineas[:i + 1] + [nota] + lineas[i + 1:])
+    return texto.rstrip() + "\n" + nota
+
+
 def _comment_text(existing: Any, raw_comment: str) -> str:
     """Keep the template's comment text and append the ticket comment verbatim."""
     block = f"{COMMENT_SEPARATOR}\n{raw_comment}"
@@ -637,6 +646,9 @@ def generar_excel(data: dict[str, Any], rules: dict[str, Any], template_path: Pa
         for etiqueta, valor in (("Ancho de banda", data["comment_edits"].get("bandwidth")), ("Plan a contratar", data["comment_edits"].get("plan"))):
             if valor:
                 texto_plantilla = _con_valor(texto_plantilla, etiqueta, str(valor))
+    nota = str(rules.get("comment_note") or "").strip()
+    if nota and isinstance(texto_plantilla, str) and nota not in texto_plantilla:
+        texto_plantilla = _con_nota_bajo_medio(texto_plantilla, nota)
     if data.get("raw_comment"):
         assignments_by_sheet["Presupuesto"][comment_cell] = _comment_text(texto_plantilla, data["raw_comment"])
     elif texto_plantilla != budget_sheet[comment_cell].value:

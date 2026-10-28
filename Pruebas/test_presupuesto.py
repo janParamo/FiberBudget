@@ -256,3 +256,27 @@ def test_count_turns():
 def test_negative_distance_rejected():
     with pytest.raises(ValueError):
         calcular_presupuesto(-1, STRAIGHT, RULES)
+
+
+def test_the_new_poles_of_the_map_are_the_counted_ones_placed_along_the_route():
+    from presupuesto import new_pole_points
+    reglas = _production_rules()
+    ruta = [(12.1300, -86.2500), (12.1300, -86.2400)]                          # a straight line of about 1085 m
+    from presupuesto import _metros
+    largo = _metros(ruta[0], ruta[1])
+    puntos = new_pole_points(ruta, largo, reglas, [])
+    cuenta = calcular_presupuesto(largo, ruta, reglas, existing_pole_positions_m=[])[reglas["poles"]["new_pole_row_label"]]
+    assert len(puntos) == cuenta and cuenta > 3                                   # the same poles that are charged
+    assert all(12.1300 - 1e-9 <= la <= 12.1300 + 1e-9 and -86.2500 < lo < -86.2400 for la, lo in puntos) and puntos == sorted(puntos, key=lambda p: p[1])
+    # an existing pole in the middle: fewer new ones, and none of them where the existing one stands
+    medio = largo / 2
+    con_existente = new_pole_points(ruta, largo, reglas, [medio])
+    assert len(con_existente) < len(puntos)
+    assert len(con_existente) == calcular_presupuesto(largo, ruta, reglas, existing_poles=1, existing_pole_positions_m=[medio])[reglas["poles"]["new_pole_row_label"]]
+    # a corner gets its extra pole at the vertex only when the rules ask for it (extra_poles_per_corner; 0 today)
+    esquina = [(12.1300, -86.2500), (12.1300, -86.2490), (12.1310, -86.2490)]
+    largo2 = _metros(esquina[0], esquina[1]) + _metros(esquina[1], esquina[2])
+    assert (12.1300, -86.2490) not in new_pole_points(esquina, largo2, reglas, [])
+    reglas["poles"]["extra_poles_per_corner"] = 1
+    assert (12.1300, -86.2490) in new_pole_points(esquina, largo2, reglas, [])
+    assert new_pole_points([], 100, reglas, []) == [] and new_pole_points(ruta, 0, reglas, []) == []

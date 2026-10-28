@@ -34,7 +34,7 @@ from config import (NI_LAT_MAX, NI_LAT_MIN, NI_LON_MAX, NI_LON_MIN,
 from excel_generator import generar_excel
 from presupuesto import (calcular_equipos, calcular_materiales, calcular_metraje_final,
                          calcular_presupuesto, count_turns, match_marked_poles,
-                         new_pole_positions_by_gaps, new_pole_positions_in_spans, requiere_visita_tecnica,
+                         new_pole_points, new_pole_positions_by_gaps, new_pole_positions_in_spans, requiere_visita_tecnica,
                          seleccionar_tecnologia, tramos_aereos, tramos_ducto)
 
 settings = get_settings()          # fails fast if the .env is incomplete
@@ -496,7 +496,7 @@ def consultar_origen(
 
 def _route_map(req: TicketRequest, seg: db.Segment, route: routing.Route, busqueda: red_fibra_pg.BusquedaVisio,
                desde_visio: bool, poles: list[db.ExistingPole], rules: dict[str, Any],
-               output_dir: Path | None = None) -> Path | None:
+               output_dir: Path | None = None, new_poles: list[tuple[float, float]] | None = None) -> Path | None:
     """Satellite map of the route for the Excel (in <output_dir>/mapas); None when disabled or the tiles fail."""
     config = rules.get("route_map", {})
     if not config.get("enabled", True):
@@ -514,6 +514,7 @@ def _route_map(req: TicketRequest, seg: db.Segment, route: routing.Route, busque
         False,
         (output_dir or settings.output_dir) / "mapas" / f"{safe_ticket}.png",
         postes=[(pole.lat, pole.lon) for pole in poles],
+        postes_nuevos=list(new_poles or []),
         distancia_ruta_m=route.distance_m,
         timeout_s=float(config.get("tile_timeout_s", 10)),
         max_zoom=int(config.get("max_zoom", mapa_ruta.MAX_ZOOM)),
@@ -765,7 +766,8 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
              origen_block["verificacion_kmz"], origen_block["nodo_red_mas_cercano"])
 
     # Satellite map of the route for the "ESQUEMA DE RUTA PROYECTADA" box; never blocks.
-    map_png = _route_map(req, seg, route, busqueda, desde_visio, existing_pole_records, rules, output_dir)
+    nuevos_en_mapa = new_pole_points(route.points, route.distance_m, rules, existing_pole_positions_m, duct_spans or None)[:max(0, quantities[new_pole_label])]
+    map_png = _route_map(req, seg, route, busqueda, desde_visio, existing_pole_records, rules, output_dir, nuevos_en_mapa)
     google_maps_url = (f"https://www.google.com/maps/dir/?api=1&origin={seg.lat:.6f},{seg.lon:.6f}"
                        f"&destination={req.latitude:.6f},{req.longitude:.6f}&travelmode=walking")
 

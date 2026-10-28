@@ -1,13 +1,13 @@
 """Satellite image of the recommended route (connection point -> client) for the Excel budget.
 
-Esri World Imagery tiles, with Esri's transportation labels on top, drawn with staticmap
-(tile download) and Pillow (route, icons, legend). Any failure returns None: a budget
-never fails because of the map.
+Esri World Imagery tiles drawn with staticmap (tile download) and Pillow (route, pins and dots, like the example of 2026-10-28: green pin at the
+connection mufa, yellow pin at the client with its coordinate, white dots for existing poles, grey dots for new ones; no legend). Any failure returns None:
+a budget never fails because of the map.
 """
 import logging
 import math
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import requests
 from PIL import Image, ImageDraw, ImageFont
@@ -29,9 +29,11 @@ ALWAYS_AVAILABLE_ZOOM = 18
 TILE_SIZE = 256
 
 ROUTE_COLOR, ROUTE_APPROX_COLOR, ROUTE_EDGE = (255, 221, 0), (255, 140, 0), (0, 0, 0)
-ORIGIN_COLOR, CLIENT_COLOR = (0, 200, 70), (230, 30, 30)
-ALTERNATIVE_COLOR, POLE_COLOR = (40, 120, 255), (255, 255, 255)
-DROP_COLOR = (0, 230, 90)   # last street point of the route -> the client's coordinate
+ORIGIN_COLOR, CLIENT_COLOR = (0, 200, 70), (255, 196, 0)          # the connection mufa (green pin) and the client (yellow pin)
+ORIGIN_TEXT_COLOR = (0, 170, 60)
+POLE_COLOR, NEW_POLE_COLOR = (255, 255, 255), (150, 150, 150)       # existing poles (white dots) and new ones (grey dots)
+PIN_R = 20                  # radius of the head of the pins (px of the 1000 px picture)
+DROP_COLOR = (255, 238, 120)   # last street point of the route -> the client's coordinate (a thin light-yellow line)
 DROP_MIN_M = 1.0            # closer than this the route already reaches the client
 HALO, OUTLINE = (255, 255, 255), (0, 0, 0)
 
@@ -65,45 +67,32 @@ def _zoom_for(points: list[LatLon], width: int, height: int, max_zoom: int) -> i
     return 0
 
 
-# --- icons (x, y = the point on the map; s = half size in px) ---------------------------------
+# --- markers (x, y = the point on the map) -----------------------------------------------------
 
-def _edge(s: float) -> int:
-    """Border width in proportion to the icon (thin in the legend, bold on the map)."""
-    return max(1, round(s / 7))
-
-
-def _mufa_icon(draw: Draw, x: float, y: float, s: float, fill: tuple) -> None:
-    """Bow tie, the mufa symbol of the Visio diagrams."""
-    for side in (-1, 1):
-        triangle = [(x + side * s, y - 0.75 * s), (x, y), (x + side * s, y + 0.75 * s)]
-        draw.polygon(triangle, fill=fill, outline=HALO if s > 12 else OUTLINE, width=_edge(s))
-    dot = max(1.5, s / 7)
-    draw.ellipse((x - dot, y - dot, x + dot, y + dot), fill=OUTLINE)
-
-
-def _pole_icon(draw: Draw, x: float, y: float, s: float) -> None:
-    """Utility pole: post with a cross-arm."""
-    edge = 2 if s > 12 else 1
-    draw.rectangle((x - 0.2 * s, y - s, x + 0.2 * s, y + s), fill=POLE_COLOR, outline=OUTLINE, width=edge)
-    draw.rectangle((x - 0.75 * s, y - 0.8 * s, x + 0.75 * s, y - 0.45 * s), fill=POLE_COLOR, outline=OUTLINE,
-                   width=edge)
+def _pin(draw: Draw, x: float, y: float, r: float, fill: tuple) -> None:
+    """Map pin (teardrop): its tip on the point, the round head above it with a white hole."""
+    cy = y - 2.1 * r
+    tangent = math.asin(r / (2.1 * r))
+    dx = r * math.cos(tangent)
+    dy = r * math.sin(tangent)
+    draw.polygon([(x - dx, cy + dy), (x + dx, cy + dy), (x, y)], fill=fill, outline=OUTLINE, width=2)
+    draw.ellipse((x - r, cy - r, x + r, cy + r), fill=fill, outline=OUTLINE, width=3)
+    draw.polygon([(x - dx + 2, cy + dy - 1), (x + dx - 2, cy + dy - 1), (x, y - 3)], fill=fill)      # hides the join between head and tip
+    hole = 0.42 * r
+    draw.ellipse((x - hole, cy - hole, x + hole, cy + hole), fill=HALO, outline=OUTLINE, width=1)
 
 
-def _house_icon(draw: Draw, x: float, y: float, s: float, fill: tuple) -> None:
-    """Client's house, its base on the point."""
-    edge, halo = _edge(s), HALO if s > 12 else OUTLINE
-    body = (x - 0.7 * s, y - 1.1 * s, x + 0.7 * s, y)
-    roof = [(x - s, y - 1.05 * s), (x, y - 2 * s), (x + s, y - 1.05 * s)]
-    draw.polygon(roof, fill=fill, outline=halo, width=edge)
-    draw.rectangle(body, fill=fill, outline=halo, width=edge)
-    draw.rectangle((x - 0.2 * s, y - 0.6 * s, x + 0.2 * s, y - edge), fill=HALO)
+def _label(draw: Draw, canvas_width: int, x: float, y: float, text: str, fill: tuple, halo: tuple, size: int, side: str = "right") -> None:
+    """Text with a thick halo (readable over a satellite image), to the right / left of the point or centred on it; kept inside the picture."""
+    font = _font(size)
+    width = draw.textlength(text, font=font)
+    left = x if side == "right" else x - width if side == "left" else x - width / 2
+    left = max(6.0, min(left, canvas_width - width - 6))
+    draw.text((left, y), text, font=font, fill=fill, stroke_width=3, stroke_fill=halo, anchor="lm")
 
 
-def _line_icon(color: tuple) -> Callable[[Draw, float, float], None]:
-    def icon(draw: Draw, x: float, y: float) -> None:
-        draw.line((x - 9, y, x + 9, y), fill=ROUTE_EDGE, width=8)
-        draw.line((x - 8, y, x + 8, y), fill=color, width=4)
-    return icon
+def _dot(draw: Draw, x: float, y: float, fill: tuple, r: float = 8) -> None:
+    draw.ellipse((x - r, y - r, x + r, y + r), fill=fill, outline=OUTLINE, width=2)
 
 
 class _TileLayer(StaticMap):
@@ -150,6 +139,7 @@ def generar_mapa_ruta(
     salida_png: Path,
     *,
     postes: list[LatLon] = (),
+    postes_nuevos: list[LatLon] = (),
     distancia_ruta_m: float | None = None,
     imagery_url: str | None = None,
     labels_url: str | None = None,
@@ -158,17 +148,17 @@ def generar_mapa_ruta(
 ) -> Path | None:
     """Draw the route and save the PNG; None (logged) when tiles cannot be downloaded.
 
-    origen / cliente: {"nombre", "lat", "lon"}; alternativas: up to 4 nodes {"nombre", "lat", "lon"}.
-    Tile URLs default to IMAGERY_URL / LABELS_URL (read at call time).
+    The picture of the budget: satellite imagery, the route in yellow, a green pin at the connection mufa (with its name), a yellow pin at the client (with the
+    coordinate), white dots for the poles that already stand and grey dots for the new ones. No legend, no other mufas (`alternativas` is kept for the callers
+    and ignored). origen / cliente: {"nombre", "lat", "lon"}. The imagery URL defaults to IMAGERY_URL (read at call time); street labels only if `labels_url` is given.
     """
     imagery_url = imagery_url or IMAGERY_URL
-    labels_url = labels_url if labels_url is not None else LABELS_URL
+    labels_url = labels_url or ""
     try:
         width, height = SIZE
-        alternativas = [a for a in alternativas if a.get("lat") is not None][:4]
         route = list(ruta_puntos) or [(origen["lat"], origen["lon"]), (cliente["lat"], cliente["lon"])]
         # The zoom frames the route itself; nearby network nodes are drawn only if they fall inside.
-        frame = route + [(origen["lat"], origen["lon"]), (cliente["lat"], cliente["lon"])] + list(postes)
+        frame = route + [(origen["lat"], origen["lon"]), (cliente["lat"], cliente["lon"])] + list(postes) + list(postes_nuevos)
         lats, lons = [p[0] for p in frame], [p[1] for p in frame]
         zoom = _zoom_for(frame, width, height, max_zoom)
         center = ((min(lats) + max(lats)) / 2, (min(lons) + max(lons)) / 2)
@@ -198,30 +188,20 @@ def generar_mapa_ruta(
         drop_m = _distance_m(route[-1], client_point)
         if drop_m >= DROP_MIN_M:
             drop = [px(route[-1]), px(client_point)]
-            draw.line(drop, fill=ROUTE_EDGE, width=9)
-            draw.line(drop, fill=DROP_COLOR, width=5)
+            draw.line(drop, fill=ROUTE_EDGE, width=7)
+            draw.line(drop, fill=DROP_COLOR, width=4)
 
-        for pole in postes:
-            _pole_icon(draw, *px(pole), 13)
-        for alternativa in alternativas:
-            _mufa_icon(draw, *px((alternativa["lat"], alternativa["lon"])), 14, ALTERNATIVE_COLOR)
-        _mufa_icon(draw, *px((origen["lat"], origen["lon"])), 22, ORIGIN_COLOR)
-        _house_icon(draw, *px(client_point), 18, CLIENT_COLOR)
-
-        route_color = ROUTE_APPROX_COLOR if ruta_aproximada else ROUTE_COLOR
-        _legend(canvas, [
-            (lambda d, x, y: _mufa_icon(d, x, y, 10, ORIGIN_COLOR),
-             f"Mufa de conexión: {origen.get('nombre') or 'sin nombre'}"),
-            (lambda d, x, y: _house_icon(d, x, y + 9, 8, CLIENT_COLOR), f"Cliente: {cliente.get('nombre') or ''}"),
-            (_line_icon(route_color),
-             f"Ruta: {distancia_ruta_m:,.0f} m" if distancia_ruta_m is not None else "Ruta"),
-            *([(_line_icon(DROP_COLOR), f"Acometida al cliente: {drop_m:,.0f} m")] if drop_m >= DROP_MIN_M else []),
-            *([(_line_icon(ROUTE_APPROX_COLOR), "Ruta aproximada (línea recta)")] if ruta_aproximada else []),
-            *([(lambda d, x, y: _mufa_icon(d, x, y, 8, ALTERNATIVE_COLOR), "Otras mufas / nodos de la red")]
-              if alternativas else []),
-            *([(lambda d, x, y: _pole_icon(d, x, y, 9), "Postes existentes")] if postes else []),
-            (None, "Imagen: Esri World Imagery"),
-        ])
+        for pole in postes_nuevos:                      # grey: new poles to install
+            _dot(draw, *px(pole), NEW_POLE_COLOR)
+        for pole in postes:                             # white: poles that already stand
+            _dot(draw, *px(pole), POLE_COLOR)
+        mx, my = px((origen["lat"], origen["lon"]))
+        cx, cy = px(client_point)
+        _pin(draw, mx, my, PIN_R, ORIGIN_COLOR)
+        _pin(draw, cx, cy, PIN_R, CLIENT_COLOR)
+        if origen.get("nombre"):                         # the name above the mufa's pin, the coordinate beside the client's
+            _label(draw, width, mx, my - 2.1 * PIN_R - PIN_R - 20, str(origen["nombre"]), ORIGIN_TEXT_COLOR, HALO, 24, "center")
+        _label(draw, width, cx + PIN_R + 8, cy - 2.1 * PIN_R, f"{client_point[0]:.6f}, {client_point[1]:.6f}", HALO, OUTLINE, 22)
         salida_png.parent.mkdir(parents=True, exist_ok=True)
         canvas.convert("RGB").save(salida_png, "PNG", optimize=True)
         log.info("Route map saved: %s (zoom %d)", salida_png, zoom)
@@ -229,25 +209,3 @@ def generar_mapa_ruta(
     except Exception as exc:
         log.error("Route map not generated (%s: %s)", type(exc).__name__, str(exc)[:300])
         return None
-
-
-def _legend(canvas: Image.Image, rows: list[tuple[Callable[[Draw, float, float], None] | None, str]]) -> None:
-    """Legend box in the bottom-left corner on a semi-transparent white background."""
-    # Sizes for the 1000 px canvas, which Excel shows at ~691 px (text ~13 px on screen).
-    font, small = _font(19), _font(15)
-    line_h, pad, icon_w = 28, 11, 24
-    measure = ImageDraw.Draw(canvas)
-    text_w = max(measure.textlength(text, font=small if icon is None else font) for icon, text in rows)
-    box_w, box_h = int(text_w + icon_w + 3 * pad), line_h * len(rows) + 2 * pad
-    x0, y0 = 12, canvas.height - box_h - 12
-    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(overlay).rounded_rectangle((x0, y0, x0 + box_w, y0 + box_h), radius=8,
-                                              fill=(255, 255, 255, 215))
-    canvas.alpha_composite(overlay)
-    draw = ImageDraw.Draw(canvas)
-    for i, (icon, text) in enumerate(rows):
-        y = y0 + pad + i * line_h
-        if icon is not None:
-            icon(draw, x0 + pad + icon_w / 2, y + line_h / 2 - 1)
-        draw.text((x0 + 2 * pad + icon_w, y + (4 if icon is None else 2)), text,
-                  fill=(60, 60, 60) if icon is None else (0, 0, 0), font=small if icon is None else font)

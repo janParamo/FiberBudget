@@ -296,11 +296,15 @@ curl https://fiber-api.example.com/health
   validar con Planta Externa)" when flagged. If the Visio database is down, everything runs
   on the KMZ and the SQLite file. `GET /origen?lat=&lon=&radio=` returns the same block
   (no route distance) plus `origen_trafico` without generating a budget.
-- **Budget note (`budget_note`):** every budget (API/n8n and viewer) shows "Sujeto a
-  disponibilidad de postes de concreto sobre la ruta" at the bottom of each page
-  (`Ruta proyectada` D70 and `Presupuesto` E91 with the current template: two rows under the
-  signatures, in the wide left-aligned column). Change the text or remove the block in
-  `business_rules.yaml`; it is never written over a filled cell.
+- **Comment note (`comment_note`):** every budget (API/n8n and viewer) carries "Sujeto a
+  disponibilidad de postes de concreto sobre la ruta" in the comment of the second sheet, on the
+  line under "*Medio: …" (since 2026-10-28; it used to be printed at the foot of both sheets, the
+  old `budget_note` block). Change the text or remove the line in `business_rules.yaml`.
+- **Route map (`route_map`, `mapa_ruta.py`):** satellite image in the "ESQUEMA DE RUTA PROYECTADA" box, in
+  the style of the example of 2026-10-28: yellow route, green pin at the connection mufa with its name,
+  yellow pin at the client with its coordinate, white dots for the poles that already stand and grey dots
+  for the new ones (placed by `presupuesto.new_pole_points`); no legend and no other mufas. `enabled: false`
+  leaves the box blank to paste the picture by hand.
 - **Route map (`mapa_ruta.py`):** a 1000x700 satellite image (Esri World Imagery plus Esri
   street labels, zoom up to 18) with the route in yellow, the connection point in green, the
   client in red, nearby network nodes in blue and existing poles in white, plus a legend. It

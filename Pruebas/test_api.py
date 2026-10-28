@@ -138,7 +138,7 @@ def test_success_generates_excel(client):
     assert budget_sheet["F4"].value == '=CONCATENATE("PRESUPUESTO DE OBRA"," - ",G81)'
     assert budget_sheet["C63"].value == "Comentarios:   "
     assert budget_sheet["C64"].value == (
-        "Texto de validacion fijo.\n\n\n--- Comentario original del ticket ---\n"
+        "Texto de validacion fijo.\nSujeto a disponibilidad de postes de concreto sobre la ruta\n\n\n--- Comentario original del ticket ---\n"
         + RAW_COMMENT.replace("\x0b", ""))
     assert {"G81:I81", "C64:I73"} <= {str(r) for r in budget_sheet.merged_cells.ranges}
     # ADSS (always, 2026-10-23): the template computes the hardware itself and the rules only zero the S clamp (row 38); the rest keeps the fixture formulas.
@@ -458,10 +458,10 @@ def test_map_failure_still_produces_excel_with_notice(client, monkeypatch):
     assert route_sheet._images == []
 
 
-def test_the_route_picture_box_is_left_blank_by_default(client, monkeypatch):
-    """2026-10-23: no map is made and the "ESQUEMA DE RUTA PROYECTADA" box stays empty (no text, no picture): the route is checked and the picture
-    is put in by hand."""
+def test_the_route_picture_box_is_left_blank_when_the_map_is_off(client, monkeypatch):
+    """route_map.enabled: false: no map is made and the "ESQUEMA DE RUTA PROYECTADA" box stays empty (no text, no picture): the picture is put in by hand."""
     import main
+    _con_reglas(monkeypatch, **{"route_map.enabled": False})
     llamadas = []
     monkeypatch.setattr(main.mapa_ruta, "generar_mapa_ruta", lambda *a, **k: llamadas.append(1))
     data = client.post("/presupuesto", json={**BODY, "ticket_id": "T-BLANCO"}, headers=HEADERS).json()
