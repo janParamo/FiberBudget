@@ -301,8 +301,8 @@ curl https://fiber-api.example.com/health
   line under "*Medio: …" (since 2026-10-28; it used to be printed at the foot of both sheets, the
   old `budget_note` block). Change the text or remove the line in `business_rules.yaml`.
 - **Route map (`route_map`, `mapa_ruta.py`):** satellite image in the "ESQUEMA DE RUTA PROYECTADA" box, in
-  the style of the example of 2026-10-28: yellow route, green pin at the connection mufa with its name,
-  yellow pin at the client with its coordinate, white dots for the poles that already stand and grey dots
+  the style of the example of 2026-10-28: yellow route (as thick as the viewer's own route), green pin at the connection mufa with its name,
+  red pin at the client with the word Cliente and its coordinate, white dots for the poles that already stand and grey dots
   for the new ones (placed by `presupuesto.new_pole_points`); no legend and no other mufas. `enabled: false`
   leaves the box blank to paste the picture by hand.
 - **Route map (`mapa_ruta.py`):** a 1000x700 satellite image (Esri World Imagery plus Esri

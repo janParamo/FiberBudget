@@ -279,7 +279,7 @@ traffic_origin:
 # "ESQUEMA DE RUTA PROYECTADA" box of the route sheet. If the tiles cannot be downloaded
 # the box says "Mapa no disponible" and the budget is still produced.
 # The picture of the route in the "ESQUEMA DE RUTA PROYECTADA" box, in the style of the example of 2026-10-28 (satellite image, yellow route, green pin at the connection mufa,
-# yellow pin at the client with its coordinate, white dots for existing poles, grey dots for new ones; no legend). false: no map is made and the box is left BLANK
+# red pin at the client with the word Cliente and its coordinate, white dots for existing poles, grey dots for new ones; no legend). false: no map is made and the box is left BLANK
 # (to put the picture in by hand). (With true and the tiles failing, the box says "Mapa no disponible".)
 route_map:
   enabled: true

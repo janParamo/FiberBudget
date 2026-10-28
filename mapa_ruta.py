@@ -1,7 +1,7 @@
 """Satellite image of the recommended route (connection point -> client) for the Excel budget.
 
 Esri World Imagery tiles drawn with staticmap (tile download) and Pillow (route, pins and dots, like the example of 2026-10-28: green pin at the
-connection mufa, yellow pin at the client with its coordinate, white dots for existing poles, grey dots for new ones; no legend). Any failure returns None:
+connection mufa, red pin at the client with the word Cliente and its coordinate, white dots for existing poles, grey dots for new ones; no legend). Any failure returns None:
 a budget never fails because of the map.
 """
 import logging
@@ -28,10 +28,13 @@ MAX_ZOOM = 19              # Esri has zoom 19 in Managua; elsewhere it falls bac
 ALWAYS_AVAILABLE_ZOOM = 18
 TILE_SIZE = 256
 
-ROUTE_COLOR, ROUTE_APPROX_COLOR, ROUTE_EDGE = (255, 221, 0), (255, 140, 0), (0, 0, 0)
-ORIGIN_COLOR, CLIENT_COLOR = (0, 200, 70), (255, 196, 0)          # the connection mufa (green pin) and the client (yellow pin)
+# The colours and the thickness of the route are those of the viewer's own route (visor.js: yellow #FFD400 weight 7 over a #1a1a1a border of weight 11 at 85 %), scaled by
+# 1000 / 691 because Excel shows this picture at about 691 px: so the line looks in the Excel as thick as in the viewer.
+ROUTE_COLOR, ROUTE_APPROX_COLOR, ROUTE_EDGE = (255, 212, 0), (255, 140, 0), (26, 26, 26)
+ROUTE_WIDTH, ROUTE_EDGE_WIDTH, ROUTE_EDGE_ALPHA = 10, 16, 217
+ORIGIN_COLOR, CLIENT_COLOR = (0, 200, 70), (230, 30, 30)          # the connection mufa (green pin) and the client (red pin)
 ORIGIN_TEXT_COLOR = (0, 170, 60)
-POLE_COLOR, NEW_POLE_COLOR = (255, 255, 255), (150, 150, 150)       # existing poles (white dots) and new ones (grey dots)
+POLE_COLOR, NEW_POLE_COLOR = (255, 255, 255), (154, 154, 154)       # existing poles (white dots) and new ones (grey dots)
 PIN_R = 20                  # radius of the head of the pins (px of the 1000 px picture)
 DROP_COLOR = (255, 238, 120)   # last street point of the route -> the client's coordinate (a thin light-yellow line)
 DROP_MIN_M = 1.0            # closer than this the route already reaches the client
@@ -179,17 +182,25 @@ def generar_mapa_ruta(
             return ((_lon_to_x(point[1], zoom) - x_center) * TILE_SIZE + width / 2,
                     (_lat_to_y(point[0], zoom) - y_center) * TILE_SIZE + height / 2)
 
-        draw = ImageDraw.Draw(canvas)
         line = [px(p) for p in route]
-        draw.line(line, fill=ROUTE_EDGE, width=10, joint="curve")
-        draw.line(line, fill=ROUTE_APPROX_COLOR if ruta_aproximada else ROUTE_COLOR, width=6, joint="curve")
+        border = Image.new("RGBA", canvas.size, (0, 0, 0, 0))                  # the dark border is semi-transparent, as in the viewer
+        border_draw = ImageDraw.Draw(border)
+        border_draw.line(line, fill=ROUTE_EDGE + (ROUTE_EDGE_ALPHA,), width=ROUTE_EDGE_WIDTH, joint="curve")
+        for x, y in (line[0], line[-1]):                                       # round ends
+            border_draw.ellipse((x - ROUTE_EDGE_WIDTH / 2, y - ROUTE_EDGE_WIDTH / 2, x + ROUTE_EDGE_WIDTH / 2, y + ROUTE_EDGE_WIDTH / 2), fill=ROUTE_EDGE + (ROUTE_EDGE_ALPHA,))
+        canvas.alpha_composite(border)
+        draw = ImageDraw.Draw(canvas)
+        route_color = ROUTE_APPROX_COLOR if ruta_aproximada else ROUTE_COLOR
+        draw.line(line, fill=route_color, width=ROUTE_WIDTH, joint="curve")
+        for x, y in (line[0], line[-1]):
+            draw.ellipse((x - ROUTE_WIDTH / 2, y - ROUTE_WIDTH / 2, x + ROUTE_WIDTH / 2, y + ROUTE_WIDTH / 2), fill=route_color)
         # Drop to the client: the street route ends where Google snaps it to the road.
         client_point = (cliente["lat"], cliente["lon"])
         drop_m = _distance_m(route[-1], client_point)
         if drop_m >= DROP_MIN_M:
             drop = [px(route[-1]), px(client_point)]
-            draw.line(drop, fill=ROUTE_EDGE, width=7)
-            draw.line(drop, fill=DROP_COLOR, width=4)
+            draw.line(drop, fill=ROUTE_EDGE, width=12)
+            draw.line(drop, fill=DROP_COLOR, width=6)
 
         for pole in postes_nuevos:                      # grey: new poles to install
             _dot(draw, *px(pole), NEW_POLE_COLOR)
@@ -201,6 +212,7 @@ def generar_mapa_ruta(
         _pin(draw, cx, cy, PIN_R, CLIENT_COLOR)
         if origen.get("nombre"):                         # the name above the mufa's pin, the coordinate beside the client's
             _label(draw, width, mx, my - 2.1 * PIN_R - PIN_R - 20, str(origen["nombre"]), ORIGIN_TEXT_COLOR, HALO, 24, "center")
+        _label(draw, width, cx, cy - 2.1 * PIN_R - PIN_R - 20, "Cliente", CLIENT_COLOR, HALO, 24, "center")        # the word above the red pin, the coordinate beside it
         _label(draw, width, cx + PIN_R + 8, cy - 2.1 * PIN_R, f"{client_point[0]:.6f}, {client_point[1]:.6f}", HALO, OUTLINE, 22)
         salida_png.parent.mkdir(parents=True, exist_ok=True)
         canvas.convert("RGB").save(salida_png, "PNG", optimize=True)
