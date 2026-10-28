@@ -315,8 +315,8 @@ splitter_secundario:
 # Tickets de Kayako que llegan a planificacion (visor_rutas/kayako.py, base MySQL de solo lectura): la consulta que ya usa n8n.
 kayako:
   departamento_like: "%Fibra%Optica%"
-  tipo_like: "%Presupuesto%FO%"
-  estados: ["Abierto", "En Espera"]
+  tipo_like: "%"                # cualquier tipo: la lista de Kayako de Fibra Optica trae «Ventas - Presupuesto FO» y también «Fibra Optica - Revision General»
+  estados: ["Abierto"]          # solo los abiertos, como la vista de Kayako (los «En Espera» no llegan)
   campo_ejecutivo_id: 64        # campo personalizado «Ejecutivo de cuenta»
   dias_atras: 30                # la vista previa mira la actividad de los ultimos dias
 

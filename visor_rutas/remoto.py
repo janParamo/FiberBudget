@@ -400,6 +400,9 @@ class ProveedorRemoto:
         return self._seguro(lambda: self._json("POST", "/visor/medicion", json={"puntos": puntos, "con_total": bool(con_total)},
                                                timeout=TIMEOUT_PRESUPUESTO_S if con_total else TIMEOUT_CONSULTA_S))
 
+    def tickets_pendientes(self) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", "/visor/tickets", timeout=TIMEOUT_PRESUPUESTO_S))
+
     def pdf_carpetas(self) -> dict[str, Any]:
         return self._seguro(lambda: self._json("GET", "/visor/pdf/carpetas"))
 

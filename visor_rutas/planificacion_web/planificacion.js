@@ -8,7 +8,7 @@
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const COLOR = { inactivo: "#9aa0ab", asignado: "#5c7cfa", en_revision: "#ab47bc", en_curso: "#1f6feb", pausado: "#fb8c00", terminado: "#2ca02c", no_viable: "#8d6e63", cancelado: "#e53935" };
   const ETIQUETA = { inactivo: "Inactivo", asignado: "Asignado", en_revision: "En revisión", en_curso: "En curso", pausado: "Pausado", terminado: "Terminado", no_viable: "No viable", cancelado: "Cancelado" };
-  const st = { catalogo: null, tablero: null, cuadrillas: [], actividades: [], todas: [], tecnicos: [], marcadas: new Set(), filtro: { estado: "", cuadrilla: "", buscar: "" }, detalleId: null,
+  const st = { kayako: [], kayakoError: "", kayakoCargadoEn: 0, catalogo: null, tablero: null, cuadrillas: [], actividades: [], todas: [], tecnicos: [], marcadas: new Set(), filtro: { estado: "", cuadrilla: "", buscar: "" }, detalleId: null,
                vista: "lista", mapa: null, capaMapa: null, cargadoEn: Date.now(), temporizador: null, ajustado: false };
 
   // The key also lives in memory: inside the viewer's window (pywebview, private mode) the browser may not keep localStorage.
@@ -269,6 +269,44 @@
     cargarChat(id);
   }
 
+  // ------------------------------------------------------------------ bandeja de tickets de Kayako (solo lectura)
+  async function cargarKayako() {
+    $("kayako-estado").textContent = "Leyendo Kayako…";
+    try {
+      st.kayako = (await pedir("GET", "/kayako/tickets")).tickets; st.kayakoError = ""; st.kayakoCargadoEn = Date.now();
+      $("kayako-estado").textContent = `Actualizado ${new Date().toLocaleTimeString("es-NI", { timeStyle: "short" })}`;
+    } catch (e) { st.kayakoError = textoError(e); st.kayako = []; $("kayako-estado").textContent = ""; }
+    pintarKayako();
+  }
+  function pintarKayako() {
+    const pendientes = st.kayako.filter((t) => !t.actividades.length).length;
+    $("kayako-n").hidden = !pendientes; $("kayako-n").textContent = pendientes;
+    const cuerpo = $("tabla-kayako").querySelector("tbody");
+    if (st.kayakoError) { cuerpo.innerHTML = `<tr><td colspan="8" class="error" style="padding:20px">${esc(st.kayakoError)}</td></tr>`; return; }
+    cuerpo.innerHTML = st.kayako.length ? st.kayako.map((t) => `<tr data-ticket="${esc(t.ticket)}">
+      <td><b>${esc(t.ticket)}</b></td><td class="cliente">${esc(t.cliente)}<br><span class="nota">${esc(t.asunto)}${t.codigo ? " · " + esc(t.codigo) : ""}</span></td><td>${esc(t.ejecutivo || "—")}</td><td>${esc(t.estado)}</td>
+      <td>${fechaHora(t.ultima_actividad)}</td><td>${esc(t.contacto || "—")}<br><span class="nota">${esc(t.telefono)}</span></td><td>${t.coordenadas.length || "—"}</td>
+      <td>${t.actividades.length ? t.actividades.map((a) => `<a class="etiqueta" style="--c:${COLOR[a.estado]};cursor:pointer" data-id-abrir="${a.id}">${esc(ETIQUETA[a.estado])}</a>`).join(" ")
+        : `<button type="button" data-crear-ticket="${esc(t.ticket)}">Crear actividad</button>`}</td></tr>`).join("")
+      : '<tr><td colspan="8" class="nota" style="text-align:center;padding:24px">No hay tickets abiertos pendientes</td></tr>';
+  }
+  async function crearDesdeTicket(numero) {
+    const t = st.kayako.find((x) => x.ticket === numero);
+    if (!t) return;
+    const cuerpo = { ticket: numero };
+    if (!t.coordenadas.length) {
+      const texto = window.prompt(`El ticket ${numero} no trae coordenadas escritas.\nEscriba la del cliente (lat, lon):`, "");
+      const m = texto && texto.match(/(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)/);
+      if (!m) { if (texto !== null) estadoConexion("Escriba la coordenada como «12.1364, -86.2514»", true); return; }
+      cuerpo.lat = parseFloat(m[1].replace(",", ".")); cuerpo.lon = parseFloat(m[2].replace(",", "."));
+    } else if (t.coordenadas.length > 1) {
+      const todas = window.confirm(`El ticket ${numero} trae ${t.coordenadas.length} coordenadas.\n\nAceptar: una actividad por cada coordenada.\nCancelar: solo la primera.`);
+      if (todas) cuerpo.coordenadas = t.coordenadas.map((_, i) => i);
+    }
+    try { const r = await pedir("POST", "/kayako/actividad", cuerpo); await Promise.all([cargarKayako(), cargar(false)]); abrirDetalle(r.ids[0]); }
+    catch (e) { st.kayakoError = ""; estadoConexion(textoError(e), true); $("kayako-estado").textContent = textoError(e); }
+  }
+
   // ------------------------------------------------------------------ chat de la actividad
   function burbujas(mensajes) {
     if (!mensajes.length) return '<span class="nota">Todavía no hay mensajes.</span>';
@@ -323,7 +361,8 @@
     document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
       st.vista = b.dataset.vista;
       document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("activa", x === b));
-      ["lista", "mapa", "cuadrillas"].forEach((v) => { $("vista-" + v).hidden = v !== st.vista; });
+      ["lista", "mapa", "cuadrillas", "kayako"].forEach((v) => { $("vista-" + v).hidden = v !== st.vista; });
+      if (st.vista === "kayako") cargarKayako();
       if (st.vista === "mapa") pintarMapa();
     }));
     $("tablero").addEventListener("click", (e) => {
@@ -369,6 +408,13 @@
       if (as) {
         try { await pedir("POST", "/actividades/asignar", { ids: [st.detalleId], cuadrilla_id: Number($("det-cuadrilla").value) }); await cargar(); } catch (er) { errorDetalle(er); }
       }
+    });
+    $("kayako-recargar").addEventListener("click", cargarKayako);
+    $("tabla-kayako").addEventListener("click", (e) => {
+      const crear = e.target.closest("[data-crear-ticket]");
+      if (crear) { crearDesdeTicket(crear.dataset.crearTicket); return; }
+      const abrir = e.target.closest("[data-id-abrir]");
+      if (abrir) abrirDetalle(Number(abrir.dataset.idAbrir));
     });
     $("lista-cuadrillas").addEventListener("click", async (e) => {
       const mover = e.target.closest("[data-sube], [data-baja]");
@@ -479,6 +525,8 @@
     $("pantalla-clave").hidden = true; $("app").hidden = false;
     if (!conectado) { conectar(); conectado = true; }
     cargar();
+    cargarKayako();                                                          // the badge of the tab counts the tickets with no activity yet
+    setInterval(() => { if (!document.hidden) cargarKayako(); }, 60000);
     clearInterval(st.temporizador);
     st.temporizador = setInterval(() => { if (!document.hidden && (!envivo.activo || Date.now() - st.cargadoEn > 60000)) cargar(); }, REFRESCO_MS);        // with the live notices the periodic refresh is only for when they are down (and once a minute: a crew's position sends no notice)
     let espera = null;

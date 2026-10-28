@@ -451,6 +451,13 @@ def presupuesto(pedido: PresupuestoPedido, persona: str = Depends(persona_limita
         return _resultado_ok(_para_remoto(api_local().generar_presupuesto(pedido.campos)), estado)
 
 
+@router.get("/tickets")
+def tickets_pendientes(persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The open Kayako tickets that ask for a budget, with what the budget form needs (the server reads Kayako; read only)."""
+    with _registro(persona, "tickets") as estado:
+        return _resultado_ok(_para_remoto(api_local().tickets_pendientes()), estado)
+
+
 class PdfPedido(BaseModel):
     archivos: list[str] = Field(default_factory=list, max_length=600)
     carpetas: list[str] = Field(default_factory=list, max_length=100)

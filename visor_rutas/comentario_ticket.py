@@ -12,16 +12,39 @@ ETIQUETAS: dict[str, tuple[str, ...]] = {
     "client_code": ("codigo del cliente", "codigo de cliente", "codigo cliente", "cod. cliente", "cod cliente", "id cliente", "id del cliente",
                     "numero de cliente", "no. cliente", "no cliente", "n° cliente", "cuenta cliente", "codigo"),
     "contact_name": ("nombre de contacto", "nombre del contacto", "nombre contacto", "persona de contacto", "contactos", "contacto"),
-    "contact_phone": ("telefono de contacto", "telefono contacto", "numero de contacto", "numero contacto", "telefono", "celular", "movil", "whatsapp",
-                      "tel.", "cel.", "tel", "cel"),
+    "contact_phone": ("telefonos de contacto", "telefono de contacto", "telefonos contacto", "telefono contacto", "numero de contacto", "numero contacto", "telefonos", "telefono",
+                      "celulares", "celular", "movil", "whatsapp", "tel.", "cel.", "tel", "cel"),
     "sales_exec": ("ejecutivo de ventas", "ejecutivo de venta", "ejecutivo comercial", "asesor comercial", "ejecutivo", "vendedor", "asesor"),
     "client_name": ("nombre del cliente", "nombre de cliente", "nombre cliente", "razon social", "cliente", "empresa"),
     "ticket_id": ("numero de ticket", "no. ticket", "no ticket", "ticket", "caso"),
 }
+# Lo que se lee de un ticket de Kayako para HACER el presupuesto (la lista ampliada): además de lo de arriba, el servicio, la velocidad, el medio, el correo y la dirección,
+# y las formas que usan las ventas («Nombre:», «Código:», «teléfonos:»). Las masivas usan solo la lista de arriba (ellas no leen el plan ni el ancho de banda).
+ETIQUETAS_PRESUPUESTO: dict[str, tuple[str, ...]] = {
+    "client_code": ETIQUETAS["client_code"],
+    "contact_name": ETIQUETAS["contact_name"],
+    "contact_phone": ("telefonos de contacto", "telefono de contacto", "telefonos contacto", "telefono contacto", "numero de contacto", "numero contacto", "telefonos", "telefono",
+                      "celulares", "celular", "movil", "whatsapp", "tel.", "cel.", "tel", "cel"),
+    "sales_exec": ETIQUETAS["sales_exec"],
+    "client_name": ("nombre del cliente", "nombre de cliente", "nombre cliente", "razon social", "nombre", "cliente", "empresa"),
+    "ticket_id": ETIQUETAS["ticket_id"],
+    "client_email": ("correo electronico", "correo", "e-mail", "email"),
+    "address": ("direccion de instalacion", "direccion del cliente", "direccion", "ubicacion"),
+    "service": ("tipo de servicio", "plan a contratar", "tipo de plan", "servicio", "plan"),
+    "bandwidth": ("ancho de banda", "velocidad"),
+    "medium": ("medio de servicio", "medio"),
+}
+
+
+def _compilar(etiquetas: dict[str, tuple[str, ...]]) -> tuple[re.Pattern[str], dict[str, str]]:
+    por_etiqueta = {e: campo for campo, es in etiquetas.items() for e in es}
+    return (re.compile(r"(?<![A-Za-z0-9])(" + "|".join(re.escape(e) for e in sorted(por_etiqueta, key=len, reverse=True)) + r")[ \t]*[:=][ \t]*", re.I), por_etiqueta)
+
+
 _POR_ETIQUETA = {e: campo for campo, es in ETIQUETAS.items() for e in es}
-_ETIQUETA = re.compile(
-    r"(?<![A-Za-z0-9])(" + "|".join(re.escape(e) for e in sorted(_POR_ETIQUETA, key=len, reverse=True)) + r")[ \t]*[:=][ \t]*", re.I)
-_TELEFONO = re.compile(r"\+?\d[\d\s().\-]{5,}\d")
+_ETIQUETA = _compilar(ETIQUETAS)[0]
+_ETIQUETA_PRESUPUESTO, _POR_ETIQUETA_PRESUPUESTO = _compilar(ETIQUETAS_PRESUPUESTO)
+_TELEFONO = re.compile(r"\+?\(?\d[\d\s().\-]{5,}\d")
 _VIÑETA = re.compile(r"^[\s*\-–•·>]+|[\s,;|]+$")
 
 
@@ -52,14 +75,16 @@ def ancho_de_banda_mbps(texto: str) -> float | None:
     return valor * {"k": 0.001, "g": 1000}.get((m.group(2) or "m").lower(), 1)
 
 
-def extraer_campos(texto: str) -> dict[str, str]:
-    """{"client_code": "C35307", "contact_phone": "8599 9439", ...}: the first value of each field the comment writes."""
+def extraer_campos(texto: str, para_presupuesto: bool = False) -> dict[str, str]:
+    """{"client_code": "C35307", "contact_phone": "8599 9439", ...}: the first value of each field the comment writes.
+    `para_presupuesto`: the wider list of a Kayako ticket (service, speed, medium, e-mail, address; see ETIQUETAS_PRESUPUESTO)."""
     texto = str(texto or "")
     plano = _plano(texto)
-    marcas = list(_ETIQUETA.finditer(plano))
+    regex, por_etiqueta = (_ETIQUETA_PRESUPUESTO, _POR_ETIQUETA_PRESUPUESTO) if para_presupuesto else (_ETIQUETA, _POR_ETIQUETA)
+    marcas = list(regex.finditer(plano))
     campos: dict[str, str] = {}
     for i, m in enumerate(marcas):
-        campo = _POR_ETIQUETA[m.group(1).lower()]
+        campo = por_etiqueta[m.group(1).lower()]
         fin_linea = texto.find("\n", m.end())
         fin = len(texto) if fin_linea < 0 else fin_linea
         if i + 1 < len(marcas):

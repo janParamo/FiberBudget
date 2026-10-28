@@ -630,16 +630,17 @@ def generar_excel(data: dict[str, Any], rules: dict[str, Any], template_path: Pa
     client_name_cell, comment_cell = _client_name_cell(budget_sheet), _comment_cell(budget_sheet)
     assignments_by_sheet["Presupuesto"][client_name_cell] = data["client_name"]
     assignments_by_sheet["Presupuesto"].update(_locale_independent_date_formulas(budget_sheet))
-    if data.get("raw_comment"):
-        assignments_by_sheet["Presupuesto"][comment_cell] = _comment_text(
-            budget_sheet[comment_cell].value, data["raw_comment"])
-    elif data.get("comment_edits") and isinstance(budget_sheet[comment_cell].value, str):
-        # Bulk coordinates: the template's own comment keeps its text; only the values it already has ("*Ancho de banda: …") are replaced.
-        texto = budget_sheet[comment_cell].value
+    # The template's own comment keeps all its text; only the values it already has («*Plan a contratar: …», «*Ancho de banda: …») take what was typed
+    # (`comment_edits`: from the form of the viewer or from the bulk coordinates). The ticket comment, when there is one, goes after it.
+    texto_plantilla = budget_sheet[comment_cell].value
+    if data.get("comment_edits") and isinstance(texto_plantilla, str):
         for etiqueta, valor in (("Ancho de banda", data["comment_edits"].get("bandwidth")), ("Plan a contratar", data["comment_edits"].get("plan"))):
             if valor:
-                texto = _con_valor(texto, etiqueta, str(valor))
-        assignments_by_sheet["Presupuesto"][comment_cell] = texto
+                texto_plantilla = _con_valor(texto_plantilla, etiqueta, str(valor))
+    if data.get("raw_comment"):
+        assignments_by_sheet["Presupuesto"][comment_cell] = _comment_text(texto_plantilla, data["raw_comment"])
+    elif texto_plantilla != budget_sheet[comment_cell].value:
+        assignments_by_sheet["Presupuesto"][comment_cell] = texto_plantilla
 
     # "Elaborado por:" on the budget sheet, as on the route sheet.
     # A template that already names the author (the current one: "Jan Paramo") keeps it; the service only fills an empty cell.

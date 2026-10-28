@@ -28,6 +28,7 @@
         <button type="button" data-vista="lista" class="activa">Actividades</button>
         <button type="button" data-vista="mapa">Mapa</button>
         <button type="button" data-vista="cuadrillas">Cuadrillas</button>
+        <button type="button" data-vista="kayako">Tickets de Kayako <span id="kayako-n" class="insignia" hidden></span></button>
       </nav>
       <span id="vivo" class="nota" role="status"></span>
       <span id="estado-conexion" class="nota" role="status"></span>
@@ -55,6 +56,11 @@
             <th></th><th>Ticket</th><th>Cliente</th><th>Estado</th><th>Cuadrilla</th><th>Espera</th><th>Ejecución</th><th>Avance</th></tr></thead><tbody></tbody></table></div>
         </section>
         <section id="vista-mapa" class="vista" hidden><div id="mapa"></div></section>
+        <section id="vista-kayako" class="vista" hidden>
+          <p class="nota">Tickets abiertos de Kayako (departamento Fibra Óptica, tipo Presupuesto FO) pendientes de planificar. Solo se leen: nada se cambia en Kayako.
+            <button id="kayako-recargar" type="button" class="chico">Actualizar</button> <span id="kayako-estado" class="nota"></span></p>
+          <div class="tabla-caja"><table class="tabla" id="tabla-kayako"><thead><tr><th>Ticket</th><th>Cliente</th><th>Ejecutivo</th><th>Estado</th><th>Últ. actividad</th><th>Contacto</th><th>Coord.</th><th></th></tr></thead><tbody></tbody></table></div>
+        </section>
         <section id="vista-cuadrillas" class="vista" hidden>
           <div id="lista-cuadrillas" class="tarjetas"></div>
           <form id="form-cuadrilla" class="form-linea">

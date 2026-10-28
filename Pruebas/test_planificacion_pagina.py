@@ -131,6 +131,15 @@ async def _recorrido(main_, con):
         assert con.execute("SELECT count(*) AS n FROM redes.plan_mensajes WHERE actividad_id = %s AND de_origen = 'planificacion'", (id_actividad,)).fetchone()["n"] == 1
         # the clock keeps running in the page
         await p.esperar("document.querySelector('[data-reloj]') !== null", 5)
+        # the tray of Kayako tickets: the pending ones are listed (the badge counts them) and an activity is made from a ticket with no budget
+        await p.esperar("document.getElementById('kayako-n').textContent === '2'", 15)
+        await p.evaluar("document.querySelector('[data-vista=kayako]').click(); true")
+        await p.esperar("document.querySelectorAll('#tabla-kayako tbody tr[data-ticket]').length === 2", 10)
+        assert "Ferretería Luna" in await p.evaluar("document.querySelector('#tabla-kayako tbody').innerText") and "Elba Soto" in await p.evaluar("document.querySelector('#tabla-kayako tbody').innerText")
+        await p.evaluar("document.querySelector('[data-crear-ticket=\"FMO-311-48543\"]').click(); true")
+        await p.esperar("document.querySelector('#tabla-kayako tr[data-ticket=\"FMO-311-48543\"] .etiqueta') !== null", 15)
+        assert con.execute("SELECT origen, cliente_nombre, estado FROM redes.plan_actividades WHERE ticket = 'FMO-311-48543'").fetchone() == {"origen": "kayako", "cliente_nombre": "Ferretería Luna", "estado": "inactivo"}
+        assert await p.evaluar("document.getElementById('kayako-n').textContent") == "1"                                  # one ticket left to plan
         # the map has the activity; the crews tab lists the six crews
         await p.evaluar("document.querySelector('[data-vista=mapa]').click(); true")
         await p.esperar("document.querySelectorAll('#mapa .leaflet-interactive').length >= 1", 10)
@@ -166,12 +175,17 @@ servidor_real_puerto = 0
 def test_planning_in_a_real_browser(mundo, base_redes, monkeypatch):
     global servidor_real_puerto
     main_, c, con = mundo
-    from visor_rutas import campo_eventos
+    from test_planificacion import ticket_kayako
+    from visor_rutas import campo_eventos, kayako
     from visor_rutas.redes import db
+    monkeypatch.setenv("KAYAKO_DB_HOST", "10.0.0.5")
+    monkeypatch.setenv("KAYAKO_DB_USER", "lector")
+    monkeypatch.setenv("KAYAKO_DB_PASSWORD", "x")
+    monkeypatch.setattr(kayako, "vista_previa", lambda dias=None, limite=50, abrir=None: [ticket_kayako(), ticket_kayako("SZC-554-70181", coordenadas=[])])      # Kayako is not read in the tests
     _, params = base_redes
     monkeypatch.setitem(campo_eventos._otras, "planificacion", campo_eventos.Escucha(lambda: db.conectar(params=params), "planificacion"))      # the live notices of the test database
     with servidor_real(main_.app) as puerto:
         servidor_real_puerto = puerto
         asyncio.run(_recorrido(main_, con))
     jan = con.execute("SELECT * FROM redes.usuarios WHERE persona_visor = 'jan'").fetchone()
-    assert sorted(x["estado"] for x in pl.actividades(con, jan)["actividades"]) == ["asignado", "asignado", "en_curso"]
+    assert sorted(x["estado"] for x in pl.actividades(con, jan)["actividades"]) == ["asignado", "asignado", "en_curso", "inactivo"]

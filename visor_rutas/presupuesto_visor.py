@@ -200,6 +200,34 @@ def archivo_del_visor(ruta: str | Path, sufijos: tuple[str, ...] = (".xlsx", ".p
     return archivo
 
 
+def presupuestos_por_ticket(carpeta: Path | None = None) -> dict[str, list[str]]:
+    """{número de ticket (en minúsculas): [claves de los Excel que ya se hicieron para él]}: todo Excel de output/visor (sueltos y dentro de las carpetas de las
+    masivas, en el disco y en la base) cuyo nombre empieza con el número del ticket y un «_» (así se nombran: ticket_cliente.xlsx)."""
+    carpeta = carpeta or carpeta_visor()
+    claves = {f["clave"] for f in almacen_archivos.listar("visor") if f["clave"].lower().endswith(".xlsx")}
+    if carpeta.is_dir():
+        claves |= {p.relative_to(carpeta).as_posix() for p in carpeta.rglob("*.xlsx") if p.is_file()}
+    indice: dict[str, list[str]] = {}
+    for clave in sorted(claves):
+        nombre = clave.rsplit("/", 1)[-1]
+        if nombre.startswith(("~$", "Resumen")) or "_" not in nombre:
+            continue
+        indice.setdefault(nombre.split("_", 1)[0].casefold(), []).append(clave)
+    return indice
+
+
+def nombre_presupuesto(ticket: str, cliente: str, carpeta: Path) -> str:
+    """«ticket_cliente.xlsx» (without accents or odd characters); if that name is taken, in the folder or in the database store, «_2», «_3»…"""
+    from visor_rutas import masivas
+    base = "_".join(masivas._seguro(x, 80) for x in (ticket, cliente) if str(x or "").strip()) or "presupuesto"
+    guardados = {f["clave"].casefold() for f in almacen_archivos.listar("visor", base) if "/" not in f["clave"]}
+    nombre, n = f"{base}.xlsx", 1
+    while (carpeta / nombre).exists() or nombre.casefold() in guardados:
+        n += 1
+        nombre = f"{base}_{n}.xlsx"
+    return nombre
+
+
 def _nombre_archivo(base: str, lat: float, lon: float, ahora: datetime) -> str:
     return f"{_safe_file_stem(base)}_{lat:.6f}_{lon:.6f}_{ahora:%Y%m%d-%H%M%S}.xlsx"
 
@@ -260,8 +288,11 @@ def _texto(valor: Any) -> str:
     return "" if valor is None else str(valor).strip()
 
 
-def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None) -> main.TicketRequest:
+def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None, desde_formulario: bool = False) -> main.TicketRequest:
     """TicketRequest desde el formulario del visor, con las mismas validaciones que la API.
+
+    desde_formulario: el servicio y la velocidad que se escribieron en el formulario también van al comentario de la segunda hoja de la plantilla
+    («*Plan a contratar: …» y «*Ancho de banda: …»; el resto de ese comentario no se toca).
 
     ticket_id vacío -> "VISOR-AAAAMMDD-HHMMSS"; contact_name vacío -> client_name; coordenada en
     un solo campo ("12.15, -86.26", como la barra del visor); tecnología Automático/GPON/Metro;
@@ -289,7 +320,8 @@ def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None) -
         "contact_name": _texto(campos.get("contact_name")) or cliente,
         "contact_phone": _texto(campos.get("contact_phone")),
         "raw_comment": str(campos.get("raw_comment") or ""),
-        "comment_edits": campos.get("comment_edits") or None,
+        "comment_edits": campos.get("comment_edits") or ({k: v for k, v in (("plan", _texto(campos.get("service_type"))), ("bandwidth", _texto(campos.get("bandwidth")))) if v} or None
+                                                         if desde_formulario else None),
         "technology": TECNOLOGIAS.get(tecnologia),
         "odf_rack_ports": int(odf) if odf in ("12", "24") else None,
         "latitude": lat if lat is not None else 0.0,
@@ -379,10 +411,12 @@ def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: s
         if visio_con is not None:
             visio_con.close()
     generado = Path(respuesta["excel_path"])
-    destino = carpeta / _nombre_archivo(nombre_base or solicitud.client_name, solicitud.latitude,
-                                         solicitud.longitude, ahora)
-    if destino.exists():
-        destino.unlink()
+    if nombre_base:                                                            # approximate / measurement: <name>_<lat>_<lon>_<date>.xlsx
+        destino = carpeta / _nombre_archivo(nombre_base, solicitud.latitude, solicitud.longitude, ahora)
+        if destino.exists():
+            destino.unlink()
+    else:                                                                       # a budget of the form: <ticket>_<client>.xlsx (never over another one: _2, _3...)
+        destino = carpeta / nombre_presupuesto(solicitud.ticket_id, solicitud.client_name, carpeta)
     generado.replace(destino)
     respuesta["excel_path"] = str(destino)
     almacen_archivos.guardar_archivo("visor", destino.name, destino)

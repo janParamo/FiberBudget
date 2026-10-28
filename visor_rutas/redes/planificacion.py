@@ -293,6 +293,62 @@ def crear_actividad(con: Any, actor: dict[str, Any], *, cliente_nombre: str, lat
     return {"id": f["id"]}
 
 
+# --------------------------------------------------------------------------- bandeja de tickets de Kayako (solo lectura de Kayako)
+
+def _leer_kayako(dias: float | None) -> list[dict[str, Any]]:
+    from visor_rutas import kayako
+    if not kayako.configurada():
+        raise DatosInvalidos({"kayako": "Falta la conexión de Kayako en el .env (KAYAKO_DB_HOST, KAYAKO_DB_USER y KAYAKO_DB_PASSWORD)"})
+    try:
+        return kayako.vista_previa(dias, 300)
+    except Exception as exc:                                         # noqa: BLE001 - the VPN is off, the password changed...: say it in words
+        raise DatosInvalidos({"kayako": f"No se pudo leer Kayako ({type(exc).__name__}): revise la VPN y los datos KAYAKO_DB_* del .env"}) from None
+
+
+def _nombre_del_cliente(t: dict[str, Any]) -> str:
+    """The client's name written in the ticket; Kayako's own «client» is usually the e-mail of who sent it (fibra@ideay.com)."""
+    return t["campos"].get("client_name") or ("" if "@" in t["cliente"] else t["cliente"]) or t["asunto"] or t["ticket"]
+
+
+def kayako_tickets(con: Any, actor: dict[str, Any], *, dias: float | None = None) -> dict[str, Any]:
+    """The open tickets of Kayako waiting for planning (filters of business_rules.yaml, `kayako`), each with the activities it already has. Planning only."""
+    exigir_planificacion(actor)
+    lista = _leer_kayako(dias)
+    ya: dict[str, list[dict[str, Any]]] = {}
+    if lista:
+        for f in con.execute("SELECT id, ticket, cliente_nombre, estado FROM redes.plan_actividades WHERE ticket = ANY(%s) AND borrado_en IS NULL AND estado NOT IN ('cancelado', 'no_viable') ORDER BY id",
+                             ([t["ticket"] for t in lista],)).fetchall():
+            ya.setdefault(f["ticket"], []).append({"id": f["id"], "cliente": f["cliente_nombre"], "estado": f["estado"]})
+    return {"tickets": [{"ticket": t["ticket"], "cliente": _nombre_del_cliente(t), "asunto": t["asunto"], "ejecutivo": t["ejecutivo"], "estado": t["estado"], "ultima_actividad": t["ultima_actividad"],
+                         "creado": t["creado"], "contacto": t["campos"].get("contact_name", ""), "telefono": t["campos"].get("contact_phone", ""), "codigo": t["campos"].get("client_code", ""),
+                         "coordenadas": t["coordenadas"], "comentario": t["comentario"][:1200], "actividades": ya.get(t["ticket"], [])} for t in lista]}
+
+
+def actividad_desde_ticket(con: Any, actor: dict[str, Any], *, ticket: str, coordenadas: list[int] | None = None, lat: float | None = None, lon: float | None = None) -> dict[str, Any]:
+    """Creates the activity(ies) of a Kayako ticket, «inactivo», without a budget: the ticket is read again from Kayako (what the page shows is not trusted).
+    The place: the coordinates written in the ticket (`coordenadas`: which of them, by position; none given = the first one) or, when it has none, `lat` and `lon`
+    typed by planning. A ticket with several coordinates and several chosen makes one activity per coordinate («Cliente (1)», «Cliente (2)»)."""
+    exigir_planificacion(actor)
+    t = next((x for x in _leer_kayako(3650) if x["ticket"].casefold() == str(ticket or "").strip().casefold()), None)
+    if t is None:
+        raise NoEncontrado("Ese ticket no está entre los abiertos de Kayako (departamento, tipo y estado de los filtros)")
+    lugares = [(c[0], c[1]) for c in t["coordenadas"]]
+    elegidas = [lugares[i] for i in (coordenadas if coordenadas else [0]) if 0 <= i < len(lugares)] if lugares else []
+    if not elegidas and lat is not None and lon is not None:
+        elegidas = [(lat, lon)]
+    if not elegidas:
+        raise DatosInvalidos({"coordenada": "El ticket no trae coordenadas escritas: escriba la del cliente"})
+    base = _nombre_del_cliente(t)
+    c = t["campos"]
+    ids = []
+    for n, (la, lo) in enumerate(elegidas, 1):
+        ids.append(crear_actividad(con, actor, cliente_nombre=base if len(elegidas) == 1 else f"{base} ({n})", lat=la, lon=lo, ticket=t["ticket"], codigo_cliente=c.get("client_code", ""),
+                                   contacto_nombre=c.get("contact_name", ""), contacto_telefono=c.get("contact_phone", ""), origen="kayako",
+                                   resumen={"asunto": t["asunto"], "ejecutivo": t["ejecutivo"], "estado_kayako": t["estado"], "kayako_id": t["kayako_id"]},
+                                   notas=t["asunto"])["id"])
+    return {"ids": ids}
+
+
 def llevar_a_planificacion(con: Any, actor: dict[str, Any], *, archivos: list[str] | None = None, carpetas: list[str] | None = None) -> dict[str, Any]:
     """Takes budgets that already exist (Excel of output/visor, or the groups of a bulk-coordinates batch) to planning: one «inactivo» activity per Excel, with
     the client, ticket, contact, coordinate and total read from the file. `archivos` / `carpetas`: keys relative to output/visor (as pdf_lote.planificar).

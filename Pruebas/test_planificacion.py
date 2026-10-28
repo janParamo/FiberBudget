@@ -343,3 +343,90 @@ def test_the_chat_over_the_rest_api(api, monkeypatch):  # noqa: F811
     assert c.post(f"/visor/planificacion/actividades/{i}/mensajes", json={"texto": "Recibido"}, headers=juan).status_code == 200
     assert c.get(f"/visor/planificacion/actividades/99999/mensajes", headers=JAN).status_code == 404
     assert c.get(f"/visor/planificacion/actividades/{i}/mensajes", headers=MARIA).status_code == 403
+
+
+# ------------------------------------------------------------------ tray of Kayako tickets (Kayako is only read)
+
+def ticket_kayako(numero="FMO-311-48543", **extra):
+    return {"kayako_id": 7, "ticket": numero, "asunto": "Presupuesto FO Ferretería", "cliente": "fibra@ideay.com", "ejecutivo": "Elba Soto", "departamento": "Fibra Optica", "tipo": "Presupuesto FO",
+            "estado": "Abierto", "owner": "Jan", "creado": "2026-10-27T10:00:00", "ultima_actividad": "2026-10-27T13:04:19", "comentario": "• Nombre de cliente: Ferretería Luna",
+            "ultimo_comentario": "", "campos": {"client_name": "Ferretería Luna", "client_code": "C21232", "contact_name": "Carlos Galo", "contact_phone": "88822250"},
+            "coordenadas": [[12.1364, -86.2514]], **extra}
+
+
+@pytest.fixture
+def kayako_falso(monkeypatch):
+    from visor_rutas import kayako
+    datos = {"lista": [ticket_kayako(), ticket_kayako("SZC-554-70181", coordenadas=[]), ticket_kayako("QRM-185-98546", coordenadas=[[12.13, -86.25], [12.14, -86.26]]),
+                       ticket_kayako("SJP-282-29231", cliente="Ana Pérez", campos={"contact_name": "Ana"})]}
+    monkeypatch.setenv("KAYAKO_DB_HOST", "10.0.0.5")
+    monkeypatch.setenv("KAYAKO_DB_USER", "lector")
+    monkeypatch.setenv("KAYAKO_DB_PASSWORD", "x")
+    monkeypatch.setattr(kayako, "vista_previa", lambda dias=None, limite=50, abrir=None: [dict(t) for t in datos["lista"]])
+    return datos
+
+
+def test_the_tray_lists_the_kayako_tickets_and_marks_the_ones_that_already_have_an_activity(equipo, kayako_falso):
+    con, g = equipo
+    t = {x["ticket"]: x for x in pl.kayako_tickets(con, g["edu"])["tickets"]}
+    assert sorted(t) == ["FMO-311-48543", "QRM-185-98546", "SJP-282-29231", "SZC-554-70181"]
+    assert (t["FMO-311-48543"]["cliente"], t["FMO-311-48543"]["codigo"], t["FMO-311-48543"]["telefono"], t["FMO-311-48543"]["actividades"]) == ("Ferretería Luna", "C21232", "88822250", [])
+    assert t["SJP-282-29231"]["cliente"] == "Ana Pérez"                                   # no name in the comment: Kayako's own (when it is not an e-mail)
+    r = pl.actividad_desde_ticket(con, g["edu"], ticket="FMO-311-48543")
+    d = pl.actividad(con, g["edu"], id=r["ids"][0])["actividad"]
+    assert (d["estado"], d["origen"], d["cliente_nombre"], d["ticket"], d["codigo_cliente"], d["contacto_nombre"], d["contacto_telefono"]) == ("inactivo", "kayako", "Ferretería Luna", "FMO-311-48543", "C21232", "Carlos Galo", "88822250")
+    assert (d["lat"], d["lon"]) == (12.1364, -86.2514) and d["resumen"]["ejecutivo"] == "Elba Soto" and d["resumen"]["estado_kayako"] == "Abierto"
+    t = {x["ticket"]: x for x in pl.kayako_tickets(con, g["edu"])["tickets"]}
+    assert [(a["id"], a["estado"]) for a in t["FMO-311-48543"]["actividades"]] == [(r["ids"][0], "inactivo")]
+    with pytest.raises(db.DatosInvalidos):
+        pl.actividad_desde_ticket(con, g["edu"], ticket="FMO-311-48543")                  # the same ticket and client is not made twice
+
+
+def test_a_ticket_without_coordinates_needs_one_and_one_with_several_can_make_one_activity_each(equipo, kayako_falso):
+    con, g = equipo
+    with pytest.raises(db.DatosInvalidos) as exc:
+        pl.actividad_desde_ticket(con, g["edu"], ticket="SZC-554-70181")
+    assert "no trae coordenadas" in exc.value.errores["coordenada"]
+    ok = pl.actividad_desde_ticket(con, g["edu"], ticket="SZC-554-70181", lat=12.2, lon=-86.3)["ids"]
+    assert [(pl.actividad(con, g["edu"], id=i)["actividad"]["lat"]) for i in ok] == [12.2]
+    varias = pl.actividad_desde_ticket(con, g["edu"], ticket="QRM-185-98546", coordenadas=[0, 1])["ids"]
+    assert sorted(pl.actividad(con, g["edu"], id=i)["actividad"]["cliente_nombre"] for i in varias) == ["Ferretería Luna (1)", "Ferretería Luna (2)"]
+    solo = pl.actividad_desde_ticket(con, g["edu"], ticket="SJP-282-29231")["ids"]
+    assert len(solo) == 1 and pl.actividad(con, g["edu"], id=solo[0])["actividad"]["cliente_nombre"] == "Ana Pérez"
+    with pytest.raises(db.NoEncontrado):
+        pl.actividad_desde_ticket(con, g["edu"], ticket="NO-EXISTE")
+    with pytest.raises(db.DatosInvalidos):
+        pl.actividad_desde_ticket(con, g["edu"], ticket="SZC-554-70181", lat=40.0, lon=-86.3)           # outside Nicaragua
+    with pytest.raises(db.SinPermiso):
+        pl.kayako_tickets(con, g["juan"])
+    with pytest.raises(db.SinPermiso):
+        pl.actividad_desde_ticket(con, g["juan"], ticket="SJP-282-29231")
+
+
+def test_the_tray_says_why_kayako_cannot_be_read(equipo, monkeypatch):
+    from visor_rutas import kayako
+    con, g = equipo
+    for k in ("KAYAKO_DB_HOST", "KAYAKO_DB_USER", "KAYAKO_DB_PASSWORD"):
+        monkeypatch.setenv(k, "")
+    with pytest.raises(db.DatosInvalidos) as exc:
+        pl.kayako_tickets(con, g["edu"])
+    assert "KAYAKO_DB_HOST" in exc.value.errores["kayako"]
+    monkeypatch.setenv("KAYAKO_DB_HOST", "10.0.0.5")
+    monkeypatch.setenv("KAYAKO_DB_USER", "lector")
+    monkeypatch.setenv("KAYAKO_DB_PASSWORD", "x")
+    monkeypatch.setattr(kayako, "vista_previa", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("password is secret123")))
+    with pytest.raises(db.DatosInvalidos) as exc:
+        pl.kayako_tickets(con, g["edu"])
+    assert "VPN" in exc.value.errores["kayako"] and "secret123" not in exc.value.errores["kayako"]                # the detail of the error is never shown
+
+
+def test_the_tray_over_the_rest_api(api, kayako_falso):  # noqa: F811
+    c, con = api
+    con.execute("UPDATE redes.usuarios SET rol = 'editor' WHERE persona_visor = 'jan'")
+    r = c.get("/visor/planificacion/kayako/tickets", headers=JAN).json()
+    assert r["ok"] and len(r["tickets"]) == 4
+    n = c.post("/visor/planificacion/kayako/actividad", json={"ticket": "FMO-311-48543"}, headers=JAN)
+    assert n.status_code == 200 and len(n.json()["ids"]) == 1
+    assert c.post("/visor/planificacion/kayako/actividad", json={"ticket": "FMO-311-48543"}, headers=JAN).status_code == 422
+    assert c.post("/visor/planificacion/kayako/actividad", json={"ticket": "NO-EXISTE"}, headers=JAN).status_code == 404
+    assert c.get("/visor/planificacion/kayako/tickets").status_code == 401

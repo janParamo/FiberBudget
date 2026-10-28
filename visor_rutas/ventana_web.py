@@ -237,6 +237,25 @@ class Api:
         return {"modo": self._modo, "url": self._config.url, "clave_guardada": bool(self._config.clave),
                 "local_disponible": not self._forzar_remoto, "archivo": str(config_visor.archivo_config())}
 
+    def tickets_pendientes(self) -> dict[str, Any]:
+        """The open Kayako tickets that ask for a budget (Kayako is only read), each one with what the budget form needs and the budgets already made for it
+        (the Excel files named after the ticket). Remote mode: the server's Kayako connection."""
+        if self._modo == "remoto":
+            return self._remota("tickets_pendientes")
+        from visor_rutas import kayako
+        if not kayako.configurada():
+            return {"ok": False, "error": "Falta la conexión de Kayako en el .env (KAYAKO_DB_HOST, KAYAKO_DB_USER y KAYAKO_DB_PASSWORD)"}
+        try:
+            lista = kayako.vista_previa(None, 300)
+            hechos = presupuesto_visor.presupuestos_por_ticket()
+        except Exception as exc:                                       # noqa: BLE001 - the VPN is off, the password changed...: in words, without the detail
+            log.warning("Visor web: Kayako could not be read (%s: %s)", type(exc).__name__, str(exc)[:160])
+            return {"ok": False, "error": f"No se pudo leer Kayako ({type(exc).__name__}): revise la VPN y los datos KAYAKO_DB_* del .env"}
+        for t in lista:
+            t["presupuestos"] = hechos.get(t["ticket"].casefold(), [])
+            t["pendiente"] = not t["presupuestos"]
+        return {"ok": True, "tickets": a_json(lista)}
+
     def planificacion_acceso(self) -> dict[str, Any]:
         """Where the planning app is (/planificacion/ of the service) and the key to enter it, for the «Planificación» window of the viewer.
         Server mode: the server and the key of the configuration. Local mode: this computer's service (API_HOST / API_PORT) and the viewer key of the .env
@@ -668,7 +687,7 @@ class Api:
 
         def accion() -> dict[str, Any]:
             campos_form = dict(campos or {})
-            solicitud = presupuesto_visor.construir_solicitud(campos_form)
+            solicitud = presupuesto_visor.construir_solicitud(campos_form, desde_formulario=True)
             marcados = presupuesto_visor.postes_marcados(campos_form.get(presupuesto_visor.CAMPO_POSTES_MARCADOS))
             ruta = self._ruta_editada(campos_form.get("ruta_editada"))
             respuesta = presupuesto_visor.generar(solicitud, ruta or self._rutas, postes_existentes_m=marcados,

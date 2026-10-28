@@ -1674,6 +1674,7 @@
       mapa.invalidateSize();
     }
     if (nombre === "planificacion") cargarPlanificacion(false);
+    if (nombre === "tickets" && window.Tickets) window.Tickets.mostrar();
     if (window.RedesVistas && window.RedesVistas[nombre]) window.RedesVistas[nombre].mostrar();
   }
 
@@ -1803,6 +1804,27 @@
 
   // --- historial: presupuestos guardados por el visor (output/visor; en remoto, los del servidor)
   const hist = { lista: [], cargado: false, seleccionado: null };
+
+  /** «Hacer presupuesto» of a Kayako ticket: opens «Nuevo presupuesto» with the form filled with what the ticket says (the ticket's comment is not copied into it). */
+  async function rellenarPresupuestoDeTicket(s) {
+    mostrarVista("presupuesto");
+    mostrarPestanaVp("nuevo");
+    await cargarConfigPresupuesto();
+    const poner = (id, valor) => { const e = $(id); if (e && valor) e.value = valor; };
+    $("vp-form").reset();
+    poner("f-ticket_id", s.ticket_id); poner("f-client_name", s.client_name); poner("f-client_code", s.client_code); poner("f-sales_exec", s.sales_exec);
+    poner("f-contact_name", s.contact_name); poner("f-contact_phone", s.contact_phone); poner("f-coordenada", s.coordenada);
+    const elegir = (id, texto) => {                                            // the option of the list that the ticket's text names (the list is the program's own)
+      const sel = $(id), t = String(texto || "").toLowerCase();
+      const op = t && [...sel.options].find((o) => o.value.toLowerCase() === t || t.includes(o.value.toLowerCase()));
+      if (op) sel.value = op.value;
+    };
+    elegir("f-service_type", s.servicio); elegir("f-medium", s.medium);
+    if (s.bandwidth) $("f-bandwidth").value = s.bandwidth;
+    else if (pres.config) $("f-bandwidth").value = pres.config.estimacion.bandwidth;
+    vpEstado(s.coordenada ? `Formulario llenado con el ticket ${s.ticket_id}: revíselo y presione «Generar presupuesto»` : `Formulario llenado con el ticket ${s.ticket_id}. Falta la coordenada del cliente: escríbala.`, s.coordenada ? "ok" : "error");
+    $("f-coordenada").focus();
+  }
 
   function mostrarPestanaVp(nombre) {
     document.querySelectorAll(".vp-tab").forEach((b) => b.classList.toggle("activa", b.dataset.vpTab === nombre));
@@ -2408,6 +2430,7 @@
           window.Redes.iniciar(api).catch((e) => console.error("Redes", e));
         }
       }
+      if (window.Tickets && !VENTANA) window.Tickets.iniciar({ api: () => api, rellenar: (s) => rellenarPresupuestoDeTicket(s) });     // the Kayako tickets that wait for a budget
       if (VENTANA) {                   // a window of its own: only the diagram or the editor, no KMZ network, no saved layer state
         await arrancarVentanaAparte();
         return;
@@ -2474,6 +2497,7 @@
     get mapa() { return mapa; }, get datos() { return datos; }, get medidas() { return medidas.length; },
     get estimacion() { return estim.estado; }, mostrarVista: (nombre) => mostrarVista(nombre),
     get midiendo() { return med.activo; }, abrirDiagramaPorNombre: (nombre) => abrirDiagramaPorNombre(nombre),
+    rellenarPresupuestoDeTicket: (s) => rellenarPresupuestoDeTicket(s),
     iconosVisor: { catalogo: CATALOGO_ICONOS, personalizados: () => ({ ...personalizados }), aplicar: (m) => aplicarIconosVisor(m),
                    html: (id) => (personalizados[id] ? window.Iconos.svg({ ...personalizados[id], escala: 1, opacidad: 1 }, 26) : ICONOS[id].options.html) },
     verVisioAlLado: (nombre) => verVisioAlLado(nombre), abrirVentana: (tipo, parametros) => abrirVentana(tipo, parametros),

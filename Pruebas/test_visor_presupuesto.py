@@ -96,7 +96,7 @@ def test_visor_uses_the_api_generation_same_quantities_and_own_folder(entorno, m
     # Only output/visor changed: same index, same API files.
     assert (salida / "budget_index.json").read_text(encoding="utf-8") == indice
     nuevos = _archivos(salida) - antes
-    assert nuevos == {os.path.join("visor", "Cliente_Uno_12.136400_-86.251400_20261007-153005.xlsx")}
+    assert nuevos == {os.path.join("visor", "T-100_Cliente_Uno.xlsx")}
     assert Path(visor["excel_path"]).parent == salida / "visor"
     assert llamadas["mapas"][-1].parent == salida / "visor" / "mapas"     # the map too
     assert llamadas["mapas"][0].parent == salida / "mapas"                # the API's, as before
@@ -271,3 +271,21 @@ def test_the_version_of_a_budget_changes_when_the_excel_is_saved_again(entorno, 
     assert pv.version_archivo(xlsx) == antes
     os.utime(xlsx, ns=(xlsx.stat().st_atime_ns, xlsx.stat().st_mtime_ns + 5_000_000_000))      # saved again later
     assert pv.version_archivo(xlsx) != antes
+
+
+def test_the_service_and_speed_of_the_form_go_to_the_comment_of_the_second_sheet(entorno):
+    main, pv, salida, llamadas = entorno
+    campos = {"ticket_id": "T-100", "client_name": "Cliente Uno", "client_code": "C1", "sales_exec": "Ana", "contact_name": "Juan", "contact_phone": "8888",
+              "coordenada": "12.136400, -86.251400", "service_type": "Empresarial", "medium": "FO", "bandwidth": "200 Mbps", "technology": "auto", "odf_rack_ports": "ninguno", "raw_comment": ""}
+    assert pv.construir_solicitud(campos, desde_formulario=True).comment_edits == {"plan": "Empresarial", "bandwidth": "200 Mbps"}
+    assert pv.construir_solicitud(campos).comment_edits is None                                  # the approximate budget and the bulk ones do not do it
+
+
+def test_a_budget_is_named_ticket_and_client_and_never_over_another_one(tmp_path):
+    from visor_rutas import presupuesto_visor as pv
+    assert pv.nombre_presupuesto("XQV-620-37848", "David Tobar BIG TIPITAPA 1", tmp_path) == "XQV-620-37848_David_Tobar_BIG_TIPITAPA_1.xlsx"
+    assert pv.nombre_presupuesto("T-1", "Compañía Licorera, S.A / Rivas", tmp_path) == "T-1_Compania_Licorera_S_A_Rivas.xlsx"
+    assert pv.nombre_presupuesto("", "Solo cliente", tmp_path) == "Solo_cliente.xlsx"
+    (tmp_path / "T-1_Casa.xlsx").write_bytes(b"x")
+    (tmp_path / "T-1_Casa_2.xlsx").write_bytes(b"x")
+    assert pv.nombre_presupuesto("T-1", "Casa", tmp_path) == "T-1_Casa_3.xlsx"                  # the first ones may have been edited by hand: not replaced

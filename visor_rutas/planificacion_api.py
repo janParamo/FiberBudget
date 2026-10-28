@@ -73,6 +73,13 @@ class MensajePedido(BaseModel):
     texto: str = Field(max_length=1000)
 
 
+class TicketPedido(BaseModel):
+    ticket: str = Field(max_length=64)
+    coordenadas: list[int] | None = Field(default=None, max_length=20)
+    lat: float | None = None
+    lon: float | None = None
+
+
 class ControlPedido(BaseModel):
     clave: str = Field(max_length=40)
     estado: str = Field(default="hecho", max_length=12)
@@ -138,6 +145,17 @@ def eventos(p: str = Depends(persona)) -> Any:
         finally:
             quitar()
     return StreamingResponse(flujo(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/kayako/tickets")
+def kayako_tickets(dias: float | None = Query(default=None, ge=0, le=3650), p: str = Depends(persona)) -> dict[str, Any]:
+    """The Kayako tickets (read only) waiting for planning, with the activities each one already has."""
+    return _ejecutar(p, planificacion.kayako_tickets, "planificacion/kayako/tickets", dias=dias)
+
+
+@router.post("/kayako/actividad")
+def actividad_desde_ticket(pedido: TicketPedido, p: str = Depends(persona)) -> dict[str, Any]:
+    return _ejecutar(p, planificacion.actividad_desde_ticket, "planificacion/kayako/actividad", **pedido.model_dump())
 
 
 @router.get("/tecnicos")

@@ -43,3 +43,29 @@ def test_the_templates_own_comment_only_changes_the_values_it_has():
     nuevo = _con_valor(_con_valor(base, "Ancho de banda", "100 mbps"), "Plan a contratar", "Residencial")
     assert nuevo == base.replace("200 mbps", "100 mbps")
     assert _con_valor("sin esa línea", "Ancho de banda", "100 mbps") == "sin esa línea"
+
+
+def test_the_real_template_changes_only_the_plan_and_speed_lines_and_the_ticket_comment_goes_after():
+    """With templates/Plantilla.xlsx: «*Plan a contratar» and «*Ancho de banda» take the typed values and the rest of the template's comment stays."""
+    import tempfile
+    from pathlib import Path
+
+    import main
+    from excel_generator import _comment_cell, generar_excel
+    from openpyxl import load_workbook
+    from presupuesto import calcular_presupuesto
+    raiz = Path(__file__).parents[1]
+    reglas = main.load_rules(raiz / "business_rules.yaml")
+    cant = calcular_presupuesto(500, [(12.13, -86.25), (12.14, -86.25)], reglas, service_type="Residencial", bandwidth="10 Mbps", existing_poles=2)
+
+    def comentario(**extra):
+        datos = {"budget_id": "a", "ticket_id": "T", "client_name": "X", "raw_comment": "", "quantities": cant, "materials": {}, "hardware": {}, "route_fields": {}, **extra}
+        g = generar_excel(datos, reglas, raiz / "templates" / "Plantilla.xlsx", Path(tempfile.mkdtemp()))
+        ws = load_workbook(g.path)["Presupuesto"]
+        return ws[_comment_cell(ws)].value
+    original = comentario()
+    assert "*Plan a contratar:  Residencial" in original and "*Ancho de banda: 200 mbps" in original and "*Medio: GPON" in original
+    editado = comentario(comment_edits={"plan": "Empresarial", "bandwidth": "25 Mbps"})
+    assert editado == original.replace("Plan a contratar:  Residencial", "Plan a contratar:  Empresarial").replace("200 mbps", "25 Mbps")          # nothing else changes
+    con_ticket = comentario(comment_edits={"plan": "Empresarial", "bandwidth": "25 Mbps"}, raw_comment="Texto del ticket")
+    assert con_ticket.startswith(editado) and con_ticket.endswith("Texto del ticket")                                                           # the ticket's comment goes after, the edits stay
