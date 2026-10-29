@@ -389,6 +389,9 @@
           <button id="lz-conectar" type="button" class="btn btn-chico" data-lz-edita aria-pressed="false" title="Clic en una caja y clic en otra: crea un cable entre ellas">Conectar con cable</button>
           <button id="lz-quitar" type="button" class="btn btn-chico" data-lz-edita disabled title="Quita la caja elegida del esquema (no la borra de la red) · Supr">Quitar del esquema</button>
           <button id="lz-eliminar-cable" type="button" class="btn btn-chico" data-lz-edita disabled title="Elimina el cable elegido · Supr">Eliminar cable</button>
+          <button id="lz-hilos" type="button" class="btn btn-chico" hidden title="Conectar hilo con hilo los cables de la mufa elegida">Conectar hilos…</button>
+          <button id="lz-hilos-a" type="button" class="btn btn-chico" hidden title="Conectar los hilos de este cable con los de otro cable en la mufa del origen">Hilos en el origen</button>
+          <button id="lz-hilos-b" type="button" class="btn btn-chico" hidden title="Conectar los hilos de este cable con los de otro cable en la mufa del destino">Hilos en el destino</button>
           <button id="lz-abrir-a" type="button" class="btn btn-chico" hidden title="Abre el editor de mufa del origen para conectar sus hilos">Abrir origen</button>
           <button id="lz-abrir-b" type="button" class="btn btn-chico" hidden title="Abre el editor de mufa del destino para conectar sus hilos">Abrir destino</button>
         </div>
@@ -424,6 +427,26 @@
         <p id="lz-nombre-error" class="vp-estado error" role="alert"></p>
         <div class="lz-cable-botones"><button id="lz-nombre-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Aceptar</button></div>
       </form>
+    </div>
+  </div>
+  <div id="modal-fh" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="fh-titulo">
+    <div class="modal-caja lz-kmz-caja fh-caja">
+      <h2 id="fh-titulo">Conexión de hilos</h2>
+      <p id="fh-aviso" class="nota"></p>
+      <div id="fh-cuerpo">
+        <div class="fh-cables">
+          <label class="dg-campo">Cable A <select id="fh-cable-a"></select></label>
+          <span class="fh-flecha">⇄</span>
+          <label class="dg-campo">Cable B <select id="fh-cable-b"></select></label>
+        </div>
+        <p class="nota">Por cada hilo del cable A, elija con qué hilo del cable B se fusiona en esta mufa. Un hilo conectado a un splitter o a un tercer cable sale bloqueado.</p>
+        <div class="lz-kmz-tabla fh-tabla"><table class="dg-tabla"><thead><tr><th>Hilo del cable A</th><th></th><th>Se fusiona con el hilo del cable B</th></tr></thead><tbody id="fh-filas"></tbody></table></div>
+        <div id="fh-cuenta" class="nota"></div>
+      </div>
+      <div id="fh-estado" class="vp-estado" role="status"></div>
+      <div class="lz-cable-botones"><button id="fh-uno-a-uno" type="button" class="btn" title="Cada hilo libre con el del mismo número">1 a 1</button>
+        <button id="fh-quitar-todas" type="button" class="btn" title="Soltar las fusiones entre estos dos cables">Quitar todas</button>
+        <button id="fh-cerrar" type="button" class="btn">Cerrar</button><button id="fh-guardar" type="button" class="btn btn-primario" disabled>Guardar</button></div>
     </div>
   </div>
   <div id="modal-lz-kmz" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="lz-kmz-titulo">
@@ -1294,6 +1317,7 @@
   <script src="redes/red_mufas.js"></script>
   <script src="redes/trazado.js"></script>
   <script src="redes/diagrama.js"></script>
+  <script src="redes/fusion_hilos.js"></script>
   <script src="redes/lienzo.js"></script>
   <script src="redes/problemas.js"></script>
   <script src="redes/pendientes.js"></script>

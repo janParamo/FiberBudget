@@ -12,6 +12,7 @@
  *   - las cajas se colocan DONDE ESTÁN LAS MUFAS EN EL MAPA (sus coordenadas reales: la del KMZ si la mufa tiene ahí un punto con su nombre, si no la suya; desde un punto de referencia y una escala que el esquema guarda), pero
  *     sobre un fondo blanco, sin mapa; si dos caen una sobre otra (una mufa paralela en el mismo punto) la segunda se corre al lugar libre más cercano.
  *     «Colocar por coordenadas» (activado) lo hace al arrastrar; desactivado, la caja queda donde se suelta. «Acomodar por coordenadas» reordena todo.
+ *   - «Conectar hilos…» (con una caja elegida) o «Hilos en el origen / destino» (con un cable elegido): conexión hilo con hilo entre dos cables de una mufa (fusion_hilos.js).
  *   - «Mufas del KMZ»: las mufas que el KMZ tiene alrededor de la zona y la zona no (nuevas, o la misma renombrada: dos mufas que se llamaban igual y ya se separaron en el KMZ como
  *     «… 1» y «… 2»); se agregan a la zona o se renombra la que ya estaba, y entran a la lista para arrastrarlas al esquema.
  *   - «Agregar nodo / ODF»: el nodo o el ODF que ALIMENTA a toda la red de la zona (se marca como fuente) se crea ahí mismo con su coordenada.
@@ -348,6 +349,8 @@
     $("lz-quitar").disabled = !(s && s.tipo === "caja" && puedeEditar());
     $("lz-eliminar-cable").disabled = !(s && s.tipo === "cable" && puedeEditar());
     $("lz-abrir-a").hidden = $("lz-abrir-b").hidden = !(s && s.tipo === "cable");
+    $("lz-hilos").hidden = !(s && s.tipo === "caja");
+    $("lz-hilos-a").hidden = $("lz-hilos-b").hidden = !(s && s.tipo === "cable");
     if (!s) {
       caja.textContent = st.modo === "cable" ? (st.origen ? "Clic en la caja donde termina el cable" : "Clic en la caja donde empieza el cable") : "Seleccione una caja o un cable. Doble clic en una caja: entrar a su editor de mufa.";
       return;
@@ -362,6 +365,7 @@
     if (!c) return;
     const o = st.elementos.get(c.origen_id), d = st.elementos.get(c.destino_id);
     $("lz-abrir-a").textContent = `Abrir ${o ? o.nombre : "origen"}`; $("lz-abrir-b").textContent = `Abrir ${d ? d.nombre : "destino"}`;
+    $("lz-hilos-a").textContent = `Hilos en ${o ? o.nombre : "el origen"}`; $("lz-hilos-b").textContent = `Hilos en ${d ? d.nombre : "el destino"}`;
     caja.innerHTML = `<b>${esc(c.nombre)}</b> · ${esc(o ? o.nombre : "?")} → ${esc(d ? d.nombre : "?")} · ${c.hilos || "?"} hilos · ${Math.round(c.longitud_m || 0).toLocaleString("es-NI")} m · ${c.conectados} conexión(es) de hilo`;
   }
 
@@ -707,6 +711,16 @@
     $("lz-quitar").addEventListener("click", quitarSeleccion);
     $("lz-eliminar-cable").addEventListener("click", eliminarCable);
     const abrirExtremo = (campo) => { const c = st.seleccion && st.seleccion.tipo === "cable" && st.cables.find((x) => x.id === st.seleccion.id); const e = c && st.elementos.get(c[campo]); if (e) entrar(e); };
+    const hilosEn = (campo) => {                                          // hilo-to-hilo connections in the mufa at one end of the chosen cable
+      const c = st.seleccion && st.seleccion.tipo === "cable" && st.cables.find((x) => x.id === st.seleccion.id);
+      if (c && window.FusionHilos) { window.FusionHilos.alCerrar = () => cargar(st.proyectoId, true); window.FusionHilos.abrir(c[campo], { cableId: c.id }); }
+    };
+    $("lz-hilos-a").addEventListener("click", () => hilosEn("origen_id"));
+    $("lz-hilos-b").addEventListener("click", () => hilosEn("destino_id"));
+    $("lz-hilos").addEventListener("click", () => {
+      const s = st.seleccion;
+      if (s && s.tipo === "caja" && window.FusionHilos) { window.FusionHilos.alCerrar = () => cargar(st.proyectoId, true); window.FusionHilos.abrir(s.id); }
+    });
     $("lz-abrir-a").addEventListener("click", () => abrirExtremo("origen_id"));
     $("lz-abrir-b").addEventListener("click", () => abrirExtremo("destino_id"));
     // list: drag to the canvas, double click to put it in the centre, click on a placed one to find it
@@ -747,7 +761,7 @@
       .observe($("modal-mufa"), { attributes: true, attributeFilter: ["hidden"] });
     document.addEventListener("keydown", (e) => {
       if ($("modal-lz").hidden) return;
-      const encima = ["modal-mufa", "modal-confirmar", "modal-lz-cable", "modal-lz-nombre", "modal-lz-fuente", "modal-lz-kmz"].some((id) => $(id) && !$(id).hidden);
+      const encima = ["modal-mufa", "modal-confirmar", "modal-lz-cable", "modal-lz-nombre", "modal-lz-fuente", "modal-lz-kmz", "modal-fh"].some((id) => $(id) && !$(id).hidden);
       if (e.key === "Escape" && !encima) { e.stopPropagation(); if (st.modo === "cable") modoCable(false); else cerrar(); return; }
       if (encima || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName || ""))) return;
       if (e.key === "Delete" || e.key === "Supr") { if (st.seleccion && st.seleccion.tipo === "cable") eliminarCable(); else quitarSeleccion(); }

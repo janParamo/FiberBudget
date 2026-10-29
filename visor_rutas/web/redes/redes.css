@@ -485,3 +485,14 @@ body.ventana-aparte #lz-aparte, body.ventana-aparte #lz-max { display: none !imp
 .mg-visio-grupo ul { margin: 4px 0 8px; padding-left: 18px; }
 .mg-visio-log { max-height: 140px; overflow: auto; margin: 0; padding: 8px; background: #11151c; color: #d7dde6; border-radius: 6px; font-size: 11px; white-space: pre-wrap; }
 .mg-visio-log:empty { display: none; }
+#modal-fh { z-index: 3500; align-items: center; justify-content: center; }
+.fh-caja { width: min(760px, 96vw); }
+.fh-cables { display: flex; align-items: flex-end; gap: 10px; }
+.fh-cables .dg-campo { flex: 1; }
+.fh-flecha { padding-bottom: 8px; font-size: 18px; color: var(--texto-suave); }
+.fh-tabla { max-height: 46vh; }
+.fh-tabla select { width: 100%; }
+.fh-punto { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid #1a1a1a; vertical-align: -1px; }
+.fh-cliente { margin-left: 6px; padding: 1px 7px; border-radius: 8px; background: #d8f3e0; border: 1px solid #2e9d4a; color: #14532d; font-size: 11px; }
+.fh-cambio td { background: #fff8e1; }
+td.fh-flecha { text-align: center; padding: 0 6px; }
