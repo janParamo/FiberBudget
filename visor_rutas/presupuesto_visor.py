@@ -384,7 +384,7 @@ def postes_marcados(valor: Any) -> list[float] | None:
 
 def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: str | None = None,
             ahora: datetime | None = None, postes_existentes_m: list[float] | None = None,
-            postes_extra: int = 0, mufas_tocadas: int | None = None) -> dict[str, Any]:
+            postes_extra: int = 0, mufas_tocadas: int | None = None, dueno_lugares: dict[str, str] | None = None) -> dict[str, Any]:
     """Genera el presupuesto con main._generar_presupuesto_con en output/visor.
 
     Devuelve la misma respuesta que POST /presupuesto, con excel_path apuntando al archivo
@@ -397,7 +397,9 @@ def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: s
     carpeta.mkdir(parents=True, exist_ok=True)
     limpiar_archivos_viejos(carpeta)
     visio_con = red_fibra_pg.connect_or_none()
-    opcionales = {"new_poles_marked_existing_m": postes_existentes_m} if postes_existentes_m else {}
+    opcionales: dict[str, Any] = {"dueno_lugares": dueno_lugares} if dueno_lugares else {}      # who gets the route in Mis lugares
+    if postes_existentes_m:
+        opcionales["new_poles_marked_existing_m"] = postes_existentes_m
     if postes_extra:
         opcionales["new_poles_extra"] = int(postes_extra)
     if mufas_tocadas is not None:
@@ -562,7 +564,7 @@ def resultado_para_visor(respuesta: dict[str, Any]) -> dict[str, Any]:
         "archivo": str(archivo), "nombre": archivo.name, "carpeta": str(archivo.parent),
         "ticket_id": respuesta["ticket_id"], "budget_id": respuesta["budget_id"],
         "calculado": calculado, "distancia_km": respuesta.get("distance_km"),
-        "conexion": respuesta.get("connection_point"), "ruta": respuesta.get("route"),
+        "conexion": respuesta.get("connection_point"), "ruta": respuesta.get("route"), "en_lugares": (respuesta.get("ruta") or {}).get("lugares"),
         "tecnologia": (respuesta.get("equipment") or {}).get("technology"),
         "tipo_cable": (respuesta.get("budget") or {}).get("cable_type"),
         "metraje_final_m": (respuesta.get("budget") or {}).get("final_distance_m"),

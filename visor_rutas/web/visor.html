@@ -366,6 +366,104 @@
     </div>
   </div>
 
+  <!-- Esquema de zona: las mufas y los nodos de una zona en un mapa en blanco (redes/lienzo.js) -->
+  <div id="modal-lz" class="modal lz-modal" hidden role="dialog" aria-modal="true" aria-labelledby="lz-titulo">
+    <div class="modal-caja lz-caja">
+      <header class="mu-cabecera">
+        <h2 id="lz-titulo" class="dg-titulo">Esquema de zona</h2>
+        <label class="lz-zona-caja">Zona <select id="lz-zona" aria-label="Zona"></select></label>
+        <label class="lz-zona-caja">Esquema <select id="lz-esquema" aria-label="Esquema de la zona"></select></label>
+        <button id="lz-nuevo" type="button" class="btn btn-chico" data-lz-edita title="Otro esquema general de la zona, vacío y con su nombre">Nuevo</button>
+        <button id="lz-renombrar" type="button" class="btn btn-chico" data-lz-edita title="Cambiar el nombre de este esquema">Renombrar</button>
+        <button id="lz-borrar" type="button" class="btn btn-chico" data-lz-edita title="Eliminar este esquema (las mufas y los cables no se tocan)">Eliminar</button>
+        <span id="lz-estado" class="vp-estado" role="status"></span>
+        <button id="lz-aparte" type="button" class="btn btn-chico" title="Abrir el esquema en una ventana aparte (se puede mover fuera del programa, junto a la mufa o al Visio)">&#x29C9; Ventana aparte</button>
+        <button id="lz-recargar" type="button" class="btn btn-chico" title="Leer otra vez el esquema">Recargar</button>
+        <button id="lz-max" type="button" class="btn-icono" title="Maximizar / restaurar" aria-label="Maximizar">⛶</button>
+        <button id="lz-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="mu-barra" role="toolbar" aria-label="Esquema">
+        <div class="mu-grupo">
+          <button id="lz-kmz" type="button" class="btn btn-chico" title="Las mufas que el KMZ tiene alrededor de la zona y la zona no (nuevas o renombradas)">Mufas del KMZ</button>
+          <button id="lz-fuente" type="button" class="btn btn-chico" data-lz-edita title="Agregar el nodo u ODF que alimenta a toda la red de la zona">Agregar nodo / ODF</button>
+          <button id="lz-conectar" type="button" class="btn btn-chico" data-lz-edita aria-pressed="false" title="Clic en una caja y clic en otra: crea un cable entre ellas">Conectar con cable</button>
+          <button id="lz-quitar" type="button" class="btn btn-chico" data-lz-edita disabled title="Quita la caja elegida del esquema (no la borra de la red) · Supr">Quitar del esquema</button>
+          <button id="lz-eliminar-cable" type="button" class="btn btn-chico" data-lz-edita disabled title="Elimina el cable elegido · Supr">Eliminar cable</button>
+          <button id="lz-abrir-a" type="button" class="btn btn-chico" hidden title="Abre el editor de mufa del origen para conectar sus hilos">Abrir origen</button>
+          <button id="lz-abrir-b" type="button" class="btn btn-chico" hidden title="Abre el editor de mufa del destino para conectar sus hilos">Abrir destino</button>
+        </div>
+        <span id="lz-info" class="nota"></span>
+        <label class="dg-check lz-coord" title="Al arrastrar una mufa a la lista, la caja se pone donde está en el mapa (sin mapa de fondo)"><input id="lz-por-coord" type="checkbox" checked> Colocar por coordenadas</label>
+        <label class="lz-zona-caja" title="Compacta: solo la dirección del mapa (arriba, abajo, izquierda, derecha), las cajas pegadas. Real: con la distancia del mapa">Distribución <select id="lz-distribucion" aria-label="Distribución"><option value="compacta">Compacta (solo la dirección)</option><option value="real">Real (a escala)</option></select></label>
+        <label class="lz-zona-caja" title="Solo en la distribución real: píxeles del esquema por cada metro del mapa">Escala <select id="lz-escala" aria-label="Escala"></select></label>
+        <button id="lz-geo" type="button" class="btn btn-chico" data-lz-edita title="Volver a acomodar todas las cajas según las coordenadas reales de sus mufas">Acomodar por coordenadas</button>
+        <span class="nota lz-ayuda" title="Como en Visio">Rueda: mover · Ctrl + rueda: zoom</span>
+        <div class="mu-grupo">
+          <button id="lz-alejar" type="button" class="btn-icono" title="Alejar">−</button>
+          <button id="lz-acercar" type="button" class="btn-icono" title="Acercar">＋</button>
+          <button id="lz-ajustar" type="button" class="btn btn-chico" title="Ver todo el esquema">Ajustar</button>
+        </div>
+      </div>
+      <div class="lz-cuerpo">
+        <aside class="lz-panel" aria-label="Mufas de la zona">
+          <input id="lz-buscar" type="search" class="lz-buscar" placeholder="Buscar mufa o nodo de la zona" aria-label="Buscar mufa o nodo de la zona" autocomplete="off">
+          <label class="dg-check"><input id="lz-ver-colocados" type="checkbox"> Mostrar también las que ya están</label>
+          <div id="lz-cuenta" class="nota lz-cuenta"></div>
+          <ul id="lz-lista" class="lz-lista"></ul>
+        </aside>
+        <div id="lz-lienzo" class="mu-lienzo lz-lienzo"><div id="lz-konva" class="mu-konva"></div>
+          <p id="lz-vacio" class="dg-vacio">Arrastre aquí las mufas y los nodos de la lista (o haga doble clic en ellos) para armar el esquema de la zona.</p></div>
+      </div>
+    </div>
+  </div>
+  <div id="modal-lz-nombre" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="lz-nombre-titulo">
+    <div class="modal-caja lz-cable-caja">
+      <h2 id="lz-nombre-titulo">Nombre del esquema</h2>
+      <form id="lz-nombre-form" autocomplete="off" novalidate>
+        <label class="dg-campo dg-ancho">Nombre <input name="nombre" maxlength="120" required></label>
+        <p id="lz-nombre-error" class="vp-estado error" role="alert"></p>
+        <div class="lz-cable-botones"><button id="lz-nombre-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Aceptar</button></div>
+      </form>
+    </div>
+  </div>
+  <div id="modal-lz-kmz" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="lz-kmz-titulo">
+    <div class="modal-caja lz-kmz-caja">
+      <h2 id="lz-kmz-titulo">Mufas del KMZ</h2>
+      <p id="lz-kmz-resumen" class="nota"></p>
+      <div class="lz-kmz-tabla"><table class="dg-tabla"><thead><tr><th>Mufa del KMZ</th><th>Qué hacer</th></tr></thead><tbody id="lz-kmz-lista"></tbody></table></div>
+      <p id="lz-kmz-error" class="vp-estado error" role="alert"></p>
+      <div class="lz-cable-botones"><button id="lz-kmz-cerrar" type="button" class="btn">Cerrar</button><button id="lz-kmz-aplicar" type="button" class="btn btn-primario" hidden>Aplicar</button></div>
+    </div>
+  </div>
+  <div id="modal-lz-fuente" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="lz-fuente-titulo">
+    <div class="modal-caja lz-cable-caja">
+      <h2 id="lz-fuente-titulo">Nodo / ODF que alimenta la red</h2>
+      <p class="nota">Es el origen de toda la red de la zona: de él salen los cables hacia las mufas.</p>
+      <form id="lz-fuente-form" autocomplete="off" novalidate>
+        <label class="dg-campo">Tipo <select name="tipo"><option value="nodo:olt">Nodo / OLT</option><option value="nodo:nodo">Nodo</option><option value="nodo:mini_nodo">Mini nodo</option><option value="odf:">ODF</option></select></label>
+        <label class="dg-campo dg-ancho">Nombre <input name="nombre" maxlength="160" required></label>
+        <label class="dg-campo dg-ancho">Coordenada (latitud, longitud) <input name="coordenada" placeholder="12.136500, -86.251400"></label>
+        <p id="lz-fuente-error" class="vp-estado error" role="alert"></p>
+        <div class="lz-cable-botones"><button id="lz-fuente-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Crear</button></div>
+      </form>
+    </div>
+  </div>
+  <div id="modal-lz-cable" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="lz-cable-titulo">
+    <div class="modal-caja lz-cable-caja">
+      <h2 id="lz-cable-titulo">Nuevo cable</h2>
+      <p id="lz-cable-sentido" class="nota"></p>
+      <form id="lz-cable-form" autocomplete="off" novalidate>
+        <label class="dg-campo dg-ancho">Nombre <input name="nombre" maxlength="160" required></label>
+        <label class="dg-campo">Clase <select name="clase"><option value="troncal">Troncal</option><option value="distribucion">Distribución</option></select></label>
+        <label class="dg-campo">Tipo <select name="tipo"><option value="ADSS">ADSS</option><option value="FLAT">FLAT</option></select></label>
+        <label class="dg-campo">Hilos <select name="hilos"></select></label>
+        <label class="dg-campo">Hilos por buffer <select name="buffer"><option value="12">12</option><option value="8">8</option><option value="6">6</option><option value="4">4</option><option value="2">2</option></select></label>
+        <p id="lz-cable-error" class="vp-estado error" role="alert"></p>
+        <div class="lz-cable-botones"><button id="lz-cable-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Crear cable</button></div>
+      </form>
+    </div>
+  </div>
+
   <!-- Trazado de hilo de punta a punta (redes/trazado.js, fase 5) -->
   <aside id="panel-trazado" class="panel-trazado" hidden aria-labelledby="tz-titulo">
     <header class="tz-cabecera">
@@ -427,6 +525,24 @@
           <thead><tr><th>Código</th><th>Nombre</th><th>ID servicio</th><th>En el mapa</th></tr></thead>
           <tbody id="mu-cl-lista"></tbody>
         </table></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-mu-hcliente" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-hc-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-hc-titulo">Cliente del hilo</h2></header>
+      <div class="config-cuerpo">
+        <p class="nota">Un cliente identificado puede estar en un hilo de manera individual (por ejemplo el hilo 1), sin pasar por un splitter. Solo salen los clientes de esta mufa.</p>
+        <form id="mu-hc-form" autocomplete="off" novalidate>
+          <label class="dg-campo dg-ancho">Cliente de esta mufa <select name="conocido"></select></label>
+          <label class="dg-check"><input type="checkbox" name="manual"> Escribir otro cliente (no está en la lista de esta mufa)</label>
+          <label class="dg-campo">Código <input name="codigo" maxlength="20" placeholder="C23839" readonly></label>
+          <label class="dg-campo dg-ancho">Nombre <input name="nombre" maxlength="160" readonly></label>
+          <label class="dg-campo">ID de servicio <input name="servicio" maxlength="40" placeholder="ID418400" readonly></label>
+          <p id="mu-hc-error" class="vp-estado error" role="alert"></p>
+          <div class="lz-cable-botones"><button id="mu-hc-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Asignar</button></div>
+        </form>
       </div>
     </div>
   </div>
@@ -641,7 +757,9 @@
         <select id="mg-f-motivo" aria-label="Motivo"><option value="">Todos los motivos</option></select>
         <div class="pr-buscar"><svg><use href="#i-lupa"/></svg><input id="mg-f-texto" type="search" autocomplete="off" placeholder="Buscar mufa" aria-label="Buscar mufa"></div>
       </div>
-      <button id="mg-recargar" type="button" class="btn">Recargar</button>
+      <button id="mg-visio" type="button" class="btn" hidden title="Subir los diagramas Visio nuevos o corregidos y poner al día la base de diagramas">Actualizar diagramas Visio</button>
+      <button id="mg-esquema" type="button" class="btn" title="Las mufas y los nodos de la zona en un mapa en blanco, para interconectarlos">Esquema de zona</button>
+        <button id="mg-recargar" type="button" class="btn">Recargar</button>
       <button id="mg-exportar" type="button" class="btn btn-primario" title="Tablero y lista de correcciones (con los filtros) en Excel para Planta Externa">Exportar a Excel</button>
     </header>
     <div id="mg-estado" class="vp-estado vm-estado" role="status"></div>
@@ -649,7 +767,7 @@
       <h2 class="mg-subtitulo">Avance por zona</h2>
       <table class="vm-tabla mg-tablero">
         <thead><tr><th>Zona</th><th>Mufas migradas</th><th>Con fusiones</th><th>Con supuestos</th><th>Validadas</th><th>Editadas</th>
-          <th>Sin ubicar</th><th>Sin diagramar</th><th>Por corregir</th><th>Avance</th></tr></thead>
+          <th>Sin ubicar</th><th>Sin diagramar</th><th>Por corregir</th><th>Avance</th><th></th></tr></thead>
         <tbody id="mg-zonas"></tbody>
       </table>
       <h2 class="mg-subtitulo">Cola de corrección <span id="mg-cuenta" class="nota"></span></h2>
@@ -662,6 +780,22 @@
         colocan con un clic en el mapa de su zona.</p>
     </div>
   </section>
+
+  <div id="modal-mg-visio" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mg-visio-titulo">
+    <div class="modal-caja lz-kmz-caja">
+      <h2 id="mg-visio-titulo">Actualizar los diagramas Visio</h2>
+      <p class="nota">Suba los archivos <b>.vsd</b>, <b>.vsdx</b> o el Excel de anillos <b>.xlsx</b> (o un <b>.zip</b> con varios; hasta 40 MB por archivo). Los que se llaman igual reemplazan al que ya estaba, en su mismo lugar
+        (el anterior se guarda aparte); los nombres nuevos se agregan. Después, «Actualizar la base de diagramas» convierte y publica.</p>
+      <div id="mg-visio-carpeta" class="nota"></div>
+      <div id="mg-visio-resumen" class="lz-kmz-tabla mg-visio-resumen"></div>
+      <div id="mg-visio-estado" class="vp-estado" role="status"></div>
+      <div id="mg-visio-paso" class="vp-estado"></div>
+      <pre id="mg-visio-log" class="mg-visio-log"></pre>
+      <input id="mg-visio-archivo" type="file" accept=".vsd,.vsdx,.xlsx,.zip" multiple hidden>
+      <div class="lz-cable-botones"><button id="mg-visio-cerrar" type="button" class="btn">Cerrar</button><button id="mg-visio-subir" type="button" class="btn">Subir archivos…</button>
+        <button id="mg-visio-actualizar" type="button" class="btn btn-primario" disabled>Actualizar la base de diagramas</button></div>
+    </div>
+  </div>
 
   <!-- Vista "Pendientes" (redes/pendientes.js, fase 7.2) -->
   <!-- Vista "Campo" (mapa/campo_visor.js): lo que levantan los técnicos, para revisar, corregir, aprobar o rechazar -->
@@ -1160,6 +1294,7 @@
   <script src="redes/red_mufas.js"></script>
   <script src="redes/trazado.js"></script>
   <script src="redes/diagrama.js"></script>
+  <script src="redes/lienzo.js"></script>
   <script src="redes/problemas.js"></script>
   <script src="redes/pendientes.js"></script>
   <script src="redes/migracion.js"></script>

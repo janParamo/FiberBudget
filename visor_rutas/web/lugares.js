@@ -15,8 +15,7 @@
 
   const $ = (id) => document.getElementById(id);
   const FILA_PX = 22;
-  const ZOOM_POSTES = 15;           // posts and wells: only from this zoom (like Google Earth Regions)
-  const ZOOM_SIN_GRUPOS = 17;       // posts are clustered below this zoom
+  const ZOOM_POSTES = 17;           // posts and wells: only from this zoom (like Google Earth Regions); never grouped in numbered circles, so not shown farther away
   const ZOOM_ETIQUETAS = 14;
   const MAX_ETIQUETAS = 300;        // labels per folder in the visible area
   const MAX_RESULTADOS = 500;
@@ -165,7 +164,7 @@
   function construir(id, geo) {
     const c = carpeta(id);
     const grupo = c.postes
-      ? L.markerClusterGroup({ maxClusterRadius: 40, disableClusteringAtZoom: ZOOM_SIN_GRUPOS, showCoverageOnHover: false,
+      ? L.markerClusterGroup({ maxClusterRadius: 40, disableClusteringAtZoom: 1, showCoverageOnHover: false,
                                spiderfyOnMaxZoom: false, chunkedLoading: true, clusterPane: "kmzPuntos",
                                iconCreateFunction: (k) => L.divIcon({ className: "icono", iconSize: [26, 26],
                                  html: `<div class="cluster-kmz" style="border-color:${esc((c.estilo || {}).color || "#888")}">${k.getChildCount()}</div>` }) })

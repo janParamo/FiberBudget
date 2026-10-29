@@ -35,6 +35,7 @@ COLUMNAS = {
                      "borrado_en"},
     "mufa_bandejas": {"mufa_id", "numero", "capacidad", "splitter_id", "fuente", "borrado_en"},
     "puerto_servicios": {"puerto_id", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "fuente", "confianza", "borrado_en"},
+    "hilo_servicios": {"hilo_id", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "fuente", "confianza", "borrado_en"},
     "mufa_clientes": {"mufa_id", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "fuente", "confianza", "borrado_en"},
     "diagramas_logicos": {"proyecto_id", "titulo", "elemento_id", "splitter_id", "direccion", "incluir_clientes", "borrado_en"},
     "problemas": {"proyecto_id", "elemento_id", "cable_id", "titulo", "descripcion", "severidad", "estado", "ubicacion",

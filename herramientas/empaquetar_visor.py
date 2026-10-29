@@ -26,7 +26,7 @@ WEB = RAIZ / "visor_rutas" / "web"
 # The service and everything that reads databases / .env / Google: never in the .exe.
 EXCLUIR = [
     "main", "db", "routing", "presupuesto", "excel_generator", "recalc", "pdf_export", "mapa_ruta",
-    "red_fibra_pg", "origen", "config", "visor_api", "empaquetar_visor",
+    "red_fibra_pg", "origen", "config", "visor_api", "empaquetar_visor", "ruta_lugares",
     "visor_rutas.calculo", "visor_rutas.fusion", "visor_rutas.red", "visor_rutas.presupuesto_visor",
     "visor_rutas.ventana", "visor_rutas.__main__", "visor_rutas.kmz_capas", "visor_rutas.redes",
     "fastapi", "starlette", "uvicorn", "pydantic", "pydantic_core", "psycopg", "psycopg_binary", "psycopg_pool",

@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 import db
 import mapa_ruta
 import reglas_mufas
+import ruta_lugares
 import origen
 import pdf_export
 import recalc
@@ -539,11 +540,21 @@ def _guardar_ruta(png: Path, req: TicketRequest, output_dir: Path | None) -> Non
         log.warning("Could not keep the route picture (%s)", type(exc).__name__)
 
 
+def dueno_de_la_api() -> dict[str, str] | None:
+    """Whose «Mis lugares» get the route of a budget made by the API (LUGARES_USUARIO_PRESUPUESTOS in the .env; see ruta_lugares.py)."""
+    return ruta_lugares.dueno_de_la_api()
+
+
+def _ruta_a_lugares(req: TicketRequest, seg: db.Segment, route: routing.Route, dueno: dict[str, str] | None) -> dict[str, Any] | None:
+    """The route of the budget in the owner's Mis lugares, to see it on the map and edit it; never blocks (see ruta_lugares.guardar)."""
+    return ruta_lugares.guardar(req, seg, route, dueno)
+
+
 def _generar_presupuesto(req: TicketRequest) -> dict[str, Any]:
     """Nearest segment -> Google route -> materials -> Excel file."""
     visio_con = red_fibra_pg.connect_or_none()
     try:
-        return _generar_presupuesto_con(req, visio_con)
+        return _generar_presupuesto_con(req, visio_con, dueno_lugares=dueno_de_la_api())
     finally:
         if visio_con is not None:
             visio_con.close()
@@ -565,7 +576,8 @@ def hardware_fibra(rules: dict[str, Any], cable_key: str, hay_ducto: bool) -> di
 def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: Path | None = None,
                              get_route: Any = None,
                              new_poles_marked_existing_m: list[float] | None = None,
-                             new_poles_extra: int = 0, mufa_count_override: int | None = None) -> dict[str, Any]:
+                             new_poles_extra: int = 0, mufa_count_override: int | None = None,
+                             dueno_lugares: dict[str, str] | None = None) -> dict[str, Any]:
     """The whole budget for one request: connection point, route, quantities, map, Excel, recalc.
 
     POST /presupuesto calls it with the defaults (settings.output_dir, routing.get_route). The
@@ -786,6 +798,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     # Satellite map of the route for the "ESQUEMA DE RUTA PROYECTADA" box; never blocks.
     nuevos_en_mapa = new_pole_points(route.points, route.distance_m, rules, existing_pole_positions_m, duct_spans or None)[:max(0, quantities[new_pole_label])]
     map_png = _route_map(req, seg, route, busqueda, desde_visio, existing_pole_records, rules, output_dir, nuevos_en_mapa)
+    en_lugares = _ruta_a_lugares(req, seg, route, dueno_lugares)  # the same line, in Mis lugares of whoever made the budget
     google_maps_url = (f"https://www.google.com/maps/dir/?api=1&origin={seg.lat:.6f},{seg.lon:.6f}"
                        f"&destination={req.latitude:.6f},{req.longitude:.6f}&travelmode=walking")
 
@@ -860,6 +873,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
             "aproximada": False,          # no route from Google means no budget (404)
             "mapa_generado": map_png is not None,
             "mapa_archivo": str(map_png) if map_png else None,
+            "lugares": en_lugares,
             "google_maps_url": google_maps_url,
         },
         "quantities": quantities,

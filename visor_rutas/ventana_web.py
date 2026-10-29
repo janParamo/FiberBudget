@@ -697,10 +697,13 @@ class Api:
             log.exception("Visor web: budget failed")
             return {"ok": False, "error": f"Error inesperado ({type(exc).__name__}): {exc}. Detalle en logs/visor.log"}
 
-    def generar_presupuesto(self, campos: dict[str, Any]) -> dict[str, Any]:
-        """Full budget from the form, with the same generation as POST /presupuesto, in output/visor."""
+    def generar_presupuesto(self, campos: dict[str, Any], _dueno: dict[str, str] | None = None) -> dict[str, Any]:
+        """Full budget from the form, with the same generation as POST /presupuesto, in output/visor. The route also goes to the Mis lugares of
+        whoever makes it (this PC's Windows user; the server passes the person of the key in `_dueno`)."""
         if self._modo == "remoto":
             return self._remota("generar_presupuesto", campos)
+        import getpass
+        dueno = _dueno or {"usuario_windows": getpass.getuser()}
 
         def accion() -> dict[str, Any]:
             campos_form = dict(campos or {})
@@ -709,7 +712,8 @@ class Api:
             ruta = self._ruta_editada(campos_form.get("ruta_editada"))
             respuesta = presupuesto_visor.generar(solicitud, ruta or self._rutas, postes_existentes_m=marcados,
                                                   postes_extra=presupuesto_visor.postes_a_mano(campos_form.get("postes_a_mano")),
-                                                  mufas_tocadas=presupuesto_visor.mufas_tocadas(campos_form.get("mufas_tocadas")))
+                                                  mufas_tocadas=presupuesto_visor.mufas_tocadas(campos_form.get("mufas_tocadas")),
+                                                  dueno_lugares=dueno)
             return {"resultado": presupuesto_visor.resultado_para_visor(respuesta)}
         return self._presupuesto(accion)
 
@@ -1165,27 +1169,34 @@ class Api:
     # The Visio diagram and the editor of a mufa can live in their own window of Windows (moved to another screen, side by side with the
     # other one) to fill the mufa by hand from the diagram. They are the same page with `?ventana=<tipo>`: it shows only that window.
 
-    VENTANAS_APARTE = {"diagrama": "Diagrama Visio", "mufa": "Mufa"}
+    VENTANAS_APARTE = {"diagrama": "Diagrama Visio", "mufa": "Mufa", "esquema": "Esquema de zona"}
 
     def abrir_ventana(self, tipo: str, parametros: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Opens `tipo` ('diagrama' | 'mufa') in its own window. `parametros`: nombre, id (mufa), indice (diagram file). One per mufa and kind:
-        if it is already open it is brought forward."""
+        """Opens `tipo` ('diagrama' | 'mufa' | 'esquema') in its own window. `parametros`: nombre, id (mufa, or the project of a zone schema), indice (diagram
+        file), nodo_id (the exact Visio node: several mufas share a name). One per mufa (or zone) and kind: if it is already open it is brought forward."""
         if tipo not in self.VENTANAS_APARTE:
             return {"ok": False, "error": "Ventana desconocida"}
         p = parametros or {}
         nombre = str(p.get("nombre") or "").strip()[:200]
         if not nombre:
             return {"ok": False, "error": "Falta el nombre de la mufa"}
-        titulo = f"{self.VENTANAS_APARTE[tipo]} · {nombre} – Fiber Budget"
-        consulta = {"ventana": tipo, "nombre": nombre, "t": titulo}
-        if tipo == "mufa":
+        consulta = {"ventana": tipo, "nombre": nombre}
+        sufijo = ""
+        if tipo in ("mufa", "esquema"):
             try:
                 consulta["id"] = str(int(p.get("id")))
             except (TypeError, ValueError):
-                return {"ok": False, "error": "Mufa no válida"}
+                return {"ok": False, "error": "Mufa no válida" if tipo == "mufa" else "Zona no válida"}
+            if tipo == "mufa":
+                sufijo = f" #{consulta['id']}"                      # two mufas with one name are two windows
         else:
             indice = str(p.get("indice") or "0")
             consulta["indice"] = indice if indice.isdigit() else "0"
+            if str(p.get("nodo_id") or "").isdigit():
+                consulta["nodo"] = str(int(p["nodo_id"]))
+                sufijo = f" #{consulta['nodo']}"
+        titulo = f"{self.VENTANAS_APARTE[tipo]} · {nombre}{sufijo} – Fiber Budget"
+        consulta["t"] = titulo
         try:
             import webview
             abierta = next((w for w in webview.windows if getattr(w, "title", None) == titulo), None)

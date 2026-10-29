@@ -79,12 +79,15 @@ Las columnas comunes se describen una vez en la §3: `id`, `version`, `creado_en
 | `conexiones` | Fusión o conexión dentro de una mufa | `mufa_id*`, `a_hilo_id` o `a_puerto_id`, `b_hilo_id` o `b_puerto_id` | cada extremo es un hilo o un puerto; un puerto con una sola conexión activa (índice único); un hilo, una por mufa; la fusión une cables distintos; el hilo debe ser de un cable que llega o sale de esa mufa |
 | `notas` | Texto con formato | `contexto*` (mapa / mufa), `mufa_id`, `elemento_id` (ancla), `ubicacion` o `x`/`y`, `html*` (saneado), `ancho*` | |
 | `diagramas_logicos` | Diagramas guardados (cómo generarlos, no el dibujo) | `titulo*`, `elemento_id` o `splitter_id` (inicio), `direccion*` (derecha / izquierda), `incluir_clientes*` | uno de los dos inicios |
+| `lienzos` (021) | El esquema de zona de un proyecto: un mapa en blanco donde se acomodan las mufas y nodos | `proyecto_id*`, `nombre*` («General» el primero), `origen_lat`, `origen_lon` y `escala` (022: el punto de referencia y los píxeles por metro con que se colocan las cajas por coordenadas reales) | uno activo por (proyecto, nombre); bloqueo optimista |
+| `lienzo_elementos` (021) | Dónde está cada mufa / nodo / ODF en el esquema | `lienzo_id*`, `elemento_id*`, `x*`, `y*` | clave (lienzo, elemento); se reemplaza al guardar; quitar del esquema no borra de la red |
 | `problemas` | Problema en un elemento o cable | `elemento_id` o `cable_id`, `titulo*`, `descripcion`, `severidad*` (baja / media / alta / critica), `estado*` (abierto / en_proceso / cerrado), `ubicacion` (al guardar), `cerrado_en` | uno de los dos vínculos |
 | `problema_fotos` | Fotos de un problema | `problema_id*`, `imagen*`, `imagen_tipo*`, `miniatura*`, `creado_en`, `creado_por`, `borrado_en` | hasta 6 activas por problema; se versionan con su problema |
 | `pendientes` | Tareas | `elemento_id` o `cable_id` (opcionales), `titulo*`, `descripcion`, `responsable_id`, `fecha_limite`, `estado*` (pendiente / en_proceso / hecho), `hecho_en` | a lo sumo uno de los dos vínculos |
 | `mufa_modelos` (009) | Modelo de cada mufa | `mufa_id*`, `formato*` (domo / horizontal / desconocido), `capacidad*` (48 \| 96), `empalmes_por_bandeja*` (24), `bandejas*` (2 \| 4), `modelo_estimado*`, `fuente` | uno activo por mufa |
 | `mufa_bandejas` (009) | Bandejas de una mufa | `mufa_id*`, `numero*`, `capacidad*` (24, o salidas + entrada del splitter que lleva), `splitter_id`, `fuente` | (mufa, número) único; un splitter en una sola bandeja |
 | `puerto_servicios` (009) | Cliente de una salida de splitter, aunque no esté en el mapa | `puerto_id*`, `codigo_cliente`, `nombre`, `id_servicio`, `elemento_id`, `fuente`, `confianza` | un cliente por puerto |
+| `hilo_servicios` (023) | Cliente identificado que está en un hilo de manera individual (no en un splitter) | `hilo_id*`, `codigo_cliente`, `nombre`, `id_servicio`, `elemento_id`, `fuente`, `confianza` | al menos uno de código / nombre / ID de servicio; uno activo por hilo |
 | `mufa_clientes` (009) | Clientes listados en una mufa sin puerto conocido | `mufa_id*`, `codigo_cliente`, `nombre`, `id_servicio`, `elemento_id`, `fuente`, `confianza` | |
 | `migracion_visio_corridas`, `migracion_visio_log` (009) | Cada corrida de la migración de los Visio y su detalle | modo (simular / real), zona, respaldo previo, conteos; entidad, clave, acción, avisos | solo se insertan |
 | `historial` | Auditoría de todo cambio | `fecha*`, `usuario_id`, `proyecto_id`, `entidad*`, `entidad_id`, `accion*` (crear / editar / eliminar / restaurar / duplicar / identificar), `cambio` (jsonb `{campo: [antes, después]}`) | solo se inserta |
@@ -217,6 +220,7 @@ flowchart LR
 | `lugares_kmz.py` | Exportar una carpeta a KMZ e importar KMZ / KML (todo o nada; lee KML 2.0 / 2.1 / 2.2) | `exportar_lugares_kmz`, `importar_lugares_kmz` |
 | `lugares_iconos.py` | Catálogo de íconos propios y su dibujo en PNG para el KMZ | — |
 | `trazado.py` | Trazado de un hilo de punta a punta | `trazar_hilo` |
+| `lienzo.py` | Esquema de zona: lista de la zona (mufas, nodos, ODF), posiciones en el lienzo y cables entre lo colocado; los cables se crean con `guardar_red` | `lienzo_zonas`, `lienzo`, `guardar_lienzo`, `crear_lienzo`, `renombrar_lienzo`, `eliminar_lienzo` |
 | `diagrama.py` | Diagrama lógico | `diagramas`, `guardar_diagrama`, `eliminar_diagrama`, `generar_diagrama` |
 | `problemas.py` | Problemas con fotos; referencias de un proyecto | `problemas`, `problema`, `foto_problema`, `guardar_problema`, `eliminar_problema`, `historial_problema`, `referencias_proyecto` |
 | `pendientes.py` | Pendientes | `pendientes`, `guardar_pendiente`, `eliminar_pendiente`, `historial_pendiente` |
@@ -241,6 +245,7 @@ Además, `ventana_web.Api` guarda en la PC de quien usa el visor lo que el módu
 | `redes/editor_mufa.js` | Editor de mufa (Konva) |
 | `redes/trazado.js` | Panel de trazado de hilo |
 | `redes/diagrama.js` | Diagrama lógico (Konva), exportación |
+| `redes/lienzo.js` | Esquema de zona (Konva): lista de la zona, arrastrar y soltar, cables entre mufas, entrar a la mufa o al nodo |
 | `redes/problemas.js`, `redes/pendientes.js`, `redes/respaldos.js` | Vistas Problemas, Pendientes y Backup |
 | `lugares/iconos.js`, `lugares/dialogo.js`, `lugares/mis_lugares.js` | Mis lugares: íconos y su selector; ventana flotante de una marca / ruta / polígono (Quill); árbol, capas del mapa, menús, arrastrar y soltar, importar / exportar, compartir |
 | `mapa/coordenadas.js`, `mapa/buscador.js`, `mapa/pin.js`, `mapa/capas_visor.js`, `mapa/barra_herramientas.js` | Visor v2: lector de coordenadas, buscador con varias fuentes, pincho de una coordenada, capas del visor en el árbol de Lugares y barra de herramientas |

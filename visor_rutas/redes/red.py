@@ -462,8 +462,8 @@ def _geometria(vertices: list[dict[str, Any]], posiciones: dict[int, dict[str, A
         regla = metraje.reglas(load_rules(get_settings().rules_path))
     except Exception:
         regla = metraje.reglas(None)
-    if len(set(puntos)) < 2:
-        raise DatosInvalidos({"cable": "sus extremos están en el mismo punto"})
+    # Two different elements at the same point (a parallel mufa, a mufa and its node) are joined by a cable of length zero: that is allowed.
+    # (The ends being the same element is refused before, in `guardar`.)
     return {"vertices": Jsonb(vertices), "geom": "SRID=4326;LINESTRING(" + ", ".join(f"{lo:.8f} {la:.8f}" for la, lo in puntos) + ")",
             "longitud_m": round(lineal, 2), "metraje": Jsonb(metraje.calcular(lineal, extremos, cruces, regla))}
 

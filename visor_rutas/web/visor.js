@@ -39,8 +39,9 @@
   const VENTANA = (() => {
     // the parameters travel after «#»: WebView2 turns a «?» of a file URL into part of the file name (ERR_FILE_NOT_FOUND)
     const q = new URLSearchParams(location.hash.replace(/^#/, "")), tipo = q.get("ventana");
-    if (tipo !== "diagrama" && tipo !== "mufa") return null;
-    return { tipo, nombre: q.get("nombre") || "", id: Number(q.get("id")) || null, indice: Number(q.get("indice")) || 0, titulo: q.get("t") || document.title };
+    if (tipo !== "diagrama" && tipo !== "mufa" && tipo !== "esquema") return null;
+    return { tipo, nombre: q.get("nombre") || "", id: Number(q.get("id")) || null, indice: Number(q.get("indice")) || 0, nodo_id: Number(q.get("nodo")) || null,
+             titulo: q.get("t") || document.title };
   })();
   if (VENTANA) { document.body.classList.add("ventana-aparte"); document.title = VENTANA.titulo; }
 
@@ -134,7 +135,7 @@
   // ------------------------------------------------------------------ mapa
   function grupoPostes(clase) {
     return L.markerClusterGroup({
-      maxClusterRadius: 35, disableClusteringAtZoom: 17, showCoverageOnHover: false,
+      maxClusterRadius: 35, disableClusteringAtZoom: 1, showCoverageOnHover: false,         // 1: never grouped (the numbered circles hid the map); each pole is drawn
       spiderfyOnMaxZoom: false,
       iconCreateFunction: (c) => L.divIcon({
         className: "icono", iconSize: [28, 28],
@@ -1075,8 +1076,8 @@
   }
 
   /** Show a mufa's diagrams in the panel's "Diagrama" tab (the panel widens). */
-  function mostrarDiagrama(titulo, infoHtml, archivos, indice = 0, nombre = titulo) {
-    diagramaActual = { titulo, archivos, indice, nombre };
+  function mostrarDiagrama(titulo, infoHtml, archivos, indice = 0, nombre = titulo, nodoId = null) {
+    diagramaActual = { titulo, archivos, indice, nombre, nodo_id: nodoId };
     $("pd-info").innerHTML = infoHtml;
     $("pd-archivo").innerHTML = archivos.length ? opcionesArchivos(archivos) : `<option>Sin diagrama Visio</option>`;
     $("pd-archivo").disabled = archivos.length < 2;
@@ -1129,25 +1130,39 @@
   /** The diagram of the mufa now shown, in a window of its own (the in-program viewer closes). */
   async function diagramaAparte() {
     if (!diagramaActual || !diagramaActual.archivos.length) return;
-    const r = await abrirVentana("diagrama", { nombre: diagramaActual.nombre, indice: diagramaActual.indice });
+    const r = await abrirVentana("diagrama", { nombre: diagramaActual.nombre, indice: diagramaActual.indice, nodo_id: diagramaActual.nodo_id || null });
     if (r.ok && !$("modal-diagrama").hidden) cerrarDiagrama();
   }
 
   /** The mufa's Visio diagram in the modal viewer: `alLado` = right half of the screen beside the editor; else it fills the window. */
   /** The Visio mufa of that name that has a diagram, or null (the reason goes to the message). */
-  async function mufaConDiagrama(nombre) {
-    const limpio = String(nombre || "").trim();
+  /** `quien`: a name, or {nombre, nodo_id?, lat?, lon?}. Several mufas share a name, so the one meant is chosen by its Visio node, else by the nearest
+   *  one to its coordinate, and only then by the first with that name. */
+  async function mufaConDiagrama(quien) {
+    const q = typeof quien === "object" && quien ? quien : { nombre: quien };
+    const limpio = String(q.nombre || "").trim();
     let res;
     try { res = await api.buscar_mufa(limpio); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return null; }
     const normal = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-    const m = res.resultados.find((x) => normal(x.nombre) === normal(limpio)) || res.resultados[0];
+    const m = elegirMufa(res.resultados, q, normal);
     if (!m || !m.diagramas) { mensaje(`${limpio}: no tiene diagrama Visio`, "error"); return null; }
     return m;
   }
 
-  async function mostrarDiagramaDeMufa(nombre, { alLado = false, indice = 0 } = {}) {
-    const m = await mufaConDiagrama(nombre);
+  function elegirMufa(resultados, q, normal) {
+    if (q.nodo_id) { const exacta = resultados.find((x) => x.id === Number(q.nodo_id)); if (exacta) return exacta; }
+    const iguales = resultados.filter((x) => normal(x.nombre) === normal(q.nombre));
+    const lista = iguales.length ? iguales : resultados;
+    if (lista.length > 1 && q.lat != null && q.lon != null) {
+      const d = (x) => (x.lat == null || x.lon == null ? Infinity : Math.hypot(x.lat - q.lat, (x.lon - q.lon) * Math.cos((q.lat * Math.PI) / 180)));
+      return [...lista].sort((a, b) => d(a) - d(b))[0];
+    }
+    return lista[0];
+  }
+
+  async function mostrarDiagramaDeMufa(quien, { alLado = false, indice = 0 } = {}) {
+    const m = await mufaConDiagrama(quien);
     if (!m) return false;
     await seleccionarMufa(m);
     if (!diagramaActual || !diagramaActual.archivos.length) return false;
@@ -1160,12 +1175,12 @@
   /** "Ver Visio original" of the mufa editor (migración Visio, fase 5): the mufa's Visio diagram in
    *  the full viewer, on the right half of the screen, next to the editor. In the editor's own window it opens
    *  the diagram in another window of its own instead, so both can be placed anywhere. */
-  async function verVisioAlLado(nombre) {
+  async function verVisioAlLado(quien) {
     if (VENTANA && VENTANA.tipo === "mufa") {
-      const m = await mufaConDiagrama(nombre);
-      return !!m && !!(await abrirVentana("diagrama", { nombre: m.nombre })).ok;
+      const m = await mufaConDiagrama(quien);
+      return !!m && !!(await abrirVentana("diagrama", { nombre: m.nombre, nodo_id: m.id })).ok;
     }
-    return mostrarDiagramaDeMufa(nombre, { alLado: true });
+    return mostrarDiagramaDeMufa(quien, { alLado: true });
   }
 
   function conectarDiagrama() {
@@ -1246,7 +1261,7 @@
     try { res = await api.mufa(m.id); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return; }
     const d = res.mufa;
-    mostrarDiagrama(d.nombre, htmlInfoMufa(d), (d.archivos || []).filter((a) => a.diagrama), 0, d.nombre);
+    mostrarDiagrama(d.nombre, htmlInfoMufa(d), (d.archivos || []).filter((a) => a.diagrama), 0, d.nombre, d.nodo_id || m.id);
     capas.busqueda.clearLayers();
     if (tieneCoord(d)) {
       L.marker([d.lat, d.lon], { icon: ICONOS.buscada, zIndexOffset: 1200, pane: "buscada" })
@@ -1266,7 +1281,7 @@
 
   /** Enter / double click on an EXISTING mufa of the network (KMZ "Lugares" or Visio nodes):
    *  its Visio diagram in the panel, with the same viewer as the search box (selector if several). */
-  async function abrirDiagramaPorNombre(nombre) {
+  async function abrirDiagramaPorNombre(nombre, lat, lon) {
     const limpio = String(nombre || "").trim();
     if (!limpio) return;
     mensaje(`Buscando el diagrama de ${limpio}…`, "cargando");
@@ -1274,7 +1289,7 @@
     try { res = await api.buscar_mufa(limpio); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return; }
     const normal = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-    const m = res.resultados.find((x) => normal(x.nombre) === normal(limpio)) || res.resultados[0];
+    const m = elegirMufa(res.resultados, { nombre: limpio, lat: lat ?? null, lon: lon ?? null }, normal);
     if (!m) { mensaje(`${limpio}: no está en los diagramas Visio`, "error"); return; }
     if (!m.diagramas) { mensaje(`${m.nombre}: no tiene diagrama Visio`, "error"); return; }
     seleccionarMufa(m);
@@ -1815,7 +1830,11 @@
       $("vp-generar").disabled = false;
     }
     if (!r.ok) { marcarErrores(r.errores); vpEstado(r.error, "error"); return; }
-    vpEstado(`Presupuesto generado: ${r.resultado.nombre} (no enviado)`, "ok");
+    const lg = r.resultado.en_lugares;                       // the route also goes to Mis lugares (folder «Presupuestos»)
+    vpEstado(`Presupuesto generado: ${r.resultado.nombre} (no enviado)` +
+             (lg && lg.ok ? ` · ruta guardada en Mis lugares › Presupuestos › ${lg.nombre}` : "") +
+             (lg && !lg.ok ? ` · la ruta NO se guardó en Mis lugares (${lg.error})` : ""), lg && !lg.ok ? "error" : "ok");
+    if (lg && lg.ok && window.MisLugares && window.MisLugares.cargar) window.MisLugares.cargar();         // the new route shows in the panel
     hist.cargado = false;                    // the history reads the folder again next time
     mostrarResultado(r.resultado);
   }
@@ -2396,8 +2415,16 @@
   // ------------------------------------------------------------------ ventana aparte
   async function arrancarVentanaAparte() {
     if (VENTANA.tipo === "diagrama") {
-      const ok = await mostrarDiagramaDeMufa(VENTANA.nombre, { indice: VENTANA.indice });
+      const ok = await mostrarDiagramaDeMufa({ nombre: VENTANA.nombre, nodo_id: VENTANA.nodo_id }, { indice: VENTANA.indice });
       if (!ok) $("mensaje").classList.remove("oculto");            // the reason stays on screen: the window has nothing else to show
+      return;
+    }
+    if (VENTANA.tipo === "esquema") {
+      if (!window.Redes || !window.Esquema || !VENTANA.id) { mensaje("El esquema de zona no está disponible en esta ventana", "error"); return; }
+      window.Redes.cuandoListo(() => {
+        if (!window.Redes.disponible) { mensaje("El módulo de redes no está disponible: no se puede abrir el esquema", "error"); return; }
+        window.Esquema.abrir(VENTANA.id);
+      });
       return;
     }
     if (!window.Redes || !window.EditorMufa || !VENTANA.id) { mensaje("El editor de mufas no está disponible en esta ventana", "error"); return; }
@@ -2514,11 +2541,11 @@
   window.visor = {
     get mapa() { return mapa; }, get datos() { return datos; }, get medidas() { return medidas.length; },
     get estimacion() { return estim.estado; }, mostrarVista: (nombre) => mostrarVista(nombre),
-    get midiendo() { return med.activo; }, abrirDiagramaPorNombre: (nombre) => abrirDiagramaPorNombre(nombre),
+    get midiendo() { return med.activo; }, abrirDiagramaPorNombre: (nombre, lat, lon) => abrirDiagramaPorNombre(nombre, lat, lon),
     rellenarPresupuestoDeTicket: (s) => rellenarPresupuestoDeTicket(s),
     iconosVisor: { catalogo: CATALOGO_ICONOS, personalizados: () => ({ ...personalizados }), aplicar: (m) => aplicarIconosVisor(m),
                    html: (id) => (personalizados[id] ? window.Iconos.svg({ ...personalizados[id], escala: 1, opacidad: 1 }, 26) : ICONOS[id].options.html) },
-    verVisioAlLado: (nombre) => verVisioAlLado(nombre), abrirVentana: (tipo, parametros) => abrirVentana(tipo, parametros),
+    verVisioAlLado: (quien) => verVisioAlLado(quien), abrirVentana: (tipo, parametros) => abrirVentana(tipo, parametros),
     cerrarVentana: () => cerrarVentana(), get aparte() { return VENTANA ? VENTANA.tipo : null; }, marcarBuscada: (lat, lon, nombre, tipo) => marcarBuscada(lat, lon, nombre, tipo),
     mensaje: (texto, tipo) => mensaje(texto, tipo), modoCaptura: (activar) => modoCaptura(activar),
     abrirDiagrama: (orden) => abrirDiagrama(orden), mostrarPestana: (nombre) => mostrarPestana(nombre),

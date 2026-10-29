@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import psycopg
 
-from visor_rutas.redes import (actualizar_red, bandejas, campo, db, diagrama, lugares, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, planificacion, problemas,
+from visor_rutas.redes import (actualizar_red, actualizar_visio, bandejas, campo, db, diagrama, lienzo, lugares, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, planificacion, problemas,
                                proyectos, red, respaldo, splitters, trazado, usuarios, verificar)
 
 log = logging.getLogger(__name__)
@@ -132,6 +132,10 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     # visor v2, fase 8: subir el KMZ nuevo y poner la base del presupuesto al día (administradores)
     "estado_actualizar_red": actualizar_red.estado,
     "subir_kmz_red": actualizar_red.subir_kmz,
+    "visio_estado": actualizar_visio.estado,
+    "visio_subir": actualizar_visio.subir_visio,
+    "visio_actualizar": actualizar_visio.actualizar_diagramas,
+    "visio_progreso": actualizar_visio.progreso,
     "comparar_red_presupuesto": actualizar_red.comparar,
     "sincronizar_red_presupuesto": actualizar_red.sincronizar,
     "revertir_sincronizacion_red": actualizar_red.revertir_sincronizacion,
@@ -151,6 +155,15 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "campo_editar_trazo": campo.editar_trazo,
     "campo_aprobar_trazos": campo.aprobar_trazos,
     "campo_rechazar_trazos": campo.rechazar_trazos,
+    # esquema de zona (lienzo): mufas y nodos de una zona en un mapa en blanco
+    "lienzo_zonas": lienzo.zonas,
+    "lienzo": lienzo.lienzo,
+    "guardar_lienzo": lienzo.guardar_lienzo,
+    "crear_lienzo": lienzo.crear_lienzo,
+    "renombrar_lienzo": lienzo.renombrar_lienzo,
+    "eliminar_lienzo": lienzo.eliminar_lienzo,
+    "mufas_kmz_zona": lienzo.mufas_kmz,
+    "aplicar_mufas_kmz_zona": lienzo.aplicar_mufas_kmz,
     # sección 8: integridad de los datos
     "verificar_base": verificar.verificar,
 }

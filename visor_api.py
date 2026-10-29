@@ -448,7 +448,7 @@ def medicion_ruta(pedido: MedicionPedido, persona: str = Depends(persona_visor))
 def presupuesto(pedido: PresupuestoPedido, persona: str = Depends(persona_limitada)) -> dict[str, Any]:
     """Full budget from the viewer form (TicketRequest validation); files in output/visor."""
     with _registro(persona, "presupuesto", str(pedido.campos.get("coordenada") or "")) as estado:
-        return _resultado_ok(_para_remoto(api_local().generar_presupuesto(pedido.campos)), estado)
+        return _resultado_ok(_para_remoto(api_local().generar_presupuesto(pedido.campos, _dueno={"persona_visor": persona})), estado)
 
 
 @router.get("/tickets")

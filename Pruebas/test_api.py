@@ -624,3 +624,16 @@ def test_mufa_connection_is_used_for_routing_and_route_sheet(client, monkeypatch
     # 189 m -> ADSS all the same (only GPON routes): the S clamp is zero; the rest keeps the template formulas.
     budget_sheet = workbook["Presupuesto"]
     assert (budget_sheet["G38"].value, budget_sheet["G40"].value) == (0, "=G35*2")
+
+
+def test_the_route_of_an_api_budget_goes_to_the_owner_of_the_env_in_mis_lugares(client, monkeypatch):
+    """LUGARES_USUARIO_PRESUPUESTOS: the budget of the API (n8n, a ticket) saves its route for that user; without it nothing is saved."""
+    import main
+    llamadas = []
+    monkeypatch.setattr(main, "_ruta_a_lugares", lambda req, seg, route, dueno: llamadas.append((req.ticket_id, len(route.points), dueno)))
+    monkeypatch.delenv("LUGARES_USUARIO_PRESUPUESTOS", raising=False)
+    assert client.post("/presupuesto", json={**BODY, "ticket_id": "LUG-1"}, headers=HEADERS).status_code == 200
+    assert llamadas == [("LUG-1", 3, None)]
+    monkeypatch.setenv("LUGARES_USUARIO_PRESUPUESTOS", "jparamo")
+    assert client.post("/presupuesto", json={**BODY, "ticket_id": "LUG-2"}, headers=HEADERS).status_code == 200
+    assert llamadas[-1] == ("LUG-2", 3, {"usuario_windows": "jparamo"})

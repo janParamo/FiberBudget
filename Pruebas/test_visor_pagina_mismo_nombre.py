@@ -1,0 +1,91 @@
+"""Varias mufas se llaman igual: el diagrama Visio que se abre es el de LA mufa (su nodo, o la más cercana a su coordenada), no el del primer resultado con
+ese nombre. Python: lo que el editor de mufa sabe de su Visio, y la ventana aparte. Página: la elección en visor.js."""
+import asyncio
+import json
+import sys
+import types
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+from psycopg.types.json import Jsonb
+
+import main  # noqa: F401  (before the fixtures: visor_api reads the environment on import)
+from arnes_pagina import crear_api_prueba, hay_edge, pagina_edge
+from redes_base import base_redes, con_redes  # noqa: F401  (fixtures)
+from visor_rutas.redes import mufa, proyectos, red, usuarios
+
+
+def test_the_mufa_editor_knows_its_exact_visio_node_and_place(con_redes):
+    con = con_redes
+    admin = usuarios.identificar(con, usuario_windows="jgutierrez")
+    p = proyectos.guardar(con, admin, datos={"nombre": "Jalapa", "codigo": "JAL"})["proyecto"]
+    r = red.guardar(con, admin, proyecto_id=p["id"], cambios={"elementos": [
+        {"id": "a", "tipo": "mufa", "nombre": "MF CENTRO", "lat": 12.10, "lon": -86.30}, {"id": "b", "tipo": "mufa", "nombre": "MF CENTRO", "lat": 12.50, "lon": -86.10}]})
+    con.execute("UPDATE redes.elementos SET ref_visio = %s WHERE id = %s", (Jsonb({"clave": "k1", "nodo_id": 1234, "nombre_visio": "MF CENTRO"}), r["ids"]["a"]))
+    a, b = mufa.leer(con, admin, mufa_id=r["ids"]["a"])["mufa"], mufa.leer(con, admin, mufa_id=r["ids"]["b"])["mufa"]
+    assert (a["nodo_visio"], a["nombre_visio"]) == (1234, "MF CENTRO") and round(a["lat"], 4) == 12.10 and round(a["lon"], 4) == -86.30
+    assert b["nodo_visio"] is None and round(b["lat"], 4) == 12.50                                           # one made by hand: the place still tells it apart
+
+
+class VentanaFalsa:
+    def __init__(self, titulo, url, **kw):
+        self.title, self.url = titulo, url
+
+
+def test_windows_of_same_name_mufas_are_not_the_same_window(monkeypatch):
+    modulo = types.ModuleType("webview")
+    modulo.windows = []
+    modulo.create_window = lambda titulo, url=None, **kw: modulo.windows.append(VentanaFalsa(titulo, url)) or modulo.windows[-1]
+    monkeypatch.setitem(sys.modules, "webview", modulo)
+    api = crear_api_prueba()
+    assert api.abrir_ventana("mufa", {"nombre": "MF CENTRO", "id": 7}) == {"ok": True, "ya_abierta": False}
+    assert api.abrir_ventana("mufa", {"nombre": "MF CENTRO", "id": 8}) == {"ok": True, "ya_abierta": False}        # another mufa with the same name
+    assert api.abrir_ventana("mufa", {"nombre": "MF CENTRO", "id": 7}) == {"ok": True, "ya_abierta": True}
+    assert api.abrir_ventana("diagrama", {"nombre": "MF CENTRO", "nodo_id": 21})["ya_abierta"] is False
+    assert api.abrir_ventana("diagrama", {"nombre": "MF CENTRO", "nodo_id": 22})["ya_abierta"] is False
+    q = {k: x[0] for k, x in parse_qs(urlparse(modulo.windows[-1].url).fragment).items()}
+    assert q["nodo"] == "22" and q["ventana"] == "diagrama"
+    # the zone schema in its own window: by project
+    assert api.abrir_ventana("esquema", {"nombre": "Jalapa", "id": 3})["ok"] is True
+    assert modulo.windows[-1].title == "Esquema de zona · Jalapa – Fiber Budget" and parse_qs(urlparse(modulo.windows[-1].url).fragment)["id"] == ["3"]
+    assert api.abrir_ventana("esquema", {"nombre": "Jalapa"})["ok"] is False
+
+
+pytestmark_pagina = pytest.mark.skipif(not hay_edge(), reason="necesita Edge y la librería websockets")
+
+MUFAS = [{"id": 1, "nombre": "MF CENTRO", "tipo": "MUFA", "zona": "Norte", "diagramas": 1, "lat": 12.50, "lon": -86.10},
+         {"id": 2, "nombre": "MF CENTRO", "tipo": "MUFA", "zona": "Sur", "diagramas": 1, "lat": 12.10, "lon": -86.30}]
+DETALLE = {"id": 0, "nombre": "MF CENTRO", "tipo": "MUFA", "zona": "Sur", "propietario": "IDEAY", "lat": 12.1, "lon": -86.3, "textos": [], "hilos": [],
+           "archivos": [{"diagrama": True, "md5": "a" * 32, "ruta_relativa": "SUR/MF.vsd", "nombre": "MF.vsd", "rol": "principal", "tipo_diagrama": "mufa", "ancla": None}]}
+STUBS = """(() => { window.__mufas = [];
+  window.__stubs.buscar_mufa = () => ({ok: true, resultados: %s});
+  window.__stubs.mufa = (id) => { window.__mufas.push(id); return {ok: true, mufa: Object.assign(%s, {id})}; };
+  window.__stubs.diagrama = () => ({ok: false, error: 'sin imagen en la prueba'});
+  return true; })()""" % (json.dumps(MUFAS), json.dumps(DETALLE))
+
+
+async def _recorrido():
+    async with pagina_edge(1366, 768) as p:
+        await p.esperar("window.visor && window.visor.mapa && window.visor.verVisioAlLado", 20)
+        await p.evaluar(STUBS)
+        # by the Visio node of the mufa: the second one, though the search lists the other first
+        await p.evaluar("window.visor.verVisioAlLado({nombre: 'MF CENTRO', nodo_id: 2, lat: 12.1, lon: -86.3}); true")
+        await p.esperar("window.__mufas.length === 1", 10)
+        assert await p.evaluar("window.__mufas") == [2]
+        # without a node, by the nearest coordinate
+        await p.evaluar("window.visor.abrirDiagramaPorNombre('MF CENTRO', 12.4999, -86.1001); true")
+        await p.esperar("window.__mufas.length === 2", 10)
+        assert await p.evaluar("window.__mufas") == [2, 1]
+        await p.evaluar("window.visor.abrirDiagramaPorNombre('MF CENTRO', 12.1002, -86.2999); true")
+        await p.esperar("window.__mufas.length === 3", 10)
+        assert await p.evaluar("window.__mufas") == [2, 1, 2]
+        # a plain name keeps working (the first of that name)
+        await p.evaluar("window.visor.abrirDiagramaPorNombre('MF CENTRO'); true")
+        await p.esperar("window.__mufas.length === 4", 10)
+        assert (await p.evaluar("window.__mufas"))[-1] == 1
+        assert await p.errores() == []
+
+
+@pytestmark_pagina
+def test_the_visio_diagram_of_the_right_mufa_opens_when_names_repeat():
+    asyncio.run(_recorrido())

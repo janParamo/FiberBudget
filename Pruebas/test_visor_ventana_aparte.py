@@ -132,7 +132,7 @@ async def _boton_ventana_aparte():
         # the button of the panel asks for the window with the mufa name and the diagram being seen
         await p.evaluar("document.getElementById('pd-aparte').click(); true")
         await p.esperar("window.__ventanas.length === 1", 5)
-        assert await p.evaluar("window.__ventanas[0]") == ["diagrama", {"nombre": "MF ARMANDO VAZQUES", "indice": 0}]
+        assert await p.evaluar("window.__ventanas[0]") == ["diagrama", {"nombre": "MF ARMANDO VAZQUES", "indice": 0, "nodo_id": 1}]
         # the one of the full-screen viewer too, and it hands the diagram over: the viewer closes
         await p.evaluar("document.getElementById('pd-pantalla').click(); true")
         await p.esperar("!document.getElementById('modal-diagrama').hidden", 5)
@@ -181,7 +181,7 @@ async def _ventana_de_mufa():
         # «Ver Visio original» from the editor's own window asks for the diagram in a window of its own (when the mufa has one)
         await p.evaluar("""window.__stubs.buscar_mufa = () => ({ok: true, resultados: [%s]}); true""" % __import__("json").dumps(MUFA))
         assert await p.evaluar("window.visor.verVisioAlLado('MF ARMANDO VAZQUES')") is True
-        assert await p.evaluar("window.__ventanas") == [["diagrama", {"nombre": "MF ARMANDO VAZQUES"}]]
+        assert await p.evaluar("window.__ventanas") == [["diagrama", {"nombre": "MF ARMANDO VAZQUES", "nodo_id": 1}]]
         await p.evaluar("window.__stubs.buscar_mufa = () => ({ok: true, resultados: []}); true")
         assert await p.evaluar("window.visor.verVisioAlLado('MF SIN VISIO')") is False
         assert len(await p.evaluar("window.__ventanas")) == 1                                            # no empty window is opened

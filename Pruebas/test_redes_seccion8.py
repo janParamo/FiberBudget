@@ -109,7 +109,8 @@ def test_schema_architecture_rules(base_redes, con_redes):
                    "kmz_importacion_detalle",
                    "almacen_archivos",
                    "plan_empresas", "plan_cuadrilla_miembros", "plan_control_catalogo",          # planning: a list, a link and a catalog
-                   "plan_actividad_control", "plan_actividad_historial", "plan_mensajes"}        # the state of each control point (replaced) and two logs (only inserted)                       # files by (space, key): replaced whole, deleted by age                # images / shares: replaced or logically deleted by their owner; the rows of an import go away with it
+                   "plan_actividad_control", "plan_actividad_historial", "plan_mensajes",
+                   "lienzo_elementos"}                          # where each element is on a zone canvas: replaced whole on every save        # the state of each control point (replaced) and two logs (only inserted)                       # files by (space, key): replaced whole, deleted by age                # images / shares: replaced or logically deleted by their owner; the rows of an import go away with it
     for tabla, cols in columnas.items():
         if tabla in sin_version or tabla.startswith(("geography_", "geometry_")):
             continue

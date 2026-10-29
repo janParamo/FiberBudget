@@ -16,6 +16,7 @@ del otro extremo de cada cable.
 Como en el editor de mapa: ids de texto ("n3") = nuevos, una sola transacción, bloqueo
 optimista por registro e historial (entidad splitter / conector / conexion / hilo / nota).
 """
+import re
 from typing import Any
 
 from visor_rutas.redes import bandejas, proyectos, repositorio, texto
@@ -31,7 +32,8 @@ NOMBRE_ESTADO = {"activo": "activo", "oscura": "fibra oscura", "baja": "cliente 
 
 def _mufa(con: Any, mufa_id: int) -> dict[str, Any]:
     fila = con.execute("SELECT id, proyecto_id, tipo, subtipo, nombre, codigo, propiedades, fuente, confianza, estado_migracion, "
-                       "ref_visio ->> 'nombre_visio' AS nombre_visio, version FROM redes.elementos "
+                       "ref_visio ->> 'nombre_visio' AS nombre_visio, ref_visio ->> 'nodo_id' AS nodo_visio, "
+                       "ST_Y(ubicacion::geometry) AS lat, ST_X(ubicacion::geometry) AS lon, version FROM redes.elementos "
                        "WHERE id = %s AND borrado_en IS NULL", (int(mufa_id),)).fetchone()
     if fila is None or fila["tipo"] not in ("mufa", "nodo", "odf"):
         raise NoEncontrado("La mufa no existe (o fue eliminada)")
@@ -87,9 +89,13 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
         otro_id = c["origen_id"] if llega else c["destino_id"]
         pre = "o_" if llega else "d_"
         fibras = []
+        clientes_hilo = {f["hilo_id"]: {k: f[k] for k in ("id", "version", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "fuente")} for f in con.execute(
+            "SELECT s.id, s.version, s.hilo_id, s.codigo_cliente, s.nombre, s.id_servicio, s.elemento_id, s.fuente FROM redes.hilo_servicios s "
+            "JOIN redes.hilos h ON h.id = s.hilo_id WHERE h.cable_id = %s AND s.borrado_en IS NULL", (c["id"],)).fetchall()}
         for h in con.execute("SELECT id, numero, buffer, color, color_buffer, estado, observacion, version FROM redes.hilos "
                              "WHERE cable_id = %s AND borrado_en IS NULL ORDER BY numero", (c["id"],)).fetchall():
-            fibras.append({**h, "lejos": _describir_extremo(con, h["id"], otro_id) if c[pre + "tipo"] in ("mufa", "nodo", "odf") else None})
+            fibras.append({**h, "lejos": _describir_extremo(con, h["id"], otro_id) if c[pre + "tipo"] in ("mufa", "nodo", "odf") else None,
+                           "cliente": clientes_hilo.get(h["id"])})                      # the client that is on this fibre by itself (None: no one)
         x, y, pos_version = posiciones.get(c["id"], (None, None, None))
         cables.append({"id": c["id"], "nombre": c["nombre"], "clase": c["clase"], "tipo": c["tipo"], "hilos": c["hilos"],
                        "hilos_por_buffer": c["hilos_por_buffer"], "color": c["color"], "longitud_m": float(c["longitud_m"]),
@@ -124,7 +130,8 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
         "SELECT id, html, x, y, ancho, version FROM redes.notas WHERE mufa_id = %s AND contexto = 'mufa' AND borrado_en IS NULL "
         "ORDER BY id", (m["id"],)).fetchall()]
     return {"proyecto": dict(proyecto), "mufa": {**{k: m[k] for k in ("id", "tipo", "subtipo", "nombre", "codigo", "fuente", "confianza",
-                                                                      "estado_migracion", "nombre_visio", "version")},
+                                                                      "estado_migracion", "nombre_visio", "lat", "lon", "version")},
+                                                 "nodo_visio": int(m["nodo_visio"]) if str(m["nodo_visio"] or "").isdigit() else None,
                                                  "propiedades": m["propiedades"] or {},
                                                  "puede_editar": proyectos.puede_editar(con, actor, m["proyecto_id"])},
             "cables": cables, "splitters": splitters, "conectores": conectores, "conexiones": conexiones, "notas": notas,
@@ -365,6 +372,46 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
             repositorio.registrar(con, actor["id"], "hilo", actual["id"], "editar",
                                   repositorio.diferencias({k: antes[k] for k in valores}, {k: despues[k] for k in valores}),
                                   proyecto_id=proyecto_id)
+        # 4b) the client that is on a fibre by itself (not through a splitter): set, changed or taken off
+        for d in lista("hilo_clientes"):
+            actual_hilo = con.execute("SELECT h.id, h.numero, h.cable_id, h.borrado_en FROM redes.hilos h WHERE h.id = %s", (int(d.get("hilo_id") or 0),)).fetchone()
+            if actual_hilo is None or actual_hilo["borrado_en"] is not None or actual_hilo["cable_id"] not in cables_aqui:
+                raise DatosInvalidos({"hilo": "el hilo no es de un cable de esta mufa"})
+            quien = f"Hilo {actual_hilo['numero']}"
+            previo = con.execute("SELECT * FROM redes.hilo_servicios WHERE hilo_id = %s AND borrado_en IS NULL FOR UPDATE", (actual_hilo["id"],)).fetchone()
+            if d.get("quitar"):
+                if previo is not None:
+                    ahora = con.execute("SELECT now() AS n").fetchone()["n"]
+                    _actualizar(con, "hilo_servicios", previo["id"], {"version": d.get("version", previo["version"])}, {"borrado_en": ahora}, actor, quien)
+                    repositorio.registrar(con, actor["id"], "hilo_servicio", previo["id"], "eliminar",
+                                          {"cliente": [previo["codigo_cliente"] or previo["nombre"], None]}, proyecto_id=proyecto_id)
+                continue
+            codigo = _texto_corto(d.get("codigo_cliente"), 20)
+            codigo = codigo.upper() if codigo else None
+            if codigo and not re.fullmatch(r"C\d{3,7}", codigo):
+                raise DatosInvalidos({quien: "el código del cliente es una C seguida de números (por ejemplo C23839)"})
+            nombre, servicio = _texto_corto(d.get("nombre"), 160) or None, _texto_corto(d.get("id_servicio"), 40) or None
+            if not (codigo or nombre or servicio):
+                raise DatosInvalidos({quien: "escriba el código, el nombre o el ID de servicio del cliente"})
+            elemento = None
+            if d.get("elemento_id"):
+                # the client of the map may live in another project (the existing network is split by zone: a client is in the zone project of the map, not always in this mufa's)
+                e = con.execute("SELECT id, tipo, proyecto_id FROM redes.elementos WHERE id = %s AND borrado_en IS NULL", (int(d["elemento_id"]),)).fetchone()
+                if e is None or e["tipo"] != "cliente":
+                    raise DatosInvalidos({quien: "el cliente del mapa ya no existe"})
+                if e["proyecto_id"] != proyecto_id and not proyectos.puede_ver(con, actor, e["proyecto_id"]):
+                    raise DatosInvalidos({quien: "no tiene acceso al proyecto del cliente del mapa"})
+                elemento = e["id"]
+            valores = {"codigo_cliente": codigo, "nombre": nombre, "id_servicio": servicio, "elemento_id": elemento}
+            if previo is None:
+                fila = repositorio.insertar(con, "hilo_servicios", {**valores, "hilo_id": actual_hilo["id"], "fuente": "usuario", "confianza": "verificada"}, actor["id"])
+                repositorio.registrar(con, actor["id"], "hilo_servicio", fila["id"], "crear", {"cliente": [None, codigo or nombre or servicio], "hilo": [None, actual_hilo["numero"]]},
+                                      proyecto_id=proyecto_id)
+            else:
+                antes, despues = _actualizar(con, "hilo_servicios", previo["id"], {"version": d.get("version", previo["version"])}, {**valores, "fuente": "usuario", "confianza": "verificada"}, actor, quien)
+                cambio = repositorio.diferencias({k: antes[k] for k in valores}, {k: despues[k] for k in valores})
+                if cambio:
+                    repositorio.registrar(con, actor["id"], "hilo_servicio", previo["id"], "editar", cambio, proyecto_id=proyecto_id)
         # 5) notes inside the canvas
         for d in lista("notas"):
             if d.get("eliminar"):
@@ -390,7 +437,7 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
                 actual = _propio(con, "notas", int(d["id"]), mid, "Nota")
                 _actualizar(con, "notas", actual["id"], d, valores, actor, "Nota")
         # 6) a migrated mufa that a person changes is "editada": a re-import never overwrites it
-        if any(lista(k) for k in ("splitters", "conectores", "conexiones", "hilos", "notas")):
+        if any(lista(k) for k in ("splitters", "conectores", "conexiones", "hilos", "hilo_clientes", "notas")):
             con.execute("UPDATE redes.elementos SET estado_migracion = 'editada' WHERE id = %s AND estado_migracion IN ('automatica', 'en_revision')",
                         (mid,))
         # 7) a mufa with a model: new splitters get a tray and new splices a position (estimated)
