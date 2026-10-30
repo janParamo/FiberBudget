@@ -245,7 +245,8 @@ def elementos_importados(con: Any) -> list[dict[str, Any]]:
     filas = con.execute(
         "SELECT d.id, d.clase, d.carpeta, d.nombre, d.tipo, d.geom_nueva, d.props, d.descripcion, i.id AS importacion_id, i.archivo "
         "FROM redes.kmz_importacion_detalle d JOIN redes.kmz_importaciones i ON i.id = d.importacion_id "
-        "WHERE i.estado = 'aplicada' AND i.borrado_en IS NULL AND d.aplicado AND (d.clase <> 'eliminado' OR i.modo = 'actualizacion') ORDER BY i.id, d.id").fetchall()
+        "WHERE i.estado = 'aplicada' AND i.borrado_en IS NULL AND i.incorporada_en IS NULL AND d.aplicado AND (d.clase <> 'eliminado' OR i.modo = 'actualizacion') "
+        "ORDER BY i.id, d.id").fetchall()       # an import already incorporated into the KMZ file is not a layer any more: it is in its folders
     vigentes: dict[int, dict[str, Any]] = {}
     for f in filas:
         ref = (f["props"] or {}).get("ref_detalle")
@@ -419,6 +420,7 @@ def _publica(f: Any) -> dict[str, Any]:
     d["aplicada_en"] = f["aplicada_en"].isoformat() if f["aplicada_en"] else None
     d["creado_en"] = f["creado_en"].isoformat() if f["creado_en"] else None
     d["publicada_en"] = f["publicada_en"].isoformat() if f["publicada_en"] else None
+    d["incorporada"] = f["incorporada_en"] is not None
     d["publicacion"] = {k: v for k, v in (f["publicacion"] or {}).items() if k in ("resumen",)} or None
     return d
 
@@ -476,7 +478,7 @@ def listar(con: Any, actor: dict[str, Any]) -> dict[str, Any]:
     """The history of imports (newest first)."""
     filas = con.execute("SELECT i.*, u.nombre AS usuario FROM redes.kmz_importaciones i LEFT JOIN redes.usuarios u ON u.id = i.creado_por "
                         "WHERE i.borrado_en IS NULL ORDER BY i.id DESC LIMIT 100").fetchall()
-    ultima = con.execute("SELECT max(id) AS m FROM redes.kmz_importaciones WHERE estado = 'aplicada' AND borrado_en IS NULL").fetchone()["m"]
+    ultima = con.execute("SELECT max(id) AS m FROM redes.kmz_importaciones WHERE estado = 'aplicada' AND borrado_en IS NULL AND incorporada_en IS NULL").fetchone()["m"]
     return {"importaciones": [{**_publica(f), "usuario": f["usuario"], "es_ultima_aplicada": f["id"] == ultima} for f in filas]}
 
 
@@ -594,9 +596,11 @@ def _antes_original(props: dict[str, Any], tipo: str) -> dict[str, Any]:
     return antes
 
 
-def aplicar(con: Any, actor: dict[str, Any], *, id: int) -> dict[str, Any]:
-    """Applies what was accepted. New elements become the «Importados» layer; changes and removals of KMZ elements go to kmz_cambios, keeping
-    what was there before so the import can be reverted."""
+def aplicar(con: Any, actor: dict[str, Any], *, id: int, incorporar: bool = True) -> dict[str, Any]:
+    """Applies what was accepted. An administrator's application goes straight INTO the file of the network (incorporar_kmz.py): the new elements in their folders,
+    the changed ones corrected, the removed ones gone, and the old file kept in `anteriores/`; there is no «Importados» layer. For anyone else (or if the file cannot be
+    updated, with the reason in `aviso_incorporacion`) the new elements become the «Importados» layer and the changes and removals of KMZ elements go to kmz_cambios,
+    keeping what was there before so the import can be reverted; an administrator can then use «Incorporar a la red»."""
     _exigir_editor(actor)
     imp = _importacion(con, id, bloquear=True)
     if imp["estado"] != "pendiente":
@@ -632,7 +636,18 @@ def aplicar(con: Any, actor: dict[str, Any], *, id: int) -> dict[str, Any]:
                                {"estado": "aplicada", "aplicada_en": con.execute("SELECT now() AS n").fetchone()["n"], "aplicada_por": actor["id"]}, actor["id"])
         repositorio.registrar(con, actor["id"], "kmz_importacion", imp["id"], "editar", {"estado": ["pendiente", "aplicada"], **{k: [None, v] for k, v in cuenta.items() if v}})
     log.info("KMZ import %s applied: %s", imp["archivo"], cuenta)
-    return {"importacion": _publica(_importacion(con, id)), "aplicados": cuenta}
+    resultado: dict[str, Any] = {"importacion": _publica(_importacion(con, id)), "aplicados": cuenta, "incorporada": False}
+    if incorporar and usuarios.es_admin(actor):
+        from visor_rutas.redes import incorporar_kmz
+        try:
+            r = incorporar_kmz.incorporar(con, actor)
+            resultado.update(incorporada=True, incorporacion=r, importacion=_publica(_importacion(con, id)))
+        except DatosInvalidos as exc:
+            resultado["aviso_incorporacion"] = " · ".join(str(v) for v in exc.errores.values()) or str(exc)
+        except Exception as exc:                                    # noqa: BLE001 - the import is applied as a layer; the person is told why the file was not changed
+            log.exception("KMZ import %s: the network file could not be updated", imp["archivo"])
+            resultado["aviso_incorporacion"] = f"No se pudo actualizar el archivo de la red ({type(exc).__name__})"
+    return resultado
 
 
 def revertir(con: Any, actor: dict[str, Any], *, id: int) -> dict[str, Any]:
@@ -641,7 +656,9 @@ def revertir(con: Any, actor: dict[str, Any], *, id: int) -> dict[str, Any]:
     imp = _importacion(con, id, bloquear=True)
     if imp["estado"] != "aplicada":
         raise DatosInvalidos({"importacion": "Solo se revierte una importación aplicada"})
-    ultima = con.execute("SELECT max(id) AS m FROM redes.kmz_importaciones WHERE estado = 'aplicada' AND borrado_en IS NULL").fetchone()["m"]
+    if imp["incorporada_en"]:
+        raise DatosInvalidos({"importacion": "La importación ya está dentro del archivo de la red: no se revierte aquí (el archivo anterior está en la carpeta «anteriores»)"})
+    ultima = con.execute("SELECT max(id) AS m FROM redes.kmz_importaciones WHERE estado = 'aplicada' AND borrado_en IS NULL AND incorporada_en IS NULL").fetchone()["m"]
     if ultima != imp["id"]:
         raise DatosInvalidos({"importacion": "Solo se puede revertir la última importación aplicada: antes hay que revertir las posteriores"})
     if imp["publicada"]:

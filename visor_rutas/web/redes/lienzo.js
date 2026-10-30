@@ -668,7 +668,38 @@
     if (st.pendientes.size || st.quitar.size) guardarPosiciones();
   }
 
+  /** The list of a <select> inside the dialogs of the schema as a menu of the page: in the window of its own the native list is drawn blank. */
+  function menuPropio(ev) {
+    const sel = ev.target.closest && ev.target.closest("select");
+    if (!sel || !sel.closest("#modal-lz-cable, #modal-lz-fuente, #modal-lz-kmz, #modal-fh") || sel.disabled || ev.button !== 0) return;
+    ev.preventDefault();
+    const previo = document.getElementById("lz-menu-select");
+    if (previo) { previo.remove(); if (previo._sel === sel) return; }
+    const r = sel.getBoundingClientRect(), menu = document.createElement("div");
+    menu.id = "lz-menu-select"; menu._sel = sel; menu.setAttribute("role", "listbox");
+    menu.style.cssText = `position:fixed;left:${r.left}px;top:${r.bottom}px;min-width:${r.width}px;max-height:${Math.max(120, Math.min(280, window.innerHeight - r.bottom - 8))}px`;
+    [...sel.options].forEach((o, i) => {
+      const it = document.createElement("div");
+      it.textContent = o.textContent; it.setAttribute("role", "option");
+      it.className = `lz-menu-op${i === sel.selectedIndex ? " actual" : ""}${o.disabled ? " apagado" : ""}`;
+      if (!o.disabled) it.addEventListener("mousedown", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const cambio = sel.selectedIndex !== i;
+        sel.selectedIndex = i; menu.remove();
+        if (cambio) sel.dispatchEvent(new Event("change", { bubbles: true }));
+        sel.focus();
+      });
+      menu.appendChild(it);
+    });
+    document.body.appendChild(menu);
+    const actual = menu.querySelector(".actual"); if (actual) menu.scrollTop = actual.offsetTop - 40;
+    sel.focus();
+  }
+
   function conectar() {
+    document.addEventListener("mousedown", menuPropio, true);
+    document.addEventListener("mousedown", (e) => { const m = document.getElementById("lz-menu-select"); if (m && !m.contains(e.target) && !(e.target.closest && e.target.closest("select") === m._sel)) m.remove(); });
+    document.addEventListener("keydown", (e) => { const m = document.getElementById("lz-menu-select"); if (m && e.key === "Escape") { e.stopPropagation(); m.remove(); } }, true);
     if (st.conectado || !$("modal-lz")) return;
     st.conectado = true;
     $("lz-cerrar").addEventListener("click", cerrar);

@@ -77,9 +77,10 @@ class _Red:
                                  "AND conector_id IS NOT DISTINCT FROM %s ORDER BY lado, numero", (splitter_id, conector_id)).fetchall()
         return [self.puerto(f["id"]) for f in filas]
 
-    def conexion_hilo(self, mufa_id: int, hilo_id: int) -> dict[str, Any] | None:
+    def conexiones_hilo(self, mufa_id: int, hilo_id: int) -> list[dict[str, Any]]:
+        """Every connection of the fibre in the mufa: more than one when the fibre is tapped there (sangría)."""
         return self.con.execute("SELECT * FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL "
-                                "AND (a_hilo_id = %s OR b_hilo_id = %s) LIMIT 1", (mufa_id, hilo_id, hilo_id)).fetchone()
+                                "AND (a_hilo_id = %s OR b_hilo_id = %s) ORDER BY id", (mufa_id, hilo_id, hilo_id)).fetchall()
 
     def conexion_puerto(self, puerto_id: int) -> dict[str, Any] | None:
         return self.con.execute("SELECT * FROM redes.conexiones WHERE borrado_en IS NULL AND (a_puerto_id = %s OR b_puerto_id = %s) "
@@ -142,16 +143,17 @@ class _Trazado:
         if hacia["tipo"] not in ("mufa", "nodo", "odf"):
             yield self._fin(pasos, distancia, "otro", f"Termina en {hacia['nombre']} ({hacia['tipo']})", _breve(hacia))
             return
-        conexion = self.red.conexion_hilo(hacia_id, hilo_id)
-        if conexion is None:
+        conexiones = self.red.conexiones_hilo(hacia_id, hilo_id)
+        if not conexiones:
             if hacia["tipo"] == "nodo":
                 yield self._fin(pasos, distancia, "nodo", f"Llega al nodo {hacia['nombre']}", _breve(hacia))
             else:
                 yield self._fin(pasos, distancia, "sin_conexion",
                                 f"Sin continuidad: el hilo {h['numero']} no está conectado en {hacia['nombre']}", _breve(hacia))
             return
-        otro_hilo, otro_puerto = _otro_extremo(conexion, hilo_id=hilo_id)
-        yield from self.extremo(hacia, conexion["id"], otro_hilo, otro_puerto, pasos, distancia, visto, fusion=otro_hilo is not None)
+        for conexion in conexiones:                      # a tapped fibre (sangría) goes on by each of its ends
+            otro_hilo, otro_puerto = _otro_extremo(conexion, hilo_id=hilo_id)
+            yield from self.extremo(hacia, conexion["id"], otro_hilo, otro_puerto, pasos, distancia, visto, fusion=otro_hilo is not None)
 
     def extremo(self, mufa: dict[str, Any], conexion_id: int, hilo_id: int | None, puerto_id: int | None,
                 pasos: list[dict[str, Any]], distancia: float, visto: frozenset, fusion: bool = False) -> Iterator[dict[str, Any]]:

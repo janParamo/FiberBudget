@@ -13,7 +13,7 @@
   const esc = (v) => Redes.esc(v);
   const TIA = ["#1f5fd1", "#f28c28", "#2e9d4a", "#8b5a2b", "#8c8c8c", "#ffffff", "#e53935", "#111111", "#f7d117", "#7e3fbf", "#f06ba8", "#2ec4d6"];
   const TIA_NOMBRE = ["azul", "naranja", "verde", "café", "gris", "blanco", "rojo", "negro", "amarillo", "violeta", "rosa", "aqua"];
-  const st = { mufaId: null, datos: null, a: null, b: null, elegido: new Map(), original: new Map(), alCerrar: null, conectado: false };
+  const st = { mufaId: null, datos: null, a: null, b: null, elegido: new Map(), original: new Map(), sangria: new Map(), alCerrar: null, conectado: false };
   const mensaje = (t, tipo) => Redes.estadoEn($("fh-estado"), t, tipo);
 
   const cableDe = (id) => st.datos.cables.find((c) => c.id === id);
@@ -34,7 +34,7 @@
 
   /** Reads the connections of the mufa for the pair A-B: hilo of A -> {conexion, hiloB} (editable) or {bloqueada: text}. */
   function leerPar() {
-    st.original = new Map(); st.elegido = new Map();
+    st.original = new Map(); st.elegido = new Map(); st.sangria = new Map();
     const A = cableDe(st.a), B = cableDe(st.b);
     if (!A || !B) return;
     const idsB = new Set(B.fibras.map((f) => f.id));
@@ -42,10 +42,10 @@
       const x = st.datos.conexiones.find((c) => c.a.hilo === f.id || c.b.hilo === f.id);
       if (!x) return;
       const otro = x.a.hilo === f.id ? x.b.hilo : x.a.hilo;
-      if (otro != null && idsB.has(otro)) st.original.set(f.id, { conexion: x.id, version: x.version, b: otro });
+      if (otro != null && idsB.has(otro)) st.original.set(f.id, { conexion: x.id, version: x.version, b: otro, sangria: !!x.sangria });
       else st.original.set(f.id, { conexion: x.id, version: x.version, bloqueada: destinoDe(x, f.id) });
     });
-    st.original.forEach((o, aId) => { if (o.b) st.elegido.set(aId, o.b); });
+    st.original.forEach((o, aId) => { if (o.b) { st.elegido.set(aId, o.b); st.sangria.set(aId, !!o.sangria); } });
   }
 
   /** The hilos of B that are taken: by another row of this pair, or connected in this mufa to something that is not an A hilo. */
@@ -70,7 +70,9 @@
       const ocupados = ocupadosB(f.id), actual = st.elegido.get(f.id) || "";
       const opciones = `<option value="">— sin conectar —</option>` + B.fibras.map((g) => `<option value="${g.id}" ${ocupados.has(g.id) ? "disabled" : ""} ${actual === g.id ? "selected" : ""}>${esc(etiquetaHilo(B, g))}${ocupados.has(g.id) ? ` (${esc(ocupados.get(g.id))})` : ""}${g.cliente ? ` · ${esc(textoCliente(g))}` : ""}</option>`).join("");
       const cambiado = (actual || null) !== ((o && o.b) || null);
-      return `<tr class="${cambiado ? "fh-cambio" : ""}"><td><i class="fh-punto" style="background:${TIA[indiceColor(A, f)]}"></i> <b>${esc(etiquetaHilo(A, f))}</b>${f.cliente ? ` <span class="fh-cliente">${esc(textoCliente(f))}</span>` : ""}</td>
+      const sangre = actual && st.sangria.get(f.id);
+      const casilla = actual ? `<label class="fh-sangria" title="El hilo sigue su camino y además alimenta a un cliente en esta mufa"><input type="checkbox" data-fh-sangria="${f.id}" ${sangre ? "checked" : ""} ${editar ? "" : "disabled"}> Sangría</label>` : "";
+      return `<tr class="${cambiado ? "fh-cambio" : ""}${sangre ? " fh-sangre" : ""}"><td><i class="fh-punto" style="background:${sangre ? "#e11d1d" : TIA[indiceColor(A, f)]}"></i> <b>${esc(etiquetaHilo(A, f))}</b>${casilla}${f.cliente ? ` <span class="fh-cliente">${esc(textoCliente(f))}</span>` : ""}</td>
         <td class="fh-flecha">→</td><td>${bloqueada ? `<span class="nota">Conectado a ${esc(o.bloqueada)} (se cambia en el editor de mufa)</span>`
         : `<select data-fh-hilo="${f.id}" ${editar ? "" : "disabled"}>${opciones}</select>`}</td></tr>`;
     });
@@ -87,6 +89,7 @@
       const o = st.original.get(id);
       if (o && o.bloqueada) continue;
       if (((st.elegido.get(id)) || null) !== ((o && o.b) || null)) return true;
+      if (st.elegido.get(id) && !!st.sangria.get(id) !== !!(o && o.sangria)) return true;
     }
     return false;
   }
@@ -154,10 +157,13 @@
     ids.forEach((aId) => {
       const o = st.original.get(aId);
       if (o && o.bloqueada) return;
-      const nuevo = st.elegido.get(aId) || null, previo = (o && o.b) || null;
-      if (nuevo === previo) return;
+      const nuevo = st.elegido.get(aId) || null, previo = (o && o.b) || null, sangria = !!st.sangria.get(aId);
+      if (nuevo === previo) {
+        if (nuevo && sangria !== !!(o && o.sangria)) conexiones.push({ id: o.conexion, version: o.version, sangria });          // same fusion, tap marked or unmarked
+        return;
+      }
       if (o) conexiones.push({ id: o.conexion, version: o.version, eliminar: true });
-      if (nuevo) conexiones.push({ id: `n${++n}`, a: { hilo: aId }, b: { hilo: nuevo } });
+      if (nuevo) conexiones.push({ id: `n${++n}`, a: { hilo: aId }, b: { hilo: nuevo }, sangria });
     });
     if (!conexiones.length) return;
     $("fh-guardar").disabled = true;
@@ -170,7 +176,7 @@
     }
     st.datos = r;
     leerPar(); pintar();
-    mensaje(`Guardado: ${conexiones.filter((c) => !c.eliminar).length} conexión(es) nueva(s), ${conexiones.filter((c) => c.eliminar).length} quitada(s)`, "ok");
+    mensaje(`Guardado: ${conexiones.filter((c) => !c.eliminar && String(c.id).startsWith("n")).length} conexión(es) nueva(s), ${conexiones.filter((c) => c.eliminar).length} quitada(s)${conexiones.some((c) => c.sangria != null) ? ", sangría actualizada" : ""}`, "ok");
   }
 
   function cerrar() {
@@ -188,6 +194,8 @@
     $("fh-quitar-todas").addEventListener("click", quitarTodas);
     $("fh-guardar").addEventListener("click", guardar);
     $("fh-filas").addEventListener("change", (e) => {
+      const c = e.target.closest("input[data-fh-sangria]");
+      if (c) { st.sangria.set(Number(c.dataset.fhSangria), c.checked); pintar(); return; }
       const s = e.target.closest("select[data-fh-hilo]");
       if (!s) return;
       st.elegido.set(Number(s.dataset.fhHilo), s.value ? Number(s.value) : null);

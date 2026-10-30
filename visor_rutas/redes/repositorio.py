@@ -29,7 +29,7 @@ COLUMNAS = {
                   "confianza", "borrado_en"},
     "conectores": {"proyecto_id", "mufa_id", "nombre", "tipo", "x", "y", "borrado_en"},
     "conexiones": {"proyecto_id", "mufa_id", "a_hilo_id", "a_puerto_id", "b_hilo_id", "b_puerto_id", "bandeja",
-                   "posicion_en_bandeja", "fuente", "confianza", "posicion_estimada", "borrado_en"},
+                   "posicion_en_bandeja", "fuente", "confianza", "posicion_estimada", "sangria", "borrado_en"},
     # migración de la red existente (Visio): modelo de mufa, bandejas y clientes
     "mufa_modelos": {"mufa_id", "formato", "capacidad", "empalmes_por_bandeja", "bandejas", "modelo_estimado", "fuente", "motivo", "avisos",
                      "borrado_en"},

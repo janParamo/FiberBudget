@@ -42,12 +42,12 @@ def _mufa(con: Any, mufa_id: int) -> dict[str, Any]:
 
 def _describir_extremo(con: Any, hilo_id: int, mufa_id: int) -> str | None:
     """What fibre `hilo_id` is connected to inside mufa `mufa_id` (None: nothing)."""
-    c = con.execute("SELECT * FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL "
-                    "AND (a_hilo_id = %s OR b_hilo_id = %s) LIMIT 1", (mufa_id, hilo_id, hilo_id)).fetchone()
-    if c is None:
+    cs = con.execute("SELECT * FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL "
+                     "AND (a_hilo_id = %s OR b_hilo_id = %s) ORDER BY id", (mufa_id, hilo_id, hilo_id)).fetchall()
+    if not cs:
         return None
-    otro_hilo, otro_puerto = (c["b_hilo_id"], c["b_puerto_id"]) if c["a_hilo_id"] == hilo_id else (c["a_hilo_id"], c["a_puerto_id"])
-    return _texto_extremo(con, otro_hilo, otro_puerto)
+    return " + ".join(_texto_extremo(con, *((c["b_hilo_id"], c["b_puerto_id"]) if c["a_hilo_id"] == hilo_id else (c["a_hilo_id"], c["a_puerto_id"])))
+                      for c in cs)                               # a tapped fibre (sangría) has several ends
 
 
 def _texto_extremo(con: Any, hilo_id: int | None, puerto_id: int | None) -> str:
@@ -123,7 +123,7 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
     conexiones = []
     for x in con.execute("SELECT * FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL ORDER BY id", (m["id"],)).fetchall():
         conexiones.append({"id": x["id"], "version": x["version"], "fuente": x["fuente"], "confianza": x["confianza"],
-                           "bandeja": x["bandeja"], "posicion": x["posicion_en_bandeja"], "posicion_estimada": x["posicion_estimada"],
+                           "bandeja": x["bandeja"], "posicion": x["posicion_en_bandeja"], "posicion_estimada": x["posicion_estimada"], "sangria": x["sangria"],
                            "a": {"hilo": x["a_hilo_id"]} if x["a_hilo_id"] else _ref_puerto(con, x["a_puerto_id"]),
                            "b": {"hilo": x["b_hilo_id"]} if x["b_hilo_id"] else _ref_puerto(con, x["b_puerto_id"])})
     notas = [dict(n) for n in con.execute(
@@ -180,6 +180,14 @@ def _actualizar(con: Any, tabla: str, id_: int, d: dict[str, Any], valores: dict
         return repositorio.actualizar(con, tabla, id_, int(d.get("version") or 0), valores, actor["id"])
     except ConflictoVersion:
         raise ConflictoVersion(f"{quien}: otro usuario lo cambió mientras usted editaba. Recargue la mufa.") from None
+
+
+def _alimenta_cliente(con: Any, mufa_id: int, hilo_id: int) -> bool:
+    """True when the client that is on this fibre is one of the clients of THIS mufa (so the fibre is tapped here)."""
+    return con.execute(
+        "SELECT 1 FROM redes.hilo_servicios s WHERE s.hilo_id = %s AND s.borrado_en IS NULL AND s.codigo_cliente IS NOT NULL AND EXISTS ("
+        "SELECT 1 FROM redes.mufa_clientes m WHERE m.mufa_id = %s AND m.borrado_en IS NULL AND m.codigo_cliente = s.codigo_cliente)",
+        (hilo_id, mufa_id)).fetchone() is not None
 
 
 def _propio(con: Any, tabla: str, id_: int, mufa_id: int, quien: str) -> dict[str, Any]:
@@ -326,12 +334,31 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
             return None, p["id"], f"{columna}:{oid}"
 
         # 3) connections: deletes first (they free their ends), then the new ones
+        liberados: set[int] = set()
         for d in lista("conexiones"):
             if d.get("eliminar") and not _es_nuevo(d.get("id")):
                 actual = _propio(con, "conexiones", int(d["id"]), mid, "Conexión")
                 ahora = con.execute("SELECT now() AS n").fetchone()["n"]
                 _actualizar(con, "conexiones", actual["id"], d, {"borrado_en": ahora}, actor, "Conexión")
                 repositorio.registrar(con, actor["id"], "conexion", actual["id"], "eliminar", None, proyecto_id=proyecto_id)
+                liberados.update(h for h in (actual["a_hilo_id"], actual["b_hilo_id"]) if h)
+        for h in liberados:                                        # a fibre left with one end only is not a tap any more (unless it still feeds a client of this mufa)
+            quedan = con.execute("SELECT id FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL AND (a_hilo_id = %s OR b_hilo_id = %s)", (mid, h, h)).fetchall()
+            if len(quedan) == 1 and not _alimenta_cliente(con, mid, h):
+                con.execute("UPDATE redes.conexiones SET sangria = false, version = version + 1, actualizado_en = now(), actualizado_por = %s WHERE id = %s AND sangria",
+                            (actor["id"], quedan[0]["id"]))
+        for d in lista("conexiones"):                              # sangría: an existing fusion marked (or unmarked) as the tap of its fibre
+            if d.get("eliminar") or _es_nuevo(d.get("id")) or "sangria" not in d:
+                continue
+            actual = _propio(con, "conexiones", int(d["id"]), mid, "Conexión")
+            marca = bool(d["sangria"])
+            if marca == bool(actual["sangria"]):
+                continue
+            if marca and not (actual["a_hilo_id"] or actual["b_hilo_id"]):
+                raise DatosInvalidos({"Conexión": "la sangría es de un hilo: elija una conexión que tenga un hilo"})
+            antes, despues = _actualizar(con, "conexiones", actual["id"], d, {"sangria": marca}, actor, "Conexión")
+            repositorio.registrar(con, actor["id"], "conexion", actual["id"], "editar", repositorio.diferencias({"sangria": antes["sangria"]}, {"sangria": despues["sangria"]}),
+                                  proyecto_id=proyecto_id)
         for d in lista("conexiones"):
             if d.get("eliminar") or not _es_nuevo(d.get("id")):
                 continue
@@ -344,17 +371,25 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
                 cables = con.execute("SELECT count(DISTINCT cable_id) AS n FROM redes.hilos WHERE id IN (%s, %s)", (a_hilo, b_hilo)).fetchone()["n"]
                 if cables < 2:
                     raise DatosInvalidos({quien: "una fusión une hilos de cables distintos"})
-            for hilo in (a_hilo, b_hilo):
-                if hilo and con.execute("SELECT 1 FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL "
-                                        "AND (a_hilo_id = %s OR b_hilo_id = %s)", (mid, hilo, hilo)).fetchone():
-                    raise DatosInvalidos({quien: "ese hilo ya está conectado en esta mufa: quite primero su conexión"})
+            # a fibre that is already connected here takes one more end: it is a tap (sangría) and all its connections are marked
+            tomados = [h for h in (a_hilo, b_hilo) if h and con.execute(
+                "SELECT 1 FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL AND (a_hilo_id = %s OR b_hilo_id = %s)", (mid, h, h)).fetchone()]
+            if a_hilo and b_hilo and con.execute("SELECT 1 FROM redes.conexiones WHERE mufa_id = %s AND borrado_en IS NULL AND "
+                                                 "((a_hilo_id = %s AND b_hilo_id = %s) OR (a_hilo_id = %s AND b_hilo_id = %s))", (mid, a_hilo, b_hilo, b_hilo, a_hilo)).fetchone():
+                raise DatosInvalidos({quien: "esos dos hilos ya están conectados entre sí"})
             for puerto in (a_puerto, b_puerto):
                 if puerto and con.execute("SELECT 1 FROM redes.conexiones WHERE borrado_en IS NULL AND (a_puerto_id = %s OR b_puerto_id = %s)",
                                           (puerto, puerto)).fetchone():
                     raise DatosInvalidos({quien: "ese puerto ya está conectado: quite primero su conexión"})
+            # a fusion whose fibre already feeds a client of this mufa is a tap (sangría) by itself
+            sangria = bool((a_hilo or b_hilo) and (d.get("sangria") or tomados or (a_hilo and b_hilo and any(_alimenta_cliente(con, mid, h) for h in (a_hilo, b_hilo)))))
+            if tomados:
+                con.execute("UPDATE redes.conexiones SET sangria = true, version = version + 1, actualizado_en = now(), actualizado_por = %s "
+                            "WHERE mufa_id = %s AND borrado_en IS NULL AND NOT sangria AND (a_hilo_id = ANY(%s) OR b_hilo_id = ANY(%s))",
+                            (actor["id"], mid, tomados, tomados))
             fila = repositorio.insertar(con, "conexiones", {"proyecto_id": proyecto_id, "mufa_id": mid, "a_hilo_id": a_hilo,
                                                             "a_puerto_id": a_puerto, "b_hilo_id": b_hilo, "b_puerto_id": b_puerto,
-                                                            "fuente": "usuario", "confianza": "verificada"}, actor["id"])
+                                                            "sangria": sangria, "fuente": "usuario", "confianza": "verificada"}, actor["id"])
             ids[str(d["id"])] = fila["id"]
             repositorio.registrar(con, actor["id"], "conexion", fila["id"], "crear",
                                   {"a": [None, _texto_extremo(con, a_hilo, a_puerto)], "b": [None, _texto_extremo(con, b_hilo, b_puerto)]},
@@ -412,6 +447,10 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
                 cambio = repositorio.diferencias({k: antes[k] for k in valores}, {k: despues[k] for k in valores})
                 if cambio:
                     repositorio.registrar(con, actor["id"], "hilo_servicio", previo["id"], "editar", cambio, proyecto_id=proyecto_id)
+            if _alimenta_cliente(con, mid, actual_hilo["id"]):          # the fibre continues AND feeds a client here: its fusion is a tap
+                con.execute("UPDATE redes.conexiones SET sangria = true, version = version + 1, actualizado_en = now(), actualizado_por = %s "
+                            "WHERE mufa_id = %s AND borrado_en IS NULL AND NOT sangria AND a_hilo_id IS NOT NULL AND b_hilo_id IS NOT NULL "
+                            "AND (a_hilo_id = %s OR b_hilo_id = %s)", (actor["id"], mid, actual_hilo["id"], actual_hilo["id"]))
         # 5) notes inside the canvas
         for d in lista("notas"):
             if d.get("eliminar"):

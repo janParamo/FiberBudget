@@ -293,6 +293,7 @@
           <button id="mu-acercar" type="button" class="btn-icono" title="Acercar">＋</button>
           <button id="mu-ajustar" type="button" class="btn btn-chico" title="Ver todo">Ajustar</button>
           <button id="mu-trazar" type="button" class="btn btn-chico" disabled title="Seguir el hilo seleccionado de punta a punta (T)">Trazar hilo</button>
+          <button id="mu-sangria" type="button" class="btn btn-chico" disabled title="Marcar la conexión elegida como sangría: el hilo sigue su camino y además alimenta a un cliente en esta mufa (se dibuja en rojo)">Sangría</button>
           <button id="mu-diagrama" type="button" class="btn btn-chico" title="Diagrama lógico de red desde esta mufa">Diagrama lógico</button>
           <button id="mu-clientes" type="button" class="btn btn-chico" title="Clientes de esta mufa sin puerto de splitter conocido (del Visio)" disabled>Clientes</button>
           <button id="mu-vista" type="button" class="btn btn-chico" title="Cambiar entre la vista de cables y la de bandejas">Ver bandejas</button>
@@ -305,6 +306,7 @@
             <option value="hilo">del hilo</option><option value="fuente">por fuente del dato</option></select></label>
         </div>
       </div>
+      <div id="mu-vecinas" class="mu-vecinas" aria-label="Mufas conectadas a esta mufa"></div>
       <div id="mu-resumen" class="mu-resumen" aria-live="polite"></div>
       <div id="mu-lienzo" class="mu-lienzo">
         <div id="mu-bandejas" class="mu-bandejas" hidden></div>

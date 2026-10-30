@@ -79,8 +79,8 @@ def test_connection_rules(red_lista):
     casos = [
         ([{"id": "x", "a": {"hilo": t1}, "b": {"hilo": t2}}], "cables distintos"),
         ([{"id": "x", "a": {"hilo": t1}, "b": {"hilo": a1}}], "no pertenece a un cable de esta mufa"),
-        ([{"id": "x", "a": {"hilo": t1}, "b": {"hilo": s1}}, {"id": "y", "a": {"hilo": t1}, "b": {"hilo": _fibra(norte, "Distribución Sur", 2)["id"]}}],
-         "ya está conectado"),
+        ([{"id": "x", "a": {"hilo": t1}, "b": {"hilo": s1}}, {"id": "y", "a": {"hilo": s1}, "b": {"hilo": t1}}],
+         "ya están conectados entre sí"),                        # a fibre may take more ends (sangría), but not twice the same pair
         ([{"id": "x", "a": {"splitter": "nada", "lado": "entrada"}, "b": {"hilo": t1}}], "no viene en el envío"),
     ]
     for conexiones, texto in casos:

@@ -131,14 +131,18 @@
   async function accion(a, b) {
     const imp = ik.actual;
     if (a === "aplicar") {
-      if (!(await Redes.confirmar(`¿Aplicar a la red los ${num(ik.aceptadosTotal)} cambios aceptados de «${imp.archivo}»? Lo nuevo se agrega como capa «Importados» y lo modificado o eliminado queda como cambio del KMZ. Se puede revertir.`, "Aplicar"))) return;
-      ik.ocupado = true; estado("Aplicando a la red…", "cargando");
+      const admin = esAdmin();
+      if (!(await Redes.confirmar(`¿Aplicar a la red los ${num(ik.aceptadosTotal)} cambios aceptados de «${imp.archivo}»? ${admin
+        ? "Se actualiza el archivo de la red: lo nuevo entra en sus carpetas, lo modificado se corrige y lo eliminado se quita. El archivo actual se guarda en «anteriores». Tarda unos 20 segundos."
+        : "Lo nuevo se agrega como capa «Importados» y lo modificado o eliminado queda como cambio del KMZ hasta que un administrador lo incorpore al archivo de la red. Se puede revertir."}`, "Aplicar"))) return;
+      ik.ocupado = true; estado(admin ? "Aplicando a la red y actualizando su archivo…" : "Aplicando a la red…", "cargando");
       const r = await llamar("aplicar_importacion_kmz", { id: imp.id });
       ik.ocupado = false;
       if (!r.ok) { estado(r.error, "error"); return; }
-      ik.actual = r.importacion; ik.vista = "resultado"; ik.resultado = { aplicados: r.aplicados };
+      ik.actual = r.importacion; ik.vista = "resultado"; ik.resultado = { aplicados: r.aplicados, incorporada: r.incorporada, incorporacion: r.incorporacion, aviso: r.aviso_incorporacion };
       await refrescarRed();
       estado("");
+      if (r.incorporada && await Redes.confirmar(`Listo: «${r.incorporacion.archivo}» ahora trae ${num(r.incorporacion.elementos)} elementos con los cambios en sus carpetas. ¿Recargar el visor para ver la red actualizada?`, "Recargar")) location.reload();
     } else if (a === "descartar") {
       if (!(await Redes.confirmar(`¿Descartar la importación de «${imp.archivo}»? No se cambia nada en la red.`, "Descartar"))) return;
       const r = await llamar("descartar_importacion_kmz", { id: imp.id });
@@ -260,13 +264,29 @@
       <div class="ik-botones"><button type="button" class="btn" data-ik="red_subir" ${ik.ocupado ? "disabled" : ""}>Subir KMZ nuevo (reemplaza la red)…</button>
         <button type="button" class="btn" data-ik="red_comparar" ${ik.ocupado ? "disabled" : ""}>Comparar con el presupuesto</button></div>
       ${comparacion}
+      ${htmlIncorporar()}
       ${ultima ? `<p class="nota">Última sincronización: ${esc(ultima.archivo)} (+${num(ultima.insertados.puntos + ultima.insertados.lineas)} / −${num(ultima.eliminados.puntos + ultima.eliminados.lineas)})
         <button type="button" class="btn btn-chico" data-ik="red_revertir" data-id="${esc(ultima.id)}">Revertir</button></p>` : ""}`;
+  }
+
+  /** «Incorporar a la red»: what the applied imports added / changed goes into the file of the network (its own folders) instead of staying as a layer. */
+  function htmlIncorporar() {
+    const i = ik.red.incorporar;
+    if (!i) return "";
+    const total = i.agregados + i.modificados + i.eliminados;
+    return `<h3 class="ik-titulo">Incorporar a la red</h3>
+      <p class="ik-ayuda">Lo que se aplicó al importar sigue separado del archivo de la red: lo nuevo en «Importados (aplicados)» y lo modificado o eliminado en «Cambios al KMZ». «Incorporar a la red» lo mete en el archivo <b>${esc((ik.red.estado && ik.red.estado.kmz && ik.red.estado.kmz.archivo) || "KMZ")}</b>,
+        cada cosa en su carpeta. El archivo anterior se guarda aparte («anteriores»).</p>
+      ${total ? `<p class="nota"><b>${num(i.agregados)}</b> nuevo(s), <b>${num(i.modificados)}</b> modificado(s) y <b>${num(i.eliminados)}</b> eliminado(s)${i.manuales ? ` (${num(i.manuales)} cambio(s) hechos a mano en el mapa)` : ""}${i.importaciones.length ? ` · de ${i.importaciones.map((x) => esc(x.archivo)).join(", ")}` : ""}.</p>`
+        : '<p class="nota">No hay nada que incorporar: la red ya es el archivo.</p>'}
+      <button type="button" class="btn btn-primario" data-ik="red_incorporar" ${ik.ocupado || !(total || i.importaciones.length) ? "disabled" : ""}>Incorporar a la red…</button>`;
   }
 
   async function cargarEstadoRed() {
     if (!esAdmin()) return;
     const r = await llamar("estado_actualizar_red", {});
+    const inc = await llamar("incorporar_previa_kmz", {});
+    if (inc.ok) ik.red.incorporar = inc;
     if (r.ok) { ik.red.estado = r; pintar(); }
   }
 
@@ -289,6 +309,16 @@
       ik.red.resumen = null; estado("");
       aviso(`Presupuesto al día: +${num(r.insertados.puntos + r.insertados.lineas)} elementos${quitar ? `, −${num(r.eliminados.puntos + r.eliminados.lineas)}` : ""}`, "ok");
       await cargarEstadoRed();
+    } else if (a === "red_incorporar") {
+      const i = ik.red.incorporar;
+      if (!(await Redes.confirmar(`¿Incorporar al archivo de la red ${num(i.agregados)} nuevo(s), ${num(i.modificados)} modificado(s) y ${num(i.eliminados)} eliminado(s)? Se crea un archivo nuevo con todo en sus carpetas, el actual se guarda en «anteriores» y las importaciones dejan de poder revertirse. Tarda unos 20 segundos.`, "Incorporar"))) return;
+      ik.ocupado = true; estado("Armando el archivo de la red con los cambios…", "cargando");
+      const r = await llamar("incorporar_kmz_red", {});
+      ik.ocupado = false;
+      if (!r.ok) { estado((r.errores && Object.values(r.errores).join(" · ")) || r.error, "error"); return; }
+      estado("");
+      await cargarEstadoRed();
+      if (await Redes.confirmar(`Listo: «${r.archivo}» ahora trae ${num(r.elementos)} elementos (${num(r.agregados)} agregados, ${num(r.modificados)} corregidos, ${num(r.eliminados)} quitados). ¿Recargar el visor para ver la red incorporada en sus carpetas?`, "Recargar")) location.reload();
     } else if (a === "red_revertir") {
       if (!(await Redes.confirmar("¿Revertir la última sincronización? Lo que agregó sale del presupuesto y lo que quitó vuelve.", "Revertir"))) return;
       const r = await llamar("revertir_sincronizacion_red", { id: b });
@@ -345,8 +375,10 @@
       ${pub.no_encontrados.length ? `<li class="nota error">No se encontraron en el presupuesto (no se cambiaron): ${esc(pub.no_encontrados.slice(0, 10).join(", "))}${pub.no_encontrados.length > 10 ? "…" : ""}</li>` : ""}</ul>` : "";
     return `<div class="ik-archivo"><b>${esc(imp.archivo)}</b> <span class="nota">${esc(imp.estado)}${imp.publicada ? " · publicada en el presupuesto" : ""}</span></div>
       ${ap ? `<p>Aplicado a la red: ${num(ap.nuevo)} nuevos, ${num(ap.modificado)} modificados, ${num(ap.eliminado)} eliminados.</p>` : ""}${lineasPub}
-      <p class="nota">El archivo KMZ original no se modifica. Lo nuevo está en «Importados (aplicados)» del árbol de Lugares; lo modificado o eliminado, en «Cambios al KMZ».
+      <p class="nota">${imp.incorporada ? "El archivo de la red ya trae estos cambios, cada uno en su carpeta (el archivo anterior está en «anteriores»)."
+        : `El archivo KMZ no se modificó. Lo nuevo está en «Importados (aplicados)» del árbol de Lugares; lo modificado o eliminado, en «Cambios al KMZ». Un administrador los deja dentro de las carpetas de la red con «Incorporar a la red» (en «Actualizar la red»).`}
         ${imp.publicada ? "" : "El presupuesto sigue usando la red como estaba hasta que se publique."}</p>
+      ${ik.resultado && ik.resultado.aviso ? `<p class="nota error">No se pudo actualizar el archivo de la red: ${esc(ik.resultado.aviso)} Los cambios quedaron aplicados como capa «Importados» y «Cambios al KMZ».</p>` : ""}
       <div class="ik-pie">${imp.estado === "aplicada" && esAdmin() && !imp.publicada ? '<button type="button" class="btn btn-primario" data-ik="publicar">Publicar en el presupuesto</button>' : ""}
         ${imp.estado === "aplicada" && imp.publicada && esAdmin() ? '<button type="button" class="btn" data-ik="revertir_publicacion">Revertir la publicación</button>' : ""}
         ${imp.estado === "aplicada" && !imp.publicada && puedeEditar() && ik.importaciones.find((i) => i.id === imp.id && i.es_ultima_aplicada) ? '<button type="button" class="btn" data-ik="revertir">Revertir importación</button>' : ""}

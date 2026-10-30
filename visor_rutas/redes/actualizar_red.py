@@ -89,7 +89,12 @@ def subir_kmz(con: Any, actor: dict[str, Any], *, subida_id: str, nombre: str = 
         nombre_subido, crudo = subidas.almacen.tomar(subida_id)
     except subidas.ErrorSubida as exc:
         raise DatosInvalidos({"archivo": str(exc)}) from None
-    nombre = _nombre_seguro(nombre or nombre_subido)
+    return instalar_kmz(crudo, nombre or nombre_subido, actor)
+
+
+def instalar_kmz(crudo: bytes, nombre: str, actor: dict[str, Any]) -> dict[str, Any]:
+    """Makes `crudo` the KMZ in force: validated, the old one kept in `anteriores/`, the cache of the panel rebuilt. (`subir_kmz` and `incorporar_kmz` use it.)"""
+    nombre = _nombre_seguro(nombre)
     if crudo[:2] != b"PK":
         raise DatosInvalidos({"archivo": "Tiene que ser un archivo .kmz (el .kml suelto no se acepta aquí)"})
     elementos = _validar_kmz(crudo)

@@ -84,6 +84,22 @@
     $("mu-trazar").disabled = !fibra || !window.Trazado;
     if (fibra) $("mu-estado").value = estadoHilo(fibra.id);
     $("mu-eliminar").disabled = !st.seleccion.some((s) => ["conexion", "splitter", "conector", "nota"].includes(s.tipo));
+    const fusion = st.seleccion.length === 1 && st.seleccion[0].tipo === "conexion" && st.conexiones.get(st.seleccion[0].id);
+    const esFusion = !!fusion && (fusion.a.hilo != null || fusion.b.hilo != null);
+    $("mu-sangria").disabled = !esFusion || !st.puedeEditar;
+    $("mu-sangria").classList.toggle("activo", esFusion && !!fusion.sangria);
+    $("mu-sangria").textContent = esFusion && fusion.sangria ? "Quitar sangría" : "Sangría";
+  }
+
+  /** Sangría: the chosen fusion is the tap of its fibre (it continues AND feeds a client here); drawn in red. */
+  function alternarSangria() {
+    const s = st.seleccion[0], x = st.seleccion.length === 1 && s.tipo === "conexion" && st.conexiones.get(s.id);
+    if (!x || (x.a.hilo == null && x.b.hilo == null) || !st.puedeEditar) return;
+    antesDeCambiar();
+    x.sangria = !x.sangria;
+    st.sucios.add(`conexiones:${x.id}`);
+    dibujar();
+    mensaje(x.sangria ? "Marcada como sangría: el hilo sigue y además alimenta a un cliente aquí" : "Ya no es sangría", "ok");
   }
 
   // ------------------------------------------------------------------ datos
@@ -302,6 +318,21 @@
                                                      stroke: "#fff", strokeWidth: 2, listening: false }));
     registrarPuerto(clave, g, cx + (izq ? 8 : -8), cy, { hilo: f.id }, izq ? 1 : -1, TIA[idx]);
     eventosPuerto(circulo, clave);
+    if (st.conexiones.size && [...st.conexiones.values()].filter((x) => x.a.hilo === f.id || x.b.hilo === f.id).length >= 2) {
+      // a tapped fibre (sangría): the same fibre has its second end on the other side of the cable box, with its own circle and number
+      const ox = izq ? -6 : ANCHO_ETIQUETA + 60, clave2 = `${clave}:2`;
+      circulo.stroke("#e11d1d"); circulo.strokeWidth(3);
+      g.add(new Konva.Line({ points: izq ? [ox, cy, desde - 4, cy] : [ox, cy, desde + 4, cy], stroke: "#e11d1d", strokeWidth: 1.5, dash: [3, 3], listening: false }));
+      const segundo = new Konva.Circle({ x: ox, y: cy, radius: 8, fill: TIA[idx], stroke: "#e11d1d", strokeWidth: 3, name: "puerto" });
+      segundo.setAttr("puerto", clave2);
+      g.add(segundo);
+      g.add(new Konva.Text({ x: ox - 8, y: cy - 5, width: 16, align: "center", text: String(f.numero), fontSize: 9, listening: false, fill: OSCUROS.has(idx) ? "#fff" : "#111" }));
+      registrarPuerto(clave2, g, ox + (izq ? -8 : 8), cy, { hilo: f.id }, izq ? -1 : 1, TIA[idx]);
+      eventosPuerto(segundo, clave2);
+      segundo.on("click", (e) => { e.cancelBubble = true; seleccionar({ tipo: "hilo", id: f.id }); });
+      segundo.on("mouseenter", () => tooltip(`<div class="mu-tt-titulo">Hilo ${f.numero}: sangría</div><div>Segunda punta del mismo hilo</div>`));
+      segundo.on("mouseleave", () => tooltip(null));
+    }
     circulo.on("click", (e) => { e.cancelBubble = true; seleccionar({ tipo: "hilo", id: f.id }); });
     circulo.on("contextmenu", (e) => { e.evt.preventDefault(); e.cancelBubble = true; seleccionar({ tipo: "hilo", id: f.id }); menuHilo(e.evt, f); });
     circulo.on("mouseenter", () => tooltip(htmlFibra(c, f)));
@@ -413,6 +444,7 @@
   }
 
   // ------------------------------------------------------------------ conexiones
+  const COLOR_SANGRIA = "#e11d1d";
   const claveDe = (ref) => (ref.hilo != null ? `h:${ref.hilo}` : ref.splitter != null ? `s:${ref.splitter}:${ref.lado}:${ref.numero || 1}`
     : `k:${ref.conector}:${ref.lado}`);
 
@@ -437,11 +469,29 @@
     return [p1.x, p1.y, a.x, a.y, mx, a.y, mx, b.y, b.x, b.y, p2.x, p2.y];
   }
 
+  /** Where a tapped fibre (sangría) leaves from for its 2nd, 4th… end: the OPPOSITE side of its cable box, so the ends do not pile up on the same side. */
+  function posicionOpuesta(clave) {
+    const segundo = st.puertos.get(`${clave}:2`);
+    if (segundo) return { x: segundo.grupo.x() + segundo.dx, y: segundo.grupo.y() + segundo.dy, salida: segundo.salida };       // its own circle on the other side
+    const p = st.puertos.get(clave);
+    if (!p) return null;
+    const izq = p.salida === 1;                                  // cable that arrives: its port faces right; the frame ends at -6 on the left
+    return { x: p.grupo.x() + (izq ? -6 : ANCHO_ETIQUETA + 60), y: p.grupo.y() + p.dy, salida: izq ? -1 : 1 };
+  }
+
   function dibujarConexiones() {
     st.capaLineas.destroyChildren();
     let i = 0;
+    const usos = new Map();                                      // fibre key -> ends already drawn
+    const punta = (ref) => {
+      const clave = claveDe(ref);
+      if (ref.hilo == null) return posicion(clave);
+      const n = usos.get(clave) || 0;
+      usos.set(clave, n + 1);
+      return n % 2 === 1 ? posicionOpuesta(clave) : posicion(clave);
+    };
     st.conexiones.forEach((x) => {
-      const p1 = posicion(claveDe(x.a)), p2 = posicion(claveDe(x.b));
+      const p1 = punta(x.a), p2 = punta(x.b);
       if (!p1 || !p2) return;
       const carril = ((i++ % 9) - 4);
       const sel = seleccionado("conexion", x.id);
@@ -449,14 +499,14 @@
       const oscura = [x.a, x.b].some((r) => r.hilo != null && estadoHilo(r.hilo) !== "activo");
       const brillo = sel ? "#1f6feb" : traza ? "#ffd400" : null;
       const porFuente = st.colorPor === "fuente", fuente = x.fuente || "usuario";      // no source: drawn in the editor before the migration
-      const linea = new Konva.Line({ points: ruta(p1, p2, carril), stroke: porFuente ? COLOR_FUENTE[fuente] || COLOR_FUENTE.estimado : colorConexion(x),
-                                     strokeWidth: sel || traza ? 5 : 3, lineJoin: "round", hitStrokeWidth: 12,
+      const linea = new Konva.Line({ points: ruta(p1, p2, carril), stroke: x.sangria ? COLOR_SANGRIA : porFuente ? COLOR_FUENTE[fuente] || COLOR_FUENTE.estimado : colorConexion(x),
+                                     strokeWidth: sel || traza ? 5 : x.sangria ? 4 : 3, lineJoin: "round", hitStrokeWidth: 12,
                                      dash: oscura ? [8, 5] : porFuente && fuente === "estimado" ? [5, 4] : null, shadowColor: brillo, shadowBlur: brillo ? 10 : 0,
                                      shadowOpacity: brillo ? 1 : 0, opacity: trazado() && !traza && !sel ? 0.3 : 1 });
       linea.on("click", (e) => { e.cancelBubble = true; seleccionar({ tipo: "conexion", id: x.id }, e.evt.ctrlKey); });
       const origen = (FUENTE[x.fuente] ? `<div class="nota">Dato: ${FUENTE[x.fuente]}${x.confianza ? ` · confianza ${esc(x.confianza)}` : ""}</div>` : "")
         + (x.bandeja ? `<div class="nota">Bandeja ${x.bandeja} · posición ${x.posicion}${x.posicion_estimada ? " (estimada)" : ""}</div>` : "");
-      linea.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tooltip(`${esc(describir(x.a))} ↔ ${esc(describir(x.b))}${origen}`); });
+      linea.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tooltip(`${esc(describir(x.a))} ↔ ${esc(describir(x.b))}${x.sangria ? '<div class="nota"><b>Sangría</b>: el hilo sigue su camino y además alimenta a un cliente aquí</div>' : ""}${origen}`); });
       linea.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
       st.capaLineas.add(linea);
     });
@@ -510,22 +560,34 @@
     const forma = st.stage.getIntersection(st.stage.getPointerPosition());
     const hasta = forma && forma.getAttr("puerto");
     if (!hasta || hasta === desde) { dibujarConexiones(); return; }
+    unirPuertos(desde, hasta);
+  }
+
+  /** Joins two ports (by key) with the rules of the editor: a fibre may take more ends (sangría), a splitter or connector port only one. */
+  function unirPuertos(desde, hasta) {
     const a = st.puertos.get(desde).ref, b = st.puertos.get(hasta).ref;
     const mismoObjeto = (a.splitter != null && a.splitter === b.splitter) || (a.conector != null && a.conector === b.conector);
     if (mismoObjeto) { mensaje("No se puede conectar un splitter o conector consigo mismo", "error"); dibujarConexiones(); return; }
     if (a.hilo != null && b.hilo != null && fibraPorId(a.hilo)[0] === fibraPorId(b.hilo)[0]) {
       mensaje("Una fusión une hilos de cables distintos", "error"); dibujarConexiones(); return;
     }
-    for (const clave of [desde, hasta]) {
-      if (ocupado(clave)) { mensaje(`${describir(st.puertos.get(clave).ref)} ya está conectado: quite primero esa conexión`, "error"); dibujarConexiones(); return; }
+    for (const clave of [desde, hasta]) {                   // a fibre takes more ends (sangría); a splitter or connector port only one
+      if (!clave.startsWith("h:") && ocupado(clave)) { mensaje(`${describir(st.puertos.get(clave).ref)} ya está conectado: quite primero esa conexión`, "error"); dibujarConexiones(); return; }
+    }
+    if (a.hilo != null && b.hilo != null && [...st.conexiones.values()].some((y) => (y.a.hilo === a.hilo && y.b.hilo === b.hilo) || (y.a.hilo === b.hilo && y.b.hilo === a.hilo))) {
+      mensaje("Esos dos hilos ya están conectados entre sí", "error"); dibujarConexiones(); return;
     }
     antesDeCambiar();
-    const x = { id: nuevoId(), version: null, a, b };
+    const tomados = [a, b].filter((r) => r.hilo != null && ocupado(`h:${r.hilo}`)).map((r) => r.hilo);
+    tomados.forEach((h) => st.conexiones.forEach((y) => {   // the fibre was already connected here: now it has two ends, a tap (sangría): all of them red
+      if ((y.a.hilo === h || y.b.hilo === h) && !y.sangria) { y.sangria = true; if (!esNuevo(y.id)) st.sucios.add(`conexiones:${y.id}`); }
+    }));
+    const x = { id: nuevoId(), version: null, a, b, sangria: tomados.length > 0 };
     st.conexiones.set(x.id, x);
     st.sucios.add(`conexiones:${x.id}`);
     st.seleccion = [{ tipo: "conexion", id: x.id }];
     dibujar();
-    mensaje(`Conectado: ${describir(a)} ↔ ${describir(b)}`, "ok");
+    mensaje(`Conectado: ${describir(a)} ↔ ${describir(b)}${x.sangria ? " · el hilo ya estaba conectado aquí: queda como sangría (rojo)" : ""}`, "ok");
   }
 
   // ------------------------------------------------------------------ selección, tooltip, menú
@@ -894,11 +956,24 @@
     moverNotas();
   }
 
+  /** The mufa that is open, the one it was entered from, and the mufas it is connected to (← arrives from, → goes to), each one a click away. */
+  function pintarVecinas() {
+    const previa = st.migas.length > 1 ? st.migas[st.migas.length - 2] : null;
+    const chips = st.cables.filter((c) => ["mufa", "nodo", "odf"].includes(c.otro.tipo)).map((c) => {
+      const marca = c.fibras.filter((f) => ocupado(`h:${f.id}`)).length;
+      return `<a href="#" class="mu-vecina${previa && previa.id === c.otro.id ? " mu-previa" : ""}" data-vecina="${c.id}" title="${esc(c.nombre)} · ${c.hilos ?? "?"} hilos · ${marca} conectado(s) aquí">${c.lado === "entrada" ? "←" : "→"} ${esc(c.otro.nombre)}</a>`;
+    });
+    $("mu-vecinas").innerHTML = `<span class="mu-etiqueta">Está en</span><span class="mu-aqui">${esc(st.datos.mufa.nombre)}</span>`
+      + (previa ? `<span class="mu-etiqueta">· entró desde</span><a href="#" class="mu-vecina mu-previa" data-miga="${st.migas.length - 2}">${esc(previa.nombre)}</a>` : "")
+      + (chips.length ? `<span class="mu-etiqueta">· conectada con</span>${chips.join("")}` : `<span class="mu-etiqueta">· sin cables a otras mufas</span>`);
+  }
+
   function pintarMigas() {
     const p = st.datos.proyecto;
     $("mu-migas").innerHTML = `<a href="#" data-miga="-1">${esc(p.nombre)}</a>` + st.migas.map((m, i) =>
       ` › ${i === st.migas.length - 1 ? `<b>${esc(m.nombre)}</b>` : `<a href="#" data-miga="${i}">${esc(m.nombre)}</a>`}`).join("");
     $("mu-nombre").value = st.datos.mufa.nombre;
+    pintarVecinas();
     const n = (st.datos.clientes || []).length;
     $("mu-clientes").textContent = n ? `Clientes (${n})` : "Clientes";
     $("mu-clientes").disabled = !n;
@@ -1243,6 +1318,7 @@
       await cerrar(false);
       if ($("modal-mufa").hidden) window.DiagramaLogico.abrir(proyecto, { inicio });
     });
+    $("mu-sangria").addEventListener("click", alternarSangria);
     $("mu-trazar").addEventListener("click", () => { const s = st.seleccion[0]; if (s && s.tipo === "hilo") trazarHilo(s.id); });
     $("mu-clientes").addEventListener("click", abrirClientes);
     $("mu-hc-form").addEventListener("submit", guardarClienteHilo);
@@ -1280,6 +1356,14 @@
       if (li.dataset.muQuitar) { st.seleccion = [{ tipo: "conexion", id: /^n\d+$/.test(li.dataset.muQuitar) ? li.dataset.muQuitar : Number(li.dataset.muQuitar) }]; eliminarSeleccion(); }
       ocultarMenu();
     });
+    $("mu-vecinas").addEventListener("click", async (e) => {
+      const v = e.target.closest("[data-vecina]"), m = e.target.closest("[data-miga]");
+      if (m) { e.preventDefault(); const i = Number(m.dataset.miga), mm = st.migas[i]; if (mm && await confirmarSalida(`volver a ${mm.nombre}`)) { st.migas = st.migas.slice(0, i + 1); cargarMufa(mm.id); } return; }
+      if (!v) return;
+      e.preventDefault();
+      const c = st.cables.find((x) => x.id === Number(v.dataset.vecina));
+      if (c) navegar(c.otro);
+    });
     $("mu-migas").addEventListener("click", async (e) => {
       const a = e.target.closest("[data-miga]");
       if (!a) return;
@@ -1301,13 +1385,8 @@
   window.EditorMufa = { abrir, cerrar, aplicar, abrirAparte, trazarHilo, _st: st, _seleccionar: seleccionar,
     /** automated checks: connect two port keys as if dragged with the mouse */
     _conectar(desde, hasta) {
-      const a = st.puertos.get(desde), b = st.puertos.get(hasta);
-      if (!a || !b) return false;
-      antesDeCambiar();
-      const x = { id: nuevoId(), version: null, a: a.ref, b: b.ref };
-      st.conexiones.set(x.id, x);
-      st.sucios.add(`conexiones:${x.id}`);
-      dibujar();
+      if (!st.puertos.get(desde) || !st.puertos.get(hasta)) return false;
+      unirPuertos(desde, hasta);
       return true;
     },
     _navegar: navegar, _abrirObjeto: abrirObjeto, _ajustar: ajustar,
