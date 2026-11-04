@@ -175,5 +175,5 @@
 
   window.RedesVistas = window.RedesVistas || {};
   window.RedesVistas.migracion = { mostrar() { conectar(); $("mg-visio").hidden = !esAdmin(); cargar(); } };
-  window.MigracionVisio = { _st: st, cargar, _subirVisio: subirVisio };
+  window.MigracionVisio = { _st: st, cargar, _subirVisio: subirVisio, abrir() { conectar(); return abrirVisio(); } };
 })();

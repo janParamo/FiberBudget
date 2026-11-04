@@ -61,7 +61,8 @@ STUBS = """(() => { window.__mufas = [];
   window.__stubs.buscar_mufa = () => ({ok: true, resultados: %s});
   window.__stubs.mufa = (id) => { window.__mufas.push(id); return {ok: true, mufa: Object.assign(%s, {id})}; };
   window.__stubs.diagrama = () => ({ok: false, error: 'sin imagen en la prueba'});
-  return true; })()""" % (json.dumps(MUFAS), json.dumps(DETALLE))
+  window.__stubs.buscar_mufa_cerca = () => ({ok: true, resultados: [%s]});
+  return true; })()""" % (json.dumps(MUFAS), json.dumps(DETALLE), json.dumps(MUFAS[1]))
 
 
 async def _recorrido():
@@ -83,9 +84,33 @@ async def _recorrido():
         await p.evaluar("window.visor.abrirDiagramaPorNombre('MF CENTRO'); true")
         await p.esperar("window.__mufas.length === 4", 10)
         assert (await p.evaluar("window.__mufas"))[-1] == 1
+        # a saved node number that is now another mufa (the diagrams were imported again and renumbered) is not trusted: the place decides
+        await p.evaluar("window.visor.verVisioAlLado({nombre: 'MF CENTRO VIEJO', nodo_id: 1, lat: 12.1, lon: -86.3}); true")
+        await p.esperar("window.__mufas.length === 5", 10)
+        assert (await p.evaluar("window.__mufas"))[-1] == 2
         assert await p.errores() == []
 
 
 @pytestmark_pagina
 def test_the_visio_diagram_of_the_right_mufa_opens_when_names_repeat():
     asyncio.run(_recorrido())
+
+
+async def _cerrar_visio_al_lado():
+    async with pagina_edge(1366, 768) as p:
+        await p.esperar("window.visor && window.visor.mapa", 20)
+        # the Visio beside the editor with a long title and a long file name: the ✕ must stay inside the window
+        await p.evaluar("""(() => { document.body.classList.add('ventana-aparte', 'visio-al-lado'); document.getElementById('modal-diagrama').hidden = false;
+          document.getElementById('diagrama-titulo').textContent = 'MUFA FOSC LOS POLLOS / SANGRIA ' + 'X'.repeat(60);
+          const s = document.getElementById('diagrama-archivo'); s.innerHTML = '<option>' + '1 MUFA RED GRANADA CITY.vsd (en diagrama de red, subred) '.repeat(3) + '</option>'; return true; })()""")
+        assert await p.evaluar("getComputedStyle(document.getElementById('diagrama-cerrar')).display") != 'none'          # the esquema window is a ventana-aparte
+        caja = await p.evaluar("(() => { const r = document.getElementById('diagrama-cerrar').getBoundingClientRect(); return [r.left, r.right, window.innerWidth]; })()")
+        assert 0 <= caja[0] and caja[1] <= caja[2], caja
+        await p.evaluar("document.getElementById('diagrama-cerrar').click(); true")
+        assert await p.evaluar("document.getElementById('modal-diagrama').hidden") is True
+        assert await p.evaluar("document.body.classList.contains('visio-al-lado')") is False
+
+
+@pytestmark_pagina
+def test_the_close_button_of_the_visio_beside_the_editor_is_always_reachable():
+    asyncio.run(_cerrar_visio_al_lado())

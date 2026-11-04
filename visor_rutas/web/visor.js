@@ -1162,7 +1162,11 @@
    *  it is far: it is another mufa); else the Visio mufa that is at its coordinate. Never a mufa that only shares some words («LOS POLLOS» is not «POLLOS NARCY'S»).
    *  Without a coordinate there is nothing to check against, so the first of the same name (or of the list) is kept. */
   async function elegirMufa(resultados, q, normal) {
-    if (q.nodo_id) { const exacta = resultados.find((x) => x.id === Number(q.nodo_id)); if (exacta) return exacta; }
+    // the saved node counts only while it is still that mufa: a new import of the diagrams renumbers the nodes, and an old number may now be another mufa
+    if (q.nodo_id) {
+      const exacta = resultados.find((x) => x.id === Number(q.nodo_id));
+      if (exacta && (normal(exacta.nombre) === normal(q.nombre) || metrosEntre(q, exacta) <= RADIO_POR_COORDENADA_M)) return exacta;
+    }
     const iguales = resultados.filter((x) => normal(x.nombre) === normal(q.nombre));
     if (q.lat == null || q.lon == null) return (iguales.length ? iguales : resultados)[0];
     const cerca = [...iguales].sort((a, b) => metrosEntre(q, a) - metrosEntre(q, b)).filter((x) => metrosEntre(q, x) <= MAX_MISMO_NOMBRE_M);

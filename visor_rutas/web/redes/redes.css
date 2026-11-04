@@ -492,7 +492,7 @@ body.ventana-aparte #modal-lz .lz-caja { border-radius: 0; box-shadow: none; max
 body.ventana-aparte #lz-aparte, body.ventana-aparte #lz-max { display: none !important; }
 #modal-lz-fuente { z-index: 3400; align-items: center; justify-content: center; }
 .lz-coord { white-space: nowrap; }
-#modal-lz-kmz { z-index: 3400; align-items: center; justify-content: center; }
+#modal-lz-kmz, #modal-mu-visio { z-index: 3400; align-items: center; justify-content: center; }       /* mu-visio opens over the mufa editor (3300) */
 .lz-kmz-caja { width: min(820px, 96vw); max-height: 90vh; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; background: var(--fondo); border-radius: 10px; }
 .lz-kmz-tabla { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--borde); border-radius: 6px; }
 .lz-kmz-tabla select { width: 100%; }

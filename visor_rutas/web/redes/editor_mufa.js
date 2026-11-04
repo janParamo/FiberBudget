@@ -1024,6 +1024,7 @@
     $("mu-visio-titulo").textContent = `Asignar la mufa del Visio a ${mu.nombre}`;
     $("mu-visio-actual").textContent = mu.nodo_visio ? `Ahora está asignada a «${mu.nombre_visio || mu.nodo_visio}».` : "Todavía no tiene una mufa del Visio asignada.";
     $("mu-visio-quitar").hidden = !mu.nodo_visio;
+    $("mu-visio-subir").hidden = !(window.MigracionVisio && Redes.estado && Redes.estado.puede && Redes.estado.puede.administrar);          // administrators only
     $("mu-visio-error").textContent = "";
     $("mu-visio-lista").innerHTML = "";
     caja.value = mu.nombre_visio || mu.nombre;
@@ -1047,6 +1048,7 @@
     $("mu-visio-buscar").addEventListener("input", (e) => { clearTimeout(espera); const t = e.target.value; espera = setTimeout(() => buscarVisio(t), 250); });
     $("mu-visio-cerrar").addEventListener("click", () => { $("modal-mu-visio").hidden = true; });
     $("mu-visio-quitar").addEventListener("click", () => guardarVisio(null, ""));
+    $("mu-visio-subir").addEventListener("click", () => { if (window.MigracionVisio) window.MigracionVisio.abrir(); });
     $("mu-visio-lista").addEventListener("click", (e) => {
       const b = e.target.closest("[data-mu-visio]");
       if (b) guardarVisio(Number(b.dataset.muVisio), b.dataset.nombre);
