@@ -979,6 +979,7 @@
     $("mu-clientes").disabled = !n;
     const mu = st.datos.mufa;
     $("mu-visio").disabled = !window.visor || !window.visor.verVisioAlLado;
+    $("mu-asignar-visio").hidden = !st.puedeEditar || !window.visor || !window.visor.buscarMufasVisio;
     $("mu-validar").hidden = !mu.estado_migracion || !st.puedeEditar;
     $("mu-validar").textContent = mu.estado_migracion === "validada" ? "Quitar validación" : "Marcar como validada";
   }
@@ -988,7 +989,68 @@
     const mu = st.datos.mufa;
     // the exact mufa (its Visio node and its place), not just the name: several mufas share one
     const quien = { nombre: mu.nombre_visio || mu.nombre, nodo_id: mu.nodo_visio || null, lat: mu.lat ?? null, lon: mu.lon ?? null };
-    if (!(await window.visor.verVisioAlLado(quien))) mensaje(`${mu.nombre}: no se encontró su diagrama Visio`, "error");
+    if (await window.visor.verVisioAlLado(quien)) return;
+    mensaje(`${mu.nombre}: no se encontró su diagrama Visio${st.puedeEditar ? ": elija cuál es" : ""}`, "error");
+    if (st.puedeEditar && window.visor.buscarMufasVisio) asignarVisio();
+  }
+
+  // ------------------------------------------------------------------ asignar la mufa del Visio a mano
+  const kilometros = (m) => (m == null ? "—" : m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
+  function metros(a, b) {
+    if (a.lat == null || a.lon == null || b.lat == null || b.lon == null) return null;
+    const r = Math.PI / 180, dx = (b.lon - a.lon) * r * Math.cos(a.lat * r), dy = (b.lat - a.lat) * r;
+    return Math.hypot(dx, dy) * 6371000;
+  }
+
+  async function buscarVisio(texto) {
+    const lista = $("mu-visio-lista"), mu = st.datos.mufa;
+    if (String(texto).trim().length < 2) { lista.innerHTML = ""; return; }
+    const [r, cerca] = await Promise.all([window.visor.buscarMufasVisio(texto),
+      mu.lat != null && window.visor.buscarMufasVisioCerca ? window.visor.buscarMufasVisioCerca(mu.lat, mu.lon, 500) : { ok: true, resultados: [] }]);
+    if (String($("mu-visio-buscar").value).trim() !== String(texto).trim()) return;          // another search was typed meanwhile
+    if (!r.ok) { $("mu-visio-error").textContent = r.error; return; }
+    $("mu-visio-error").textContent = "";
+    const vistos = new Set(r.resultados.map((x) => x.id));
+    const todas = [...r.resultados, ...(cerca.ok ? cerca.resultados.filter((x) => !vistos.has(x.id)) : [])];          // by name, and the ones around this mufa whatever their name
+    const filas = todas.map((x) => ({ ...x, d: metros(mu, x) })).sort((a, b) => (a.d ?? Infinity) - (b.d ?? Infinity));
+    lista.innerHTML = filas.length ? filas.map((x) => `<tr><td>${esc(x.nombre)}</td><td>${esc(x.zona || "")}</td><td>${x.diagramas}</td><td>${kilometros(x.d)}</td>
+      <td><button type="button" class="btn btn-chico" data-mu-visio="${x.id}" data-nombre="${esc(x.nombre)}" ${x.diagramas ? "" : "disabled"} title="${x.diagramas ? "Usar esta mufa del Visio" : "No tiene diagrama"}">Asignar</button></td></tr>`).join("")
+      : `<tr><td colspan="5" class="nota">No hay mufas con ese nombre en el Visio</td></tr>`;
+  }
+
+  function asignarVisio() {
+    if (!st.puedeEditar || !window.visor || !window.visor.buscarMufasVisio) return;
+    const mu = st.datos.mufa, caja = $("mu-visio-buscar");
+    $("mu-visio-titulo").textContent = `Asignar la mufa del Visio a ${mu.nombre}`;
+    $("mu-visio-actual").textContent = mu.nodo_visio ? `Ahora está asignada a «${mu.nombre_visio || mu.nodo_visio}».` : "Todavía no tiene una mufa del Visio asignada.";
+    $("mu-visio-quitar").hidden = !mu.nodo_visio;
+    $("mu-visio-error").textContent = "";
+    $("mu-visio-lista").innerHTML = "";
+    caja.value = mu.nombre_visio || mu.nombre;
+    $("modal-mu-visio").hidden = false;
+    caja.focus(); caja.select();
+    buscarVisio(caja.value);
+  }
+
+  async function guardarVisio(nodoId, nombre) {
+    const r = await Redes.llamar("asignar_visio", { mufa_id: st.mufaId, nodo_id: nodoId, nombre_visio: nombre });
+    if (!r.ok) { $("mu-visio-error").textContent = r.error; return; }
+    $("modal-mu-visio").hidden = true;
+    recargar(r);
+    mensaje(nodoId ? `${r.mufa.nombre}: asignada a la mufa «${nombre}» del Visio` : `${r.mufa.nombre}: se quitó la asignación del Visio`, "ok");
+    if (nodoId) verVisio();
+  }
+
+  function conectarAsignarVisio() {
+    let espera = null;
+    $("mu-asignar-visio").addEventListener("click", asignarVisio);
+    $("mu-visio-buscar").addEventListener("input", (e) => { clearTimeout(espera); const t = e.target.value; espera = setTimeout(() => buscarVisio(t), 250); });
+    $("mu-visio-cerrar").addEventListener("click", () => { $("modal-mu-visio").hidden = true; });
+    $("mu-visio-quitar").addEventListener("click", () => guardarVisio(null, ""));
+    $("mu-visio-lista").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-mu-visio]");
+      if (b) guardarVisio(Number(b.dataset.muVisio), b.dataset.nombre);
+    });
   }
 
   async function validar() {
@@ -1333,6 +1395,7 @@
     });
     $("mu-visio").addEventListener("click", verVisio);
     $("mu-validar").addEventListener("click", validar);
+    conectarAsignarVisio();
     $("mu-colores").addEventListener("change", (e) => { st.colorPor = e.target.value; dibujarConexiones(); pintarResumen(); });
     $("mu-cb-form").addEventListener("submit", guardarConfigCable);
     $("mu-cb-hilos").addEventListener("change", mostrarConfig);

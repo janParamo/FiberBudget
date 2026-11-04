@@ -126,3 +126,7 @@ Nueva línea de trabajo: apps aparte para planificar y ejecutar las instalacione
 - El trazado de hilo sigue cada punta de un hilo sangrado (un camino por cada una), y «lejos» de cada hilo muestra todas sus puntas separadas por «+». Pruebas: `test_redes_sangria.py`, `test_visor_pagina_sangria.py`.
 - Editor de mufa: el rótulo de cada cable se queda como estaba (`cable | origen | destino | hilos`), y una franja debajo de la barra muestra la mufa abierta, desde cuál se entró y las mufas conectadas (← llega de, → va a), cada una a un clic.
 - Arreglo: las listas desplegables de los diálogos del esquema (Nuevo cable, Nodo/ODF, Mufas del KMZ, Conexión de hilos) salían en blanco en la ventana aparte; ahora se abren como menú de la propia página (`lienzo.js`, `menuPropio`; prueba `test_visor_pagina_menu_select.py`).
+
+## Ticket con varias coordenadas → presupuesto de todas
+
+- En «Tickets», si el ticket trae más de una coordenada, junto a «Hacer presupuesto» aparece **«Presupuesto de las N coordenadas»**: abre la ventana de **Coordenadas masivas** directo en la vista previa, con un punto por coordenada (ticket, cliente + número, código de cliente) y el comentario del ticket; ahí se revisan, se desmarcan las que no se quieran y se pulsa «Calcular», igual que con un archivo (un Excel por punto, `ticket_cliente N.xlsx`, y Resumen). «Hacer presupuesto» sigue haciendo uno solo con la coordenada elegida. Prueba: `test_visor_pagina_tickets.py`.

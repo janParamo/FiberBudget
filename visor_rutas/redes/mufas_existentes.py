@@ -142,20 +142,61 @@ def _elemento_editable(con: Any, actor: dict[str, Any], mufa_id: int) -> dict[st
     return dict(m)
 
 
+def _marcar_validada(con: Any, actor: dict[str, Any], m: dict[str, Any], validada: bool) -> None:
+    nuevo = "validada" if validada else "editada"
+    con.execute("UPDATE redes.elementos SET estado_migracion = %s, confianza = CASE WHEN %s THEN 'verificada' ELSE confianza END, "
+                "version = version + 1, actualizado_en = now(), actualizado_por = %s WHERE id = %s", (nuevo, validada, actor["id"], m["id"]))
+    if validada:
+        for tabla in ("splitters", "conexiones", "mufa_clientes"):
+            con.execute(f"UPDATE redes.{tabla} SET confianza = 'verificada' WHERE mufa_id = %s AND borrado_en IS NULL", (m["id"],))
+        con.execute("UPDATE redes.puerto_servicios x SET confianza = 'verificada' FROM redes.puertos p JOIN redes.splitters s ON s.id = p.splitter_id "
+                    "WHERE x.puerto_id = p.id AND s.mufa_id = %s AND x.borrado_en IS NULL", (m["id"],))
+    repositorio.registrar(con, actor["id"], "elemento", m["id"], "editar", {"estado_migracion": [m["estado_migracion"], nuevo]},
+                          proyecto_id=m["proyecto_id"])
+
+
 def validar(con: Any, actor: dict[str, Any], *, mufa_id: int, validada: bool = True) -> dict[str, Any]:
     """Marks the mufa as checked by a person (or removes the mark: it becomes "editada")."""
     m = _elemento_editable(con, actor, mufa_id)
-    nuevo = "validada" if validada else "editada"
     with con.transaction():
-        con.execute("UPDATE redes.elementos SET estado_migracion = %s, confianza = CASE WHEN %s THEN 'verificada' ELSE confianza END, "
-                    "version = version + 1, actualizado_en = now(), actualizado_por = %s WHERE id = %s", (nuevo, validada, actor["id"], m["id"]))
-        if validada:
-            for tabla in ("splitters", "conexiones", "mufa_clientes"):
-                con.execute(f"UPDATE redes.{tabla} SET confianza = 'verificada' WHERE mufa_id = %s AND borrado_en IS NULL", (m["id"],))
-            con.execute("UPDATE redes.puerto_servicios x SET confianza = 'verificada' FROM redes.puertos p JOIN redes.splitters s ON s.id = p.splitter_id "
-                        "WHERE x.puerto_id = p.id AND s.mufa_id = %s AND x.borrado_en IS NULL", (m["id"],))
-        repositorio.registrar(con, actor["id"], "elemento", m["id"], "editar", {"estado_migracion": [m["estado_migracion"], nuevo]},
-                              proyecto_id=m["proyecto_id"])
+        _marcar_validada(con, actor, m, validada)
+    return mufa.leer(con, actor, mufa_id=m["id"])
+
+
+def validar_zona(con: Any, actor: dict[str, Any], *, proyecto_id: int) -> dict[str, Any]:
+    """«Validar todo» of the zone schema: marks as validated every mufa of the project that is not yet (the ones that came from the Visio / KMZ,
+    with a migration state). One transaction: all or none. Returns how many were marked and how many were already validated."""
+    if not proyectos.puede_editar(con, actor, int(proyecto_id)):
+        raise SinPermiso("No tiene permiso para editar este proyecto")
+    with con.transaction():
+        filas = con.execute("SELECT id, proyecto_id, tipo, nombre, estado_migracion FROM redes.elementos WHERE proyecto_id = %s AND tipo = ANY(%s) "
+                            "AND borrado_en IS NULL AND estado_migracion IS NOT NULL ORDER BY id", (int(proyecto_id), list(TIPOS_MUFA))).fetchall()
+        pendientes = [dict(f) for f in filas if f["estado_migracion"] != "validada"]
+        for m in pendientes:
+            _marcar_validada(con, actor, m, True)
+    return {"validadas": len(pendientes), "ya_validadas": len(filas) - len(pendientes)}
+
+
+def asignar_visio(con: Any, actor: dict[str, Any], *, mufa_id: int, nodo_id: Any, nombre_visio: Any) -> dict[str, Any]:
+    """Links the mufa to the Visio node (and so to its diagram) chosen by a person: «Ver Visio original» looks for the diagram by that node.
+    For the mufas the Visio search does not find by name (renamed, created from the KMZ…). `nodo_id` None / empty removes the link."""
+    m = _elemento_editable(con, actor, mufa_id)
+    quitar = nodo_id in (None, "")
+    try:
+        nodo = None if quitar else int(nodo_id)
+    except (TypeError, ValueError):
+        raise DatosInvalidos({"nodo_id": "nodo de Visio no válido"}) from None
+    nombre = " ".join(str(nombre_visio or "").split())[:160]
+    if nodo is not None and not nombre:
+        raise DatosInvalidos({"nombre_visio": "falta el nombre de la mufa del Visio"})
+    with con.transaction():
+        if nodo is None:
+            con.execute("UPDATE redes.elementos SET ref_visio = nullif(ref_visio - 'nodo_id' - 'nombre_visio', '{}'::jsonb), version = version + 1, "
+                        "actualizado_en = now(), actualizado_por = %s WHERE id = %s", (actor["id"], m["id"]))
+        else:
+            con.execute("UPDATE redes.elementos SET ref_visio = coalesce(ref_visio, '{}'::jsonb) || jsonb_build_object('nodo_id', %s::int, 'nombre_visio', %s::text), "
+                        "version = version + 1, actualizado_en = now(), actualizado_por = %s WHERE id = %s", (nodo, nombre, actor["id"], m["id"]))
+        repositorio.registrar(con, actor["id"], "elemento", m["id"], "editar", {"diagrama_visio": [None, nombre or None]}, proyecto_id=m["proyecto_id"])
     return mufa.leer(con, actor, mufa_id=m["id"])
 
 

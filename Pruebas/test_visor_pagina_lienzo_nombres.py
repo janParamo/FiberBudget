@@ -108,3 +108,21 @@ async def _ventana_del_esquema(zona):
 
 def test_the_schema_window_shows_only_the_schema(zona):
     asyncio.run(_ventana_del_esquema(zona))
+
+
+async def _validar_todo(zona):
+    con, proy, ids = zona
+    con.execute("UPDATE redes.elementos SET estado_migracion = 'automatica' WHERE proyecto_id = %s AND tipo = 'mufa'", (proy["id"],))
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.Esquema && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.Esquema.abrir(%d); true" % proy["id"])
+        await p.esperar("document.querySelectorAll('#lz-lista .lz-item').length === 3", 15)
+        await p.evaluar("document.getElementById('lz-validar-todo').click(); true")
+        await p.esperar("!document.getElementById('modal-confirmar').hidden", 5)
+        await p.evaluar("document.getElementById('conf-si').click(); true")
+        await p.esperar("document.getElementById('lz-estado').textContent.includes('validada')", 10)
+    assert {f["estado_migracion"] for f in _consulta(con, "SELECT estado_migracion FROM redes.elementos WHERE proyecto_id = %s AND tipo = 'mufa'", proy["id"])} == {"validada"}
+
+
+def test_validate_all_button(zona):
+    asyncio.run(_validar_todo(zona))

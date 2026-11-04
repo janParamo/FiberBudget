@@ -65,6 +65,35 @@ def test_validate_and_unvalidate(red_base):
         mufas_existentes.validar(con, lector, mufa_id=ids["b"])
 
 
+def test_validate_whole_zone(red_base):
+    con, admin, p, ids, _ = red_base
+    mufas_existentes.validar(con, admin, mufa_id=ids["b"])
+    estados = lambda: {f["estado_migracion"] for f in con.execute("SELECT estado_migracion FROM redes.elementos WHERE proyecto_id = %s AND tipo = 'mufa' "
+                                                                  "AND estado_migracion IS NOT NULL", (p["id"],)).fetchall()}
+    r = mufas_existentes.validar_zona(con, admin, proyecto_id=p["id"])
+    assert estados() == {"validada"} and r["ya_validadas"] >= 1
+    assert mufas_existentes.validar_zona(con, admin, proyecto_id=p["id"])["validadas"] == 0
+    lector = usuarios.guardar(con, admin, datos={"nombre": "Ana", "rol": "lector", "persona_visor": "ana"})["usuario"]
+    with pytest.raises(db.SinPermiso):
+        mufas_existentes.validar_zona(con, lector, proyecto_id=p["id"])
+
+
+def test_assign_visio_node_by_hand(red_base):
+    con, admin, p, ids, _ = red_base
+    antes = con.execute("SELECT ref_visio ? 'clave' AS c FROM redes.elementos WHERE id = %s", (ids["b"],)).fetchone()["c"]
+    vista = mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id="321", nombre_visio="  MF  PUERTO PAIZ ")
+    assert (vista["mufa"]["nodo_visio"], vista["mufa"]["nombre_visio"]) == (321, "MF PUERTO PAIZ")
+    clave = con.execute("SELECT ref_visio ? 'clave' AS c FROM redes.elementos WHERE id = %s", (ids["b"],)).fetchone()["c"]
+    assert clave == antes                                               # linking a diagram does not turn a mufa into one migrated from the Visio (or the opposite)
+    with pytest.raises(db.DatosInvalidos):
+        mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id="x", nombre_visio="A")
+    vista = mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id=None, nombre_visio="")
+    assert vista["mufa"]["nodo_visio"] is None
+    lector = usuarios.guardar(con, admin, datos={"nombre": "Ana", "rol": "lector", "persona_visor": "ana"})["usuario"]
+    with pytest.raises(db.SinPermiso):
+        mufas_existentes.asignar_visio(con, lector, mufa_id=ids["b"], nodo_id=1, nombre_visio="A")
+
+
 def test_cable_configuration_keeps_connections_by_number(red_base):
     con, admin, p, ids, hilo = red_base
     c1 = con.execute("SELECT * FROM redes.cables WHERE id = %s", (ids["c1"],)).fetchone()

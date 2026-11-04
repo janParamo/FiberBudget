@@ -547,6 +547,39 @@ def buscar_mufas(texto: str, visio_con: Any = None, archivo_sqlite: Path | None 
     return [dict(zip(columnas, f)) for f in filas]
 
 
+def buscar_mufas_cerca(lat: float, lon: float, radio_m: float = 300.0, visio_con: Any = None, archivo_sqlite: Path | None = None,
+                       limite: int = 15) -> list[dict[str, Any]]:
+    """Network nodes (mufas, nodos, ODF...) of the Visio within `radio_m` of a coordinate, nearest first, with `distancia_m`. Clients are left out.
+    The name is not used: the Visio and the KMZ agree on the place even when the same mufa is written differently."""
+    lat, lon = float(lat), float(lon)
+    radio_m = max(10.0, min(float(radio_m), 5000.0))
+    if archivo_sqlite is None:
+        archivo_sqlite = get_settings().red_fibra_db
+    fuente = _Fuente(visio_con, archivo_sqlite)
+    if not fuente.disponible:
+        raise FileNotFoundError("base de diagramas no disponible")
+    dlat = radio_m / 111_320.0
+    dlon = dlat / max(math.cos(math.radians(lat)), 0.01)
+    try:
+        filas = fuente.filas(
+            "SELECT n.id, n.nombre, n.tipo, n.zona, n.lat, n.lon, n.fuente_coord, n.notas, "
+            "(SELECT count(DISTINCT a.archivo_id) FROM nodo_apariciones a JOIN archivos f ON f.id = a.archivo_id "
+            " WHERE a.nodo_id = n.id AND f.estado = 'ok' AND f.formato <> 'xlsx') AS diagramas "
+            "FROM nodos n WHERE n.tipo <> 'CLIENTE' AND n.lat BETWEEN ? AND ? AND n.lon BETWEEN ? AND ?",
+            (lat - dlat, lat + dlat, lon - dlon, lon + dlon))
+    finally:
+        fuente.cerrar()
+    columnas = ("id", "nombre", "tipo", "zona", "lat", "lon", "fuente_coord", "notas", "diagramas")
+    salida = []
+    for f in filas:
+        n = dict(zip(columnas, f))
+        n["distancia_m"] = round(_distance_m(lat, lon, float(n["lat"]), float(n["lon"])), 1)
+        if n["distancia_m"] <= radio_m:
+            salida.append(n)
+    salida.sort(key=lambda n: (n["distancia_m"], -(n["diagramas"] or 0)))
+    return salida[:int(limite)]
+
+
 MAX_RESULTADOS_DIAGRAMA = 60
 TOLERANCIA_COORDENADA_M = 25.0         # a coordinate typed is the one written in the diagram if it is this close
 RADIO_MUFAS_M = 500.0                  # ...and the mufas of the diagram this close to it are listed too (nearest first)

@@ -72,3 +72,31 @@ async def _recorrido():
 
 def test_the_tickets_window_lists_what_waits_for_a_budget_and_fills_the_form():
     asyncio.run(_recorrido())
+
+
+async def _todas():
+    async with pagina_edge(1366, 768) as p:
+        await p.esperar("window.visor && window.Tickets && window.Masivas && document.querySelector('[data-vista=tickets]')", 20)
+        await p.evaluar(STUBS)
+        await p.evaluar("window.Redes = window.Redes || {}; try { window.Redes.disponible = true; } catch (e) {} window.__stubs.estado = () => ({ok: true, modo: 'local'}); true")      # the window of bulk coordinates needs the redes module
+        await p.evaluar("window.Tickets._st.cargando = false; true")
+        await p.evaluar("document.querySelector('[data-vista=tickets]').click(); document.getElementById('tk-con-hechos').click(); true")
+        await p.esperar("document.querySelectorAll('#tk-lista [data-ticket]').length === 2", 10)
+        # a ticket with one coordinate does not offer it
+        await p.evaluar("document.querySelector('#tk-lista [data-ticket=\"DTF-377-48662\"]').click(); true")
+        assert await p.evaluar("document.querySelector('#tk-detalle [data-tk=todas]')") is None
+        # the one with two does: the window of «Coordenadas masivas» opens at the preview with both points, the ticket, the client and the code
+        await p.evaluar("document.querySelector('#tk-lista [data-ticket=\"FMO-311-48543\"]').click(); true")
+        assert "2 coordenadas" in await p.evaluar("document.querySelector('#tk-detalle [data-tk=todas]').textContent")
+        await p.evaluar("document.querySelector('#tk-detalle [data-tk=todas]').click(); true")
+        await p.esperar("document.getElementById('ms-ventana') && !document.getElementById('ms-ventana').hidden && window.Masivas.estado.vista === 'previa'", 10)
+        assert await p.evaluar("document.getElementById('vista-tickets').hidden") is True                         # back at the map, where the points are drawn
+        puntos = await p.evaluar("window.Masivas._ms.puntos.map(x => [x.n, x.ticket, x.nombre, x.codigo, x.lat, x.lon, x.estado, x.incluir])")
+        assert puntos == [[1, "FMO-311-48543", "Ferretería Luna 1", "C21232", 12.1, -86.2, "ok", True], [2, "FMO-311-48543", "Ferretería Luna 2", "C21232", 12.2, -86.3, "ok", True]]
+        assert await p.evaluar("window.Masivas._ms.nombre") == "FMO-311-48543_Ferretería Luna.txt"
+        assert "2 coordenadas" in await p.evaluar("document.getElementById('ms-ventana').innerText")
+        assert await p.errores() == []
+
+
+def test_a_ticket_with_several_coordinates_goes_to_the_bulk_window():
+    asyncio.run(_todas())

@@ -159,6 +159,10 @@
     ]).addTo(mapa);
     const calles = L.tileLayer(cfg.streets_url, { ...opciones, attribution: cfg.streets_attribution });
 
+    // Light map without labels (CARTO «Positron no labels»): clean background to draw the diagrams on. Public tiles, no key; {r} = retina.
+    const diagrama = L.tileLayer(cfg.diagram_url || "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+      { ...opciones, subdomains: "abcd", attribution: cfg.diagram_attribution || "© OpenStreetMap, © CARTO" });
+
     // Whole network (like the KMZ in Google Earth): one canvas in its own pane under the route and
     // markers; the layers start OFF and load only the visible area when turned on (see cargarRed).
     mapa.createPane("red").style.zIndex = 350;
@@ -177,7 +181,7 @@
     capas.busqueda = L.layerGroup().addTo(mapa);       // mufa chosen in the search box
     capas.coordenada = L.layerGroup().addTo(mapa);     // pin of a searched coordinate (mapa/pin.js)
 
-    baseMapa = { satelite, calles };     // the layer switches live in the Lugares panel (mapa/capas_visor.js)
+    baseMapa = { satelite, calles, diagrama };     // the layer switches live in the Lugares panel (mapa/capas_visor.js)
     crearEstadoRed();
     mapa.on("moveend", () => {
       clearTimeout(temporizadorRed);
@@ -1145,20 +1149,28 @@
     try { res = await api.buscar_mufa(limpio); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return null; }
     const normal = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-    const m = elegirMufa(res.resultados, q, normal);
+    const m = await elegirMufa(res.resultados, q, normal);
     if (!m || !m.diagramas) { mensaje(`${limpio}: no tiene diagrama Visio`, "error"); return null; }
     return m;
   }
 
-  function elegirMufa(resultados, q, normal) {
+  const MAX_MISMO_NOMBRE_M = 1500;      // a Visio mufa with the same name farther than this is another mufa
+  const RADIO_POR_COORDENADA_M = 150;   // the Visio and the KMZ agree on the place: a Visio mufa this close is the one, whatever its name
+  const metrosEntre = (a, b) => (a.lat == null || b.lat == null ? Infinity : Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180)));
+
+  /** The Visio mufa meant by `q` ({nombre, nodo_id?, lat?, lon?}), among the name search `resultados`. Its Visio node if it has one; else the nearest of the same name (not if
+   *  it is far: it is another mufa); else the Visio mufa that is at its coordinate. Never a mufa that only shares some words («LOS POLLOS» is not «POLLOS NARCY'S»).
+   *  Without a coordinate there is nothing to check against, so the first of the same name (or of the list) is kept. */
+  async function elegirMufa(resultados, q, normal) {
     if (q.nodo_id) { const exacta = resultados.find((x) => x.id === Number(q.nodo_id)); if (exacta) return exacta; }
     const iguales = resultados.filter((x) => normal(x.nombre) === normal(q.nombre));
-    const lista = iguales.length ? iguales : resultados;
-    if (lista.length > 1 && q.lat != null && q.lon != null) {
-      const d = (x) => (x.lat == null || x.lon == null ? Infinity : Math.hypot(x.lat - q.lat, (x.lon - q.lon) * Math.cos((q.lat * Math.PI) / 180)));
-      return [...lista].sort((a, b) => d(a) - d(b))[0];
-    }
-    return lista[0];
+    if (q.lat == null || q.lon == null) return (iguales.length ? iguales : resultados)[0];
+    const cerca = [...iguales].sort((a, b) => metrosEntre(q, a) - metrosEntre(q, b)).filter((x) => metrosEntre(q, x) <= MAX_MISMO_NOMBRE_M);
+    if (cerca.length) return cerca[0];
+    let res;
+    try { res = await api.buscar_mufa_cerca(q.lat, q.lon, RADIO_POR_COORDENADA_M); } catch (e) { res = { ok: false }; }
+    const delLugar = res && res.ok ? res.resultados.filter((x) => x.diagramas) : [];
+    return delLugar[0] || null;
   }
 
   async function mostrarDiagramaDeMufa(quien, { alLado = false, indice = 0 } = {}) {
@@ -1289,7 +1301,7 @@
     try { res = await api.buscar_mufa(limpio); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return; }
     const normal = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-    const m = elegirMufa(res.resultados, { nombre: limpio, lat: lat ?? null, lon: lon ?? null }, normal);
+    const m = await elegirMufa(res.resultados, { nombre: limpio, lat: lat ?? null, lon: lon ?? null }, normal);
     if (!m) { mensaje(`${limpio}: no está en los diagramas Visio`, "error"); return; }
     if (!m.diagramas) { mensaje(`${m.nombre}: no tiene diagrama Visio`, "error"); return; }
     seleccionarMufa(m);
@@ -2475,7 +2487,7 @@
           window.Redes.iniciar(api).catch((e) => console.error("Redes", e));
         }
       }
-      if (window.Tickets && !VENTANA) window.Tickets.iniciar({ api: () => api, rellenar: (s) => rellenarPresupuestoDeTicket(s) });     // the Kayako tickets that wait for a budget
+      if (window.Tickets && !VENTANA) window.Tickets.iniciar({ api: () => api, rellenar: (s) => rellenarPresupuestoDeTicket(s), masivas: (d) => { mostrarVista("mapa"); if (window.Masivas) window.Masivas.abrirConPuntos(d); } });     // the Kayako tickets that wait for a budget
       if (VENTANA) {                   // a window of its own: only the diagram or the editor, no KMZ network, no saved layer state
         await arrancarVentanaAparte();
         return;
@@ -2545,6 +2557,8 @@
     rellenarPresupuestoDeTicket: (s) => rellenarPresupuestoDeTicket(s),
     iconosVisor: { catalogo: CATALOGO_ICONOS, personalizados: () => ({ ...personalizados }), aplicar: (m) => aplicarIconosVisor(m),
                    html: (id) => (personalizados[id] ? window.Iconos.svg({ ...personalizados[id], escala: 1, opacidad: 1 }, 26) : ICONOS[id].options.html) },
+    buscarMufasVisioCerca: async (lat, lon, radio) => { try { return await api.buscar_mufa_cerca(lat, lon, radio); } catch (e) { return { ok: false, error: String(e) }; } },
+    buscarMufasVisio: async (texto) => { try { return await api.buscar_mufa(String(texto || "").trim()); } catch (e) { return { ok: false, error: String(e) }; } },
     verVisioAlLado: (quien) => verVisioAlLado(quien), abrirVentana: (tipo, parametros) => abrirVentana(tipo, parametros),
     cerrarVentana: () => cerrarVentana(), get aparte() { return VENTANA ? VENTANA.tipo : null; }, marcarBuscada: (lat, lon, nombre, tipo) => marcarBuscada(lat, lon, nombre, tipo),
     mensaje: (texto, tipo) => mensaje(texto, tipo), modoCaptura: (activar) => modoCaptura(activar),

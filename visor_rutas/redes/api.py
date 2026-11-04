@@ -55,6 +55,8 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     # migración Visio, fase 5: la red existente interactiva
     "mufa_existente": mufas_existentes.buscar,
     "validar_mufa": mufas_existentes.validar,
+    "validar_zona": mufas_existentes.validar_zona,
+    "asignar_visio": mufas_existentes.asignar_visio,
     "configurar_cable": mufas_existentes.configurar_cable,
     "red_de_mufas": mufas_existentes.red_de_mufas,
     "buscar_elementos": mufas_existentes.buscar_elementos,            # visor v2: buscador del mapa

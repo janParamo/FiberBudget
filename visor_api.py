@@ -676,6 +676,13 @@ def mufas(texto: str = Query(default="", max_length=100), persona: str = Depends
     return api_local().buscar_mufa(texto)
 
 
+@router.get("/mufas_cerca")
+def mufas_cerca(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180), radio_m: float = Query(default=300, ge=10, le=5000),
+                persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """Mufas / nodes of the Visio around a coordinate, nearest first (read-only)."""
+    return api_local().buscar_mufa_cerca(lat, lon, radio_m)
+
+
 @router.get("/mufa/{nodo_id}")
 def mufa(nodo_id: int, persona: str = Depends(persona_visor)) -> dict[str, Any]:
     """One searched mufa: diagrams, hilos, splitters... (read-only)."""

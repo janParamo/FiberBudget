@@ -72,8 +72,22 @@
         <dt>Coordenada</dt><dd>${lugares.length > 1 ? `<select id="tk-coordenada" aria-label="Coordenada">${lugares.map((c, i) => `<option value="${i}" ${i === st.coordenada ? "selected" : ""}>${esc(c)}</option>`).join("")}</select> <span class="nota">el ticket trae ${lugares.length}</span>`
           : lugares.length ? esc(lugares[0]) : '<span class="nota">el ticket no la dice: se escribe al hacer el presupuesto</span>'}</dd></dl>
       ${t.presupuestos.length ? `<div class="vp-avisos"><b>Ya hay presupuestos de este ticket:</b><ul>${t.presupuestos.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>` : ""}
-      <div class="tk-acciones"><button type="button" class="btn btn-primario" data-tk="hacer">Hacer presupuesto</button></div>
+      <div class="tk-acciones"><button type="button" class="btn btn-primario" data-tk="hacer">Hacer presupuesto</button>${lugares.length > 1
+        ? ` <button type="button" class="btn" data-tk="todas" title="Un presupuesto por cada coordenada del ticket, como en «Coordenadas masivas»">Presupuesto de las ${lugares.length} coordenadas</button>` : ""}</div>
       <details><summary>Texto del ticket</summary><pre class="tk-texto">${esc(t.comentario || "(sin comentario)")}${t.ultimo_comentario ? "\\n\\n--- último comentario ---\\n" + esc(t.ultimo_comentario) : ""}</pre></details>`;
+  }
+
+  /** The ticket brings several coordinates: one budget for each, in the window of «Coordenadas masivas» with the ticket, the client and the comment already in it. */
+  function todasLasCoordenadas() {
+    const t = st.tickets.find((x) => x.ticket === st.elegido);
+    if (!t || !st.ctx.masivas) return;
+    const s = t.sugerencia, lugares = s.coordenadas || [];
+    const cliente = (s.client_name || "").trim();
+    const puntos = lugares.map((c, i) => {
+      const [lat, lon] = String(c).split(",").map((x) => Number(x.trim()));
+      return { n: i + 1, ticket: t.ticket, nombre: cliente ? `${cliente} ${i + 1}` : `Punto ${i + 1}`, codigo: s.client_code || "", texto: String(c), lat, lon, estado: "ok", motivo: "", sugerencia: null, incluir: true };
+    });
+    st.ctx.masivas({ nombre: `${t.ticket}_${(cliente || "ticket").replace(/[^\p{L}\p{N} _-]/gu, "").trim()}.txt`, puntos, comentario: t.comentario || "" });
   }
 
   function conectar() {
@@ -84,6 +98,7 @@
     });
     $("tk-detalle").addEventListener("change", (e) => { if (e.target.id === "tk-coordenada") st.coordenada = Number(e.target.value); });
     $("tk-detalle").addEventListener("click", (e) => {
+      if (e.target.closest("[data-tk=todas]")) { todasLasCoordenadas(); return; }
       if (!e.target.closest("[data-tk=hacer]")) return;
       const t = st.tickets.find((x) => x.ticket === st.elegido);
       if (!t) return;

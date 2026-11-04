@@ -149,7 +149,8 @@
     const calles = L.tileLayer(cfg.streets_url || "", { ...op, attribution: cfg.streets_attribution || "" });
     const satelite = L.layerGroup([L.tileLayer(cfg.imagery_url || "", { ...op, attribution: "Imágenes © Esri" }),
                                    L.tileLayer(cfg.labels_url || "", op)]);
-    return { calles, satelite };
+    const claro = L.tileLayer(cfg.diagram_url || "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", { ...op, subdomains: "abcd", attribution: "© OpenStreetMap, © CARTO" });
+    return { calles, satelite, claro };
   }
 
   function crearMapa() {
@@ -157,9 +158,9 @@
     const cfg = Redes.cfg || {};
     st.mapa = L.map("pr-mapa", { zoomControl: true, maxZoom: 20 }).setView(cfg.inicio || [12.13, -86.25], 13);
     st.mapa.attributionControl.setPrefix(false);
-    const { calles, satelite } = capasBase();
+    const { calles, satelite, claro } = capasBase();
     satelite.addTo(st.mapa);
-    L.control.layers({ "Mapa": calles, "Satélite": satelite }, null, { position: "topleft", collapsed: false }).addTo(st.mapa);
+    L.control.layers({ "Mapa": calles, "Satélite": satelite, "Claro (diagramar)": claro }, null, { position: "topleft", collapsed: false }).addTo(st.mapa);
     st.capaClientes = L.layerGroup().addTo(st.mapa);
     st.mapa.on("click", (e) => {
       if (st.dibujando) return;

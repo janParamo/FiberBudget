@@ -320,9 +320,19 @@
     else if (a === "cuales_pdf") ms.cualesPdf = b.value;
   }
 
+  /** Opens the window with points that are already known (the coordinates of a Kayako ticket), straight at the preview: the same «Calcular» as with a file. */
+  async function abrirConPuntos({ nombre, puntos, comentario }) {
+    if (ms.sondeo) { clearInterval(ms.sondeo); ms.sondeo = null; }
+    await abrir();
+    ms.nombre = nombre; ms.formato = "ticket"; ms.puntos = puntos; ms.avisos = []; ms.comentario = comentario || "";
+    ms.lote = null; ms.resultados = []; ms.seleccionado = null; ms.pdfAvisado = ""; ms.vista = "previa";
+    estado("");
+    dibujarPuntos(); ajustarMapa();
+  }
+
   function iniciar(ctx) {
     ms.ctx = ctx;
   }
 
-  window.Masivas = { iniciar, abrir, get estado() { return { vista: ms.vista, puntos: ms.puntos.length, resultados: ms.resultados.length }; }, _ms: ms };
+  window.Masivas = { iniciar, abrir, abrirConPuntos, get estado() { return { vista: ms.vista, puntos: ms.puntos.length, resultados: ms.resultados.length }; }, _ms: ms };
 })();

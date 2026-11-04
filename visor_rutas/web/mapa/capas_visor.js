@@ -71,11 +71,11 @@
     items: () => [
       { id: "satelite", texto: "Satélite", tipo: "radio", marcado: ctx.mapa.hasLayer(ctx.base.satelite) },
       { id: "calles", texto: "Calles", tipo: "radio", marcado: ctx.mapa.hasLayer(ctx.base.calles) },
+      { id: "diagrama", texto: "Claro sin etiquetas (para diagramar)", tipo: "radio", marcado: ctx.mapa.hasLayer(ctx.base.diagrama) },
     ],
     alternar(id) {
-      const otra = id === "satelite" ? "calles" : "satelite";
+      Object.keys(ctx.base).filter((otra) => otra !== id && ctx.mapa.hasLayer(ctx.base[otra])).forEach((otra) => ctx.mapa.removeLayer(ctx.base[otra]));
       if (!ctx.mapa.hasLayer(ctx.base[id])) ctx.mapa.addLayer(ctx.base[id]);
-      if (ctx.mapa.hasLayer(ctx.base[otra])) ctx.mapa.removeLayer(ctx.base[otra]);
     },
     alternarTodas() { /* radio group: no header box */ },
   };

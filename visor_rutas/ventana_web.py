@@ -28,6 +28,7 @@ import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any
 from urllib.parse import urlencode
 
@@ -60,6 +61,13 @@ HTML = Path(__file__).resolve().parent / "web" / "visor.html"
 # "Access blocked" image (HTTP 200, so it looks like a normal tile). Esri has no such restriction.
 STREETS_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
 STREETS_ATTRIBUTION = "Calles © Esri, HERE, Garmin, OpenStreetMap"
+DIAGRAMA_URL = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"       # CARTO «Positron no labels», base map to draw diagrams on
+
+
+def _url_diagrama() -> str:
+    """The CARTO tile URL with the key of CARTO_API_KEY (.env of the machine that serves the viewer) when there is one; without it the public tiles."""
+    clave = os.environ.get("CARTO_API_KEY", "").strip()
+    return f"{DIAGRAMA_URL}?key={quote(clave, safe='')}" if clave else DIAGRAMA_URL
 INICIO = (12.13, -86.25)          # Managua
 ZOOM_INICIAL = 13
 SIN_CONFIGURAR = "Falta configurar el servidor de presupuestos (☰ → Configuración)"
@@ -544,6 +552,24 @@ class Api:
             return {"ok": False, "error": f"No se pudo buscar ({type(exc).__name__})"}
         return {"ok": True, "resultados": a_json(resultados)}
 
+    def buscar_mufa_cerca(self, lat: Any, lon: Any, radio_m: Any = 300) -> dict[str, Any]:
+        """Mufas / nodes of the Visio around a coordinate (nearest first), whatever their name."""
+        try:
+            lat, lon, radio = float(lat), float(lon), float(radio_m)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Coordenada no válida"}
+        if self._modo == "remoto":
+            return self._remota("buscar_mufa_cerca", lat, lon, radio)
+        try:
+            with self._lock:
+                resultados = fusion.buscar_mufas_cerca(lat, lon, radio, visio_con=self._conexion_visio(), archivo_sqlite=get_settings().red_fibra_db)
+        except FileNotFoundError:
+            return {"ok": False, "error": "No se encontró la base de diagramas (red_fibra)"}
+        except Exception as exc:
+            log.exception("Visor web: mufa search by coordinate failed")
+            return {"ok": False, "error": f"No se pudo buscar ({type(exc).__name__})"}
+        return {"ok": True, "resultados": a_json(resultados)}
+
     def mufa(self, nodo_id: int) -> dict[str, Any]:
         """One searched mufa: coordinates, diagrams (with its position in each), hilos, splitters..."""
         if self._modo == "remoto":
@@ -606,7 +632,7 @@ class Api:
             from visor_rutas.remoto import MAPA_POR_DEFECTO
             return {**MAPA_POR_DEFECTO, **base, **modo}
         return {"imagery_url": IMAGERY_URL, "labels_url": LABELS_URL, "streets_url": STREETS_URL,
-                "streets_attribution": STREETS_ATTRIBUTION,
+                "streets_attribution": STREETS_ATTRIBUTION, "diagram_url": _url_diagrama(),
                 "drop_min_m": DROP_MIN_M, "inicio": list(INICIO), "zoom_inicial": ZOOM_INICIAL, **modo}
 
     def calcular(self, texto: str) -> dict[str, Any]:

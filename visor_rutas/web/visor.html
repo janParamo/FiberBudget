@@ -301,6 +301,7 @@
         </div>
         <div class="mu-grupo">
           <button id="mu-visio" type="button" class="btn btn-chico" title="El diagrama Visio de esta mufa al lado, para comparar">Ver Visio original</button>
+          <button id="mu-asignar-visio" type="button" class="btn btn-chico" hidden title="Elegir a mano cuál mufa del Visio es esta (cuando «Ver Visio original» no la encuentra)">Asignar Visio…</button>
           <button id="mu-validar" type="button" class="btn btn-chico" hidden>Marcar como validada</button>
           <label class="mu-colores">Color <select id="mu-colores" title="Color de las conexiones">
             <option value="hilo">del hilo</option><option value="fuente">por fuente del dato</option></select></label>
@@ -387,6 +388,7 @@
       <div class="mu-barra" role="toolbar" aria-label="Esquema">
         <div class="mu-grupo">
           <button id="lz-kmz" type="button" class="btn btn-chico" title="Las mufas que el KMZ tiene alrededor de la zona y la zona no (nuevas o renombradas)">Mufas del KMZ</button>
+          <button id="lz-validar-todo" type="button" class="btn btn-chico" data-lz-edita title="Marca como validadas todas las mufas de la zona de una vez (cuando ya se armó toda la red)">Validar todo</button>
           <button id="lz-fuente" type="button" class="btn btn-chico" data-lz-edita title="Agregar el nodo u ODF que alimenta a toda la red de la zona">Agregar nodo / ODF</button>
           <button id="lz-conectar" type="button" class="btn btn-chico" data-lz-edita aria-pressed="false" title="Clic en una caja y clic en otra: crea un cable entre ellas">Conectar con cable</button>
           <button id="lz-quitar" type="button" class="btn btn-chico" data-lz-edita disabled title="Quita la caja elegida del esquema (no la borra de la red) · Supr">Quitar del esquema</button>
@@ -419,6 +421,16 @@
         <div id="lz-lienzo" class="mu-lienzo lz-lienzo"><div id="lz-konva" class="mu-konva"></div>
           <p id="lz-vacio" class="dg-vacio">Arrastre aquí las mufas y los nodos de la lista (o haga doble clic en ellos) para armar el esquema de la zona.</p></div>
       </div>
+    </div>
+  </div>
+  <div id="modal-mu-visio" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-visio-titulo">
+    <div class="modal-caja lz-kmz-caja">
+      <h2 id="mu-visio-titulo">Asignar la mufa del Visio</h2>
+      <p id="mu-visio-actual" class="nota"></p>
+      <input id="mu-visio-buscar" type="search" class="lz-buscar" placeholder="Nombre de la mufa en el Visio" aria-label="Buscar la mufa en el Visio" autocomplete="off">
+      <div class="lz-kmz-tabla"><table class="dg-tabla"><thead><tr><th>Mufa del Visio</th><th>Zona</th><th>Diagramas</th><th>Distancia</th><th></th></tr></thead><tbody id="mu-visio-lista"></tbody></table></div>
+      <p id="mu-visio-error" class="vp-estado error" role="alert"></p>
+      <div class="lz-cable-botones"><button id="mu-visio-quitar" type="button" class="btn" hidden>Quitar la asignación</button><button id="mu-visio-cerrar" type="button" class="btn">Cerrar</button></div>
     </div>
   </div>
   <div id="modal-lz-nombre" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="lz-nombre-titulo">
@@ -455,7 +467,9 @@
     <div class="modal-caja lz-kmz-caja">
       <h2 id="lz-kmz-titulo">Mufas del KMZ</h2>
       <p id="lz-kmz-resumen" class="nota"></p>
-      <div class="lz-kmz-tabla"><table class="dg-tabla"><thead><tr><th>Mufa del KMZ</th><th>Qué hacer</th></tr></thead><tbody id="lz-kmz-lista"></tbody></table></div>
+      <div class="lz-kmz-acciones"><button id="lz-kmz-todas" type="button" class="btn btn-chico">Marcar todas</button> <button id="lz-kmz-ninguna" type="button" class="btn btn-chico">Quitar todas</button>
+        <input id="lz-kmz-filtro" type="search" class="lz-buscar" placeholder="Filtrar por nombre" aria-label="Filtrar las mufas del KMZ" autocomplete="off"> <span id="lz-kmz-marcadas" class="nota"></span></div>
+      <div class="lz-kmz-tabla"><table class="dg-tabla"><thead><tr><th></th><th>Mufa del KMZ</th><th>Qué hacer</th></tr></thead><tbody id="lz-kmz-lista"></tbody></table></div>
       <p id="lz-kmz-error" class="vp-estado error" role="alert"></p>
       <div class="lz-cable-botones"><button id="lz-kmz-cerrar" type="button" class="btn">Cerrar</button><button id="lz-kmz-aplicar" type="button" class="btn btn-primario" hidden>Aplicar</button></div>
     </div>

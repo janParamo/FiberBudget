@@ -210,6 +210,9 @@ class ProveedorRemoto:
     def buscar_mufa(self, texto: str) -> dict[str, Any]:
         return self._seguro(lambda: self._json("GET", "/visor/mufas", params={"texto": str(texto or "")}))
 
+    def buscar_mufa_cerca(self, lat: float, lon: float, radio_m: float = 300) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", "/visor/mufas_cerca", params={"lat": lat, "lon": lon, "radio_m": radio_m}))
+
     def mufa(self, nodo_id: Any) -> dict[str, Any]:
         try:
             nodo = int(nodo_id)

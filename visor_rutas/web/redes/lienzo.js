@@ -523,6 +523,18 @@
     mensaje("Cable eliminado", "ok");
   }
 
+  async function validarTodo() {
+    if (!puedeEditar()) return;
+    const pendientes = st.datos.elementos.filter((e) => e.tipo === "mufa" && e.estado_migracion && e.estado_migracion !== "validada").length;
+    if (!pendientes) { mensaje("Todas las mufas de la zona ya están validadas", "ok"); return; }
+    if (!(await Redes.confirmar(`¿Marcar como validadas las ${pendientes} mufa(s) de la zona que faltan? Su contenido queda como verificado y una reimportación del Visio no lo cambiará.`, "Validar todo"))) return;
+    mensaje("Validando…", "cargando");
+    const r = await Redes.llamar("validar_zona", { proyecto_id: st.proyectoId });
+    if (!r.ok) { mensaje(r.error, "error"); return; }
+    await cargar(st.proyectoId, true);
+    mensaje(`${r.validadas} mufa(s) validada(s)`, "ok");
+  }
+
   function entrar(e) {
     if (!window.EditorMufa) return;
     if (st.pendientes.size || st.quitar.size) guardarPosiciones();
@@ -596,19 +608,36 @@
     st.kmzNuevas = r.nuevas;
     $("lz-kmz-titulo").textContent = `Mufas del KMZ que faltan en ${st.datos.proyecto.zona || st.datos.proyecto.nombre}`;
     $("lz-kmz-resumen").textContent = r.nuevas.length
-      ? `${r.nuevas.length} mufa(s) del KMZ no están en la zona (la zona tiene ${r.en_zona}; el KMZ, ${r.en_kmz} alrededor). Elija qué hacer con cada una.`
+      ? `${r.nuevas.length} mufa(s) del KMZ no están en la zona (la zona tiene ${r.en_zona}; el KMZ, ${r.en_kmz} alrededor). Marque las que quiere agregar al esquema.`
       : `La zona está al día con el KMZ: ${r.en_zona} elementos en la zona, ${r.en_kmz} puntos del KMZ alrededor.`;
-    $("lz-kmz-lista").innerHTML = r.nuevas.map((n, i) => `<tr data-i="${i}"><td><b>${esc(n.nombre)}</b><div class="nota">${n.categoria === "reserva" ? "Reserva" : n.categoria === "nodo" ? "Nodo" : "Mufa"} · ${n.lat.toFixed(6)}, ${n.lon.toFixed(6)}</div></td>
+    $("lz-kmz-filtro").value = "";
+    $("lz-kmz-lista").innerHTML = r.nuevas.map((n, i) => `<tr data-i="${i}" data-nombre="${esc(n.nombre.toLowerCase())}"><td><input type="checkbox" data-lz-kmz-sel="${i}" aria-label="Agregar ${esc(n.nombre)}" ${puedeEditar() ? "checked" : "disabled"}></td>
+      <td><b>${esc(n.nombre)}</b><div class="nota">${n.categoria === "reserva" ? "Reserva" : n.categoria === "nodo" ? "Nodo" : "Mufa"} · ${n.lat.toFixed(6)}, ${n.lon.toFixed(6)}</div></td>
       <td><select data-lz-kmz="${i}" ${puedeEditar() ? "" : "disabled"}>
         ${n.cercana ? `<option value="renombrar" selected>Es «${esc(n.cercana.nombre)}» renombrada (a ${Math.round(n.cercana.distancia_m)} m)</option><option value="agregar">Agregar como mufa nueva</option>` : `<option value="agregar" selected>Agregar como mufa nueva</option>`}
-        <option value="nada">No hacer nada</option></select></td></tr>`).join("");
+        </select></td></tr>`).join("");
     $("lz-kmz-aplicar").hidden = !r.nuevas.length || !puedeEditar();
     $("modal-lz-kmz").hidden = false;
+    contarMarcadas();
+  }
+
+  /** The rows that pass the filter (all of them when it is empty). */
+  const filasKmzVisibles = () => [...document.querySelectorAll("#lz-kmz-lista tr")].filter((tr) => !tr.hidden);
+  function contarMarcadas() {
+    const marcadas = document.querySelectorAll("#lz-kmz-lista input[data-lz-kmz-sel]:checked").length;
+    $("lz-kmz-marcadas").textContent = st.kmzNuevas.length ? `${marcadas} de ${st.kmzNuevas.length} marcada(s)` : "";
+    $("lz-kmz-aplicar").textContent = marcadas ? `Aplicar (${marcadas})` : "Aplicar";
+    $("lz-kmz-aplicar").disabled = !marcadas;
+  }
+  function marcarKmz(valor) {
+    filasKmzVisibles().forEach((tr) => { const c = tr.querySelector("input[data-lz-kmz-sel]"); if (c && !c.disabled) c.checked = valor; });
+    contarMarcadas();
   }
 
   async function aplicarMufasKmz() {
     const acciones = [];
     document.querySelectorAll("#lz-kmz-lista select[data-lz-kmz]").forEach((s) => {
+      if (!s.closest("tr").querySelector("input[data-lz-kmz-sel]").checked) return;
       const n = st.kmzNuevas[Number(s.dataset.lzKmz)];
       if (s.value === "renombrar") acciones.push({ kmz_id: n.kmz_id, accion: "renombrar", elemento_id: n.cercana.id });
       else if (s.value === "agregar") acciones.push({ kmz_id: n.kmz_id, accion: "agregar" });
@@ -709,7 +738,15 @@
     $("lz-nuevo").addEventListener("click", nuevoEsquema);
     $("lz-kmz").addEventListener("click", abrirMufasKmz);
     $("lz-kmz-aplicar").addEventListener("click", aplicarMufasKmz);
+    $("lz-kmz-todas").addEventListener("click", () => marcarKmz(true));
+    $("lz-kmz-ninguna").addEventListener("click", () => marcarKmz(false));
+    $("lz-kmz-lista").addEventListener("change", (e) => { if (e.target.matches("input[data-lz-kmz-sel]")) contarMarcadas(); });
+    $("lz-kmz-filtro").addEventListener("input", (e) => {
+      const t = e.target.value.trim().toLowerCase();
+      document.querySelectorAll("#lz-kmz-lista tr").forEach((tr) => { tr.hidden = !!t && !tr.dataset.nombre.includes(t); });
+    });
     $("lz-kmz-cerrar").addEventListener("click", () => { $("modal-lz-kmz").hidden = true; $("lz-kmz-error").textContent = ""; });
+    $("lz-validar-todo").addEventListener("click", validarTodo);
     $("lz-fuente").addEventListener("click", pedirFuente);
     $("lz-fuente-form").addEventListener("submit", crearFuente);
     $("lz-fuente-cancelar").addEventListener("click", () => { $("modal-lz-fuente").hidden = true; });

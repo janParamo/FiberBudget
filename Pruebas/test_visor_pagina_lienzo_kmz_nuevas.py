@@ -29,8 +29,15 @@ async def _recorrido(zona_):
         assert [f[0] for f in filas] == ["MF DOS 1", "MF DOS 2", "MF LEJANA"]
         assert filas[0][1] == "renombrar" and "MF Dos" in filas[0][2]                    # the one on top of MF Dos: probably it, renamed
         assert filas[1][1] == "agregar" and filas[2][1] == "agregar"
-        # skip «MF LEJANA» and apply the other two
-        await p.evaluar("(() => { const s = document.querySelectorAll('#lz-kmz-lista select')[2]; s.value = 'nada'; return true; })()")
+        # every row starts marked; «Quitar todas» clears them, «Marcar todas» marks them again, and the filter only touches the rows it shows
+        assert await p.evaluar("document.getElementById('lz-kmz-marcadas').textContent") == "3 de 3 marcada(s)"
+        await p.evaluar("document.getElementById('lz-kmz-ninguna').click(); true")
+        assert await p.evaluar("document.getElementById('lz-kmz-marcadas').textContent") == "0 de 3 marcada(s)"
+        assert await p.evaluar("document.getElementById('lz-kmz-aplicar').disabled") is True
+        await p.evaluar("(() => { const f = document.getElementById('lz-kmz-filtro'); f.value = 'dos'; f.dispatchEvent(new Event('input')); document.getElementById('lz-kmz-todas').click(); return true; })()")
+        assert await p.evaluar("document.getElementById('lz-kmz-marcadas').textContent") == "2 de 3 marcada(s)"       # «MF LEJANA» is hidden by the filter: it stays unmarked
+        assert await p.evaluar("document.getElementById('lz-kmz-aplicar').textContent") == "Aplicar (2)"
+        await p.evaluar("(() => { const f = document.getElementById('lz-kmz-filtro'); f.value = ''; f.dispatchEvent(new Event('input')); return true; })()")
         await p.evaluar("document.getElementById('lz-kmz-aplicar').click(); true")
         await p.esperar("document.getElementById('modal-lz-kmz').hidden && document.querySelectorAll('#lz-lista .lz-item').length === 4", 15)
         nombres = await p.evaluar("[...document.querySelectorAll('#lz-lista .lz-nombre')].map(x => x.textContent)")
