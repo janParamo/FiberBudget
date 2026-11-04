@@ -51,7 +51,7 @@ def buscar(con: Any, actor: dict[str, Any], *, nombre: str | None = None, lat: f
         por_visio, por_nombre = plano.format("e.ref_visio ->> 'nombre_visio'"), plano.format("e.nombre")
         filas = [f for f in con.execute(
             base.format(dist=dist) + f"AND ({por_visio} = %(n)s OR {por_nombre} = %(n)s) "
-            "ORDER BY d NULLS LAST, e.id LIMIT 50", {**args, "n": clave.replace(" ", "")}).fetchall()
+            "ORDER BY (p.codigo = 'BASE-VISOR'), d NULLS LAST, e.id LIMIT 50", {**args, "n": clave.replace(" ", "")}).fetchall()
                  if _comparable(f["nombre_visio"]) == clave or _comparable(f["nombre"]) == clave]
         if hay_punto:
             filas = [f for f in filas if f["d"] is not None and f["d"] <= DISTANCIA_NOMBRE_M]

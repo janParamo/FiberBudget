@@ -168,6 +168,7 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "eliminar_lienzo": lienzo.eliminar_lienzo,
     "mufas_kmz_zona": lienzo.mufas_kmz,
     "aplicar_mufas_kmz_zona": lienzo.aplicar_mufas_kmz,
+    "renombrar_elemento_zona": lienzo.renombrar_elemento,
     # sección 8: integridad de los datos
     "verificar_base": verificar.verificar,
 }

@@ -126,3 +126,26 @@ async def _validar_todo(zona):
 
 def test_validate_all_button(zona):
     asyncio.run(_validar_todo(zona))
+
+
+async def _renombrar_caja(zona):
+    con, proy, ids = zona
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.Esquema && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.Esquema.abrir(%d); true" % proy["id"])
+        await p.esperar("document.querySelectorAll('#lz-lista .lz-item').length === 3", 15)
+        await p.evaluar("document.querySelector('#lz-lista [data-lz-item=\"%d\"]').dispatchEvent(new MouseEvent('dblclick', {bubbles: true})); true" % ids["m1"])
+        await p.esperar("window.Esquema._st.cajas.size === 1", 10)
+        await p.evaluar("window.Esquema._st.cajas.get(%d).fire('click'); true" % ids["m1"])
+        assert await p.evaluar("document.getElementById('lz-renombrar-mufa').disabled") is False
+        await p.evaluar("document.getElementById('lz-renombrar-mufa').click(); true")
+        assert await p.evaluar("document.getElementById('lz-nombre-form').elements.nombre.value") == "MF Uno"      # it starts from the current name
+        await _nombrar(p, "MF UNO RENOMBRADA")
+        await p.esperar("[...document.querySelectorAll('#lz-lista .lz-nombre')].some(x => x.textContent === 'MF UNO RENOMBRADA') || document.getElementById('lz-info').textContent.includes('MF UNO RENOMBRADA')", 10)
+        assert _consulta(con, "SELECT nombre FROM redes.elementos WHERE id = %s", ids["m1"])[0]["nombre"] == "MF UNO RENOMBRADA"
+        assert await p.evaluar("document.getElementById('lz-info').textContent.includes('MF UNO RENOMBRADA')") is True         # the box stays chosen
+        assert await p.errores() == []
+
+
+def test_rename_a_box_from_the_schema(zona):
+    asyncio.run(_renombrar_caja(zona))

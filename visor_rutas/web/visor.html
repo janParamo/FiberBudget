@@ -391,6 +391,7 @@
           <button id="lz-validar-todo" type="button" class="btn btn-chico" data-lz-edita title="Marca como validadas todas las mufas de la zona de una vez (cuando ya se armó toda la red)">Validar todo</button>
           <button id="lz-fuente" type="button" class="btn btn-chico" data-lz-edita title="Agregar el nodo u ODF que alimenta a toda la red de la zona">Agregar nodo / ODF</button>
           <button id="lz-conectar" type="button" class="btn btn-chico" data-lz-edita aria-pressed="false" title="Clic en una caja y clic en otra: crea un cable entre ellas">Conectar con cable</button>
+          <button id="lz-renombrar-mufa" type="button" class="btn btn-chico" data-lz-edita disabled title="Cambiar el nombre de la caja elegida (F2)">Renombrar</button>
           <button id="lz-quitar" type="button" class="btn btn-chico" data-lz-edita disabled title="Quita la caja elegida del esquema (no la borra de la red) · Supr">Quitar del esquema</button>
           <button id="lz-eliminar-cable" type="button" class="btn btn-chico" data-lz-edita disabled title="Elimina el cable elegido · Supr">Eliminar cable</button>
           <button id="lz-hilos" type="button" class="btn btn-chico" hidden title="Conectar hilo con hilo los cables de la mufa elegida">Conectar hilos…</button>
@@ -468,6 +469,8 @@
     <div class="modal-caja lz-kmz-caja">
       <h2 id="lz-kmz-titulo">Mufas del KMZ</h2>
       <p id="lz-kmz-resumen" class="nota"></p>
+      <div id="lz-kmz-nombres" class="lz-kmz-tabla" hidden><p class="nota"><b>Cambiaron de nombre en el KMZ.</b> Marque las mufas de la zona que deben llamarse igual que en el KMZ (sus cables y conexiones no cambian).</p>
+        <table class="dg-tabla"><thead><tr><th></th><th>Nombre en la zona</th><th>Nombre ahora en el KMZ</th></tr></thead><tbody id="lz-kmz-nombres-lista"></tbody></table></div>
       <div class="lz-kmz-acciones"><button id="lz-kmz-todas" type="button" class="btn btn-chico">Marcar todas</button> <button id="lz-kmz-ninguna" type="button" class="btn btn-chico">Quitar todas</button>
         <input id="lz-kmz-filtro" type="search" class="lz-buscar" placeholder="Filtrar por nombre" aria-label="Filtrar las mufas del KMZ" autocomplete="off"> <span id="lz-kmz-marcadas" class="nota"></span></div>
       <div class="lz-kmz-tabla"><table class="dg-tabla"><thead><tr><th></th><th>Mufa del KMZ</th><th>Qué hacer</th></tr></thead><tbody id="lz-kmz-lista"></tbody></table></div>

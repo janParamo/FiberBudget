@@ -409,7 +409,7 @@
   function entrarMufa(it) {
     const [lat, lon] = it.orig.ll || [null, null];
     if (window.Redes) window.Redes.entrarMufa(it.orig.n, lat, lon);
-    else if (window.visor) window.visor.abrirDiagramaPorNombre(it.orig.n);
+    else if (window.visor) window.visor.abrirDiagramaPorNombre(it.orig.n, lat, lon);
   }
 
   function htmlPopup(it, ll) {
@@ -436,7 +436,7 @@
       ${fotos ? `<div class="lg-fotos">${fotos}</div>` : ""}
       <div class="acciones"><button type="button" class="btn btn-chico" data-copiar="${coord}">Copiar</button>
         ${esMufa(it) ? `<button type="button" class="btn btn-chico btn-primario" data-entrar-mufa title="También: doble clic o Enter">Entrar a la mufa</button>
-          <button type="button" class="btn btn-chico" data-diagrama-mufa="${esc(it.orig.n)}">Ver diagrama Visio</button>` : ""}</div>
+          <button type="button" class="btn btn-chico" data-diagrama-mufa="${esc(it.orig.n)}" data-lat="${it.orig.ll ? it.orig.ll[0] : ""}" data-lon="${it.orig.ll ? it.orig.ll[1] : ""}">Ver diagrama Visio</button>` : ""}</div>
       ${window.KmzCambios ? window.KmzCambios.botones(it) : ""}</div>`;
   }
 
@@ -929,7 +929,7 @@
     // photos: thumbnail -> large
     document.addEventListener("click", (e) => {
       const diagrama = e.target.closest("[data-diagrama-mufa]");
-      if (diagrama && window.visor) window.visor.abrirDiagramaPorNombre(diagrama.dataset.diagramaMufa);
+      if (diagrama && window.visor) window.visor.abrirDiagramaPorNombre(diagrama.dataset.diagramaMufa, diagrama.dataset.lat === "" ? null : Number(diagrama.dataset.lat), diagrama.dataset.lon === "" ? null : Number(diagrama.dataset.lon));          // by its place too: several mufas share a name
       if (e.target.closest("[data-entrar-mufa]") && window.__kmzItem) { mapa.closePopup(); entrarMufa(window.__kmzItem); }
       const img = e.target.closest("img.lg-foto");
       if (img && img.src) verFotoGrande(img.src);

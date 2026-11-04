@@ -159,3 +159,11 @@ def test_map_search_box_finds_new_elements_and_clients_but_not_migrated_mufas(re
     lector = usuarios.guardar(con, admin, datos={"nombre": "Ana", "rol": "lector", "persona_visor": "ana"})["usuario"]
     assert mufas_existentes.buscar_elementos(con, lector, texto="nandu")["elementos"] == []
     assert len(mufas_existentes.buscar_elementos(con, admin, texto="nandu")["elementos"]) == 1
+
+def test_a_mufa_of_a_zone_wins_over_the_empty_one_made_from_the_map(red_base):
+    con, admin, p, ids, _ = red_base
+    vacia = mufas_existentes.crear_vacia(con, admin, nombre="MF LOS POLLOS", lat=11.92569, lon=-85.955211)["mufa"]          # made from the map first
+    buscar = lambda: mufas_existentes.buscar(con, admin, nombre="MF LOS POLLOS", lat=11.92569, lon=-85.955211)["mufa"]["id"]
+    assert buscar() == vacia["id"]                                                                                        # the only one
+    nueva = red.guardar(con, admin, proyecto_id=p["id"], cambios={"elementos": [{"id": "z", "tipo": "mufa", "nombre": "MF LOS POLLOS", "lat": 11.92569, "lon": -85.955211}]})["ids"]["z"]
+    assert buscar() == nueva                                                                                              # then the same one added to the zone: «Entrar» goes to it

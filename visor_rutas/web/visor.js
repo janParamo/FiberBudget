@@ -429,7 +429,7 @@
         });
         if (nombre === "visio_nodos") m.on("dblclick", (e) => {
           L.DomEvent.stop(e);
-          if (window.Redes) window.Redes.abrirMufaExistente(x.nombre, x.lat, x.lon); else abrirDiagramaPorNombre(x.nombre);
+          if (window.Redes) window.Redes.abrirMufaExistente(x.nombre, x.lat, x.lon); else abrirDiagramaPorNombre(x.nombre, x.lat, x.lon);
         });
         capa.addLayer(m);
         if (nombre !== "kmz_postes") est.puntos.push(ll);       // the measuring tool snaps to them

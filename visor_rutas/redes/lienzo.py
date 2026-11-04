@@ -105,7 +105,37 @@ def _metros(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return metraje.longitud_m([(lat1, lon1), (lat2, lon2)])
 
 
-def coincidencias_kmz(elementos: list[dict[str, Any]], kmz: Any = None) -> dict[int, dict[str, Any]]:
+def _cambios_puntos(con: Any) -> list[dict[str, Any]]:
+    """The changes made in the viewer to points of the KMZ (renamed, moved, removed). The KMZ file does not change: they live in `redes.kmz_cambios` and the map applies them,
+    so the zone must too (what the map shows as the name of a mufa is the name here)."""
+    return [dict(f) for f in con.execute("SELECT accion, antes, despues FROM redes.kmz_cambios WHERE borrado_en IS NULL AND tipo = 'punto'").fetchall()]
+
+
+def _con_cambios(filas: list[dict[str, Any]], cambios: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """`filas` ({nombre, lat, lon, ...} of KMZ points) with the changes of the viewer applied. A change belongs to the point that had its ORIGINAL name at its ORIGINAL place
+    (3 m): red_puntos has no folder, so the key the page uses cannot be rebuilt."""
+    if not cambios:
+        return filas
+    salida = []
+    for f in filas:
+        ch = next((c for c in cambios if (c["antes"] or {}).get("lat") is not None and _plano((c["antes"] or {}).get("nombre")) == _plano(f.get("nombre"))
+                   and _metros(c["antes"]["lat"], c["antes"]["lon"], float(f["lat"]), float(f["lon"])) <= 3.0), None)
+        if ch is None:
+            salida.append(f)
+            continue
+        if ch["accion"] == "borrar":
+            continue
+        d = ch["despues"] or {}
+        g = dict(f)
+        if d.get("nombre"):
+            g["nombre"] = d["nombre"]
+        if d.get("lat") is not None and d.get("lon") is not None:
+            g["lat"], g["lon"] = d["lat"], d["lon"]
+        salida.append(g)
+    return salida
+
+
+def coincidencias_kmz(elementos: list[dict[str, Any]], kmz: Any = None, cambios: list[dict[str, Any]] | None = None) -> dict[int, dict[str, Any]]:
     """{element id: {"id", "nombre", "categoria", "lat", "lon", "distancia_m"}} of the KMZ point (mufa, reserve, node...) with the same name as each element,
     the nearest one to the coordinate the element already has (within RADIO_KMZ_M). {} when the KMZ cannot be read."""
     con_coord = [e for e in elementos if e.get("lat") is not None and e.get("lon") is not None]
@@ -127,7 +157,7 @@ def coincidencias_kmz(elementos: list[dict[str, Any]], kmz: Any = None) -> dict[
         if cerrar:
             kmz.close()
     por_nombre: dict[str, list[dict[str, Any]]] = {}
-    for f in filas:
+    for f in _con_cambios([dict(x) for x in filas], cambios):
         clase = f"{f.get('categoria') or ''}".lower()
         if "poste" in clase or "pozo" in clase or not f.get("nombre"):
             continue
@@ -149,7 +179,7 @@ def lienzo(con: Any, actor: dict[str, Any], *, proyecto_id: int, lienzo_id: int 
     elementos = [dict(f) for f in con.execute(
         "SELECT id, tipo, subtipo, nombre, codigo, ST_Y(ubicacion::geometry) AS lat, ST_X(ubicacion::geometry) AS lon, ubicacion_fuente, estado_migracion "
         "FROM redes.elementos WHERE proyecto_id = %s AND borrado_en IS NULL AND tipo = ANY(%s) ORDER BY lower(nombre), id", (p["id"], list(TIPOS))).fetchall()]
-    en_kmz = coincidencias_kmz(elementos)
+    en_kmz = coincidencias_kmz(elementos, cambios=_cambios_puntos(con))
     for e in elementos:
         e["kmz"] = en_kmz.get(e["id"])                       # where the KMZ has it (None: it uses its own coordinate)
     colocados = [dict(f) for f in con.execute("SELECT elemento_id, x, y FROM redes.lienzo_elementos WHERE lienzo_id = %s ORDER BY elemento_id",
@@ -298,7 +328,7 @@ RADIO_RENOMBRADA_M = 60.0            # an element this close to a KMZ point with
 FAMILIA_KMZ = {"mufa": ("mufa", "empalme"), "reserva": ("mufa", "reserva"), "nodo": ("nodo", "nodo")}
 
 
-def _puntos_kmz_cerca(elementos: list[dict[str, Any]], kmz: Any) -> list[dict[str, Any]]:
+def _puntos_kmz_cerca(elementos: list[dict[str, Any]], kmz: Any, cambios: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """The KMZ points (mufa, reserve, node) around the zone: not posts or wells."""
     con_coord = [e for e in elementos if e.get("lat") is not None and e.get("lon") is not None]
     if not con_coord:
@@ -307,24 +337,25 @@ def _puntos_kmz_cerca(elementos: list[dict[str, Any]], kmz: Any) -> list[dict[st
     filas = kmz.execute("SELECT id, nombre, categoria, ST_Y(geom) AS lat, ST_X(geom) AS lon FROM red_puntos WHERE geom IS NOT NULL AND GeometryType(geom) = 'POINT' "
                         "AND geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)",
                         (min(lons) - MARGEN_KMZ_GRADOS, min(lats) - MARGEN_KMZ_GRADOS, max(lons) + MARGEN_KMZ_GRADOS, max(lats) + MARGEN_KMZ_GRADOS)).fetchall()
-    return [dict(f) for f in filas if f.get("nombre") and (f.get("categoria") or "").lower() in FAMILIA_KMZ]
+    return _con_cambios([dict(f) for f in filas if f.get("nombre") and (f.get("categoria") or "").lower() in FAMILIA_KMZ], cambios)
 
 
 def mufas_kmz(con: Any, actor: dict[str, Any], *, proyecto_id: int, kmz: Any = None) -> dict[str, Any]:
     """The KMZ mufas around the zone that the zone does not have yet: new ones, or the same mufa renamed (e.g. two mufas that were both «PUERTO PAZ» and are now
     «PUERTO PAZ 1» and «PUERTO PAZ 2»). A KMZ point is «had» by the zone when an element is linked to it (`ref_externa.kmz.kmz_punto_id`) or, failing that, has its name
     and is the nearest one with it; each element has at most one. {"nuevas": [{kmz_id, nombre, categoria, lat, lon, cercana: {id, nombre, distancia_m} | None}],
-    "en_zona": n, "en_kmz": n}. Nothing is written."""
+    "en_zona": n, "en_kmz": n, "nombres_cambiados": [{elemento_id, version, nombre, kmz_id, nombre_kmz}]} (the last: mufas of the zone linked to a KMZ point that has another
+    name now). Nothing is written."""
     p = _proyecto(con, actor, proyecto_id)
     elementos = [dict(f) for f in con.execute(
-        "SELECT id, tipo, nombre, ST_Y(ubicacion::geometry) AS lat, ST_X(ubicacion::geometry) AS lon, ref_externa FROM redes.elementos "
+        "SELECT id, tipo, nombre, version, ST_Y(ubicacion::geometry) AS lat, ST_X(ubicacion::geometry) AS lon, ref_externa FROM redes.elementos "
         "WHERE proyecto_id = %s AND borrado_en IS NULL AND tipo = ANY(%s) ORDER BY id", (p["id"], list(TIPOS))).fetchall()]
     cerrar = kmz is None
     kmz = kmz if kmz is not None else conexion_kmz()
     if kmz is None:
         raise DatosInvalidos({"kmz": "No se pudo leer el KMZ (la base del presupuesto no responde)"})
     try:
-        puntos = _puntos_kmz_cerca(elementos, kmz)
+        puntos = _puntos_kmz_cerca(elementos, kmz, _cambios_puntos(con))
     except Exception as exc:                                    # noqa: BLE001
         log.warning("Esquema de zona: no se pudo leer red_puntos (%s)", type(exc).__name__)
         raise DatosInvalidos({"kmz": "No se pudo leer el KMZ (la base del presupuesto no responde)"}) from None
@@ -334,10 +365,17 @@ def mufas_kmz(con: Any, actor: dict[str, Any], *, proyecto_id: int, kmz: Any = N
     por_id = {k["id"]: k for k in puntos}
     tenidos: set[int] = set()
     sin_vinculo: list[dict[str, Any]] = []
+    renombradas: list[dict[str, Any]] = []                      # linked to a KMZ point that now has another name: the KMZ was edited after the mufa was created
     for e in elementos:
         enlace = ((e.get("ref_externa") or {}).get("kmz") or {}).get("kmz_punto_id")
         if enlace in por_id and enlace not in tenidos:
             tenidos.add(enlace)
+            k = por_id[enlace]
+            # the name the KMZ point had when the mufa was linked: if the KMZ still calls it that, a different name in the zone is the person's own rename (kept);
+            # only a point whose name changed since is offered (a link without that name is compared with the mufa's own name)
+            visto = ((e.get("ref_externa") or {}).get("kmz") or {}).get("nombre") or e["nombre"]
+            if _plano(k["nombre"]) != _plano(visto) and _plano(k["nombre"]) != _plano(e["nombre"]):
+                renombradas.append({"elemento_id": e["id"], "version": e["version"], "nombre": e["nombre"], "kmz_id": k["id"], "nombre_kmz": k["nombre"]})
         else:
             sin_vinculo.append(e)
     for e in sin_vinculo:                                       # by name: the nearest KMZ point with it that nobody has yet
@@ -357,7 +395,39 @@ def mufas_kmz(con: Any, actor: dict[str, Any], *, proyecto_id: int, kmz: Any = N
             d, e = cercanas[0]
             cercana = {"id": e["id"], "nombre": e["nombre"], "distancia_m": round(d, 1)}
         nuevas.append({"kmz_id": k["id"], "nombre": k["nombre"], "categoria": (k.get("categoria") or "").lower(), "lat": float(k["lat"]), "lon": float(k["lon"]), "cercana": cercana})
-    return {"nuevas": nuevas, "en_zona": len(elementos), "en_kmz": len(puntos), "proyecto_id": p["id"]}
+    return {"nuevas": nuevas, "nombres_cambiados": sorted(renombradas, key=lambda r: (_plano(r["nombre"]), r["elemento_id"])), "en_zona": len(elementos), "en_kmz": len(puntos), "proyecto_id": p["id"]}
+
+
+def _poner_nombre(con: Any, actor: dict[str, Any], proyecto_id: int, elemento_id: int, nombre: str, version: int, kmz_id: int | None = None) -> dict[str, Any]:
+    """Renames a mufa / node of the zone (and the name of its KMZ link, when it follows the KMZ). Inside the caller's transaction."""
+    e = con.execute("SELECT id, nombre, version, ref_externa, proyecto_id, estado_migracion FROM redes.elementos WHERE id = %s AND borrado_en IS NULL", (int(elemento_id),)).fetchone()
+    if e is None or e["proyecto_id"] != proyecto_id:
+        raise DatosInvalidos({"mufa": "La mufa no es de esta zona"})
+    nuevo = " ".join(str(nombre or "").split())[:160]
+    if not nuevo:
+        raise DatosInvalidos({"nombre": "Escriba el nombre"})
+    valores: dict[str, Any] = {"nombre": nuevo}
+    if e["estado_migracion"] is not None:
+        valores["estado_migracion"] = "editada"
+    if kmz_id is not None and ((e["ref_externa"] or {}).get("kmz") or {}).get("kmz_punto_id") == kmz_id:
+        valores["ref_externa"] = Jsonb({**e["ref_externa"], "kmz": {**e["ref_externa"]["kmz"], "nombre": nuevo}})
+    try:
+        antes, despues = repositorio.actualizar(con, "elementos", e["id"], version, valores, actor["id"])
+    except ConflictoVersion:
+        raise ConflictoVersion(f"«{e['nombre']}» cambió mientras usted decidía. Recargue la lista.") from None
+    repositorio.registrar(con, actor["id"], "elemento", e["id"], "editar", {"nombre": [antes["nombre"], despues["nombre"]]}, proyecto_id=proyecto_id)
+    return {"id": e["id"], "nombre": despues["nombre"], "version": despues["version"]}
+
+
+def renombrar_elemento(con: Any, actor: dict[str, Any], *, proyecto_id: int, elemento_id: int, nombre: str, version: int | None = None) -> dict[str, Any]:
+    """Changes the name of a mufa / node of the zone from its schema (the name was set when it was created from the KMZ, and the KMZ may have changed since).
+    Its place, cables and connections are not touched. {"elemento": {id, nombre, version}}."""
+    p = _editable(con, actor, proyecto_id)
+    fila = con.execute("SELECT version, tipo FROM redes.elementos WHERE id = %s AND borrado_en IS NULL AND proyecto_id = %s", (int(elemento_id), p["id"])).fetchone()
+    if fila is None or fila["tipo"] not in TIPOS:
+        raise DatosInvalidos({"mufa": "La mufa no es de esta zona"})
+    with con.transaction():
+        return {"elemento": _poner_nombre(con, actor, p["id"], int(elemento_id), nombre, int(version if version is not None else fila["version"]))}
 
 
 def aplicar_mufas_kmz(con: Any, actor: dict[str, Any], *, proyecto_id: int, acciones: list[dict[str, Any]], kmz: Any = None) -> dict[str, Any]:
@@ -370,10 +440,19 @@ def aplicar_mufas_kmz(con: Any, actor: dict[str, Any], *, proyecto_id: int, acci
         raise DatosInvalidos({"acciones": "No hay nada que aplicar"})
     if len(acciones) > 500:
         raise DatosInvalidos({"acciones": "Demasiadas mufas en un solo paso (máximo 500)"})
-    actual = {n["kmz_id"]: n for n in mufas_kmz(con, actor, proyecto_id=p["id"], kmz=kmz)["nuevas"]}      # what is still missing now, read again (not what the page remembers)
-    hechas = {"agregadas": 0, "renombradas": 0}
+    pendiente = mufas_kmz(con, actor, proyecto_id=p["id"], kmz=kmz)           # what is still missing / changed now, read again (not what the page remembers)
+    actual = {n["kmz_id"]: n for n in pendiente["nuevas"]}
+    cambios = {r["elemento_id"]: r for r in pendiente["nombres_cambiados"]}
+    hechas = {"agregadas": 0, "renombradas": 0, "nombres_actualizados": 0}
     with con.transaction():
         for a in acciones:
+            if a.get("accion") == "actualizar_nombre":                      # the KMZ renamed the mufa: the zone follows
+                c = cambios.get(int(a.get("elemento_id") or 0))
+                if c is None:
+                    raise DatosInvalidos({"mufa": "Esa mufa ya tiene el nombre del KMZ (o dejó de estar vinculada). Revise la lista."})
+                _poner_nombre(con, actor, p["id"], c["elemento_id"], c["nombre_kmz"], int(a.get("version") if a.get("version") is not None else c["version"]), kmz_id=c["kmz_id"])
+                hechas["nombres_actualizados"] += 1
+                continue
             n = actual.get(int(a.get("kmz_id") or 0))
             if n is None:
                 raise DatosInvalidos({"mufa": f"La mufa {a.get('kmz_id')} ya no falta en la zona (otra persona la agregó o el KMZ cambió). Revise la lista."})

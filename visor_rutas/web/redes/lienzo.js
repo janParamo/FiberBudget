@@ -347,6 +347,7 @@
   function info() {
     const s = st.seleccion, caja = $("lz-info");
     $("lz-quitar").disabled = !(s && s.tipo === "caja" && puedeEditar());
+    $("lz-renombrar-mufa").disabled = !(s && s.tipo === "caja" && puedeEditar());
     $("lz-eliminar-cable").disabled = !(s && s.tipo === "cable" && puedeEditar());
     $("lz-abrir-a").hidden = $("lz-abrir-b").hidden = !(s && s.tipo === "cable");
     $("lz-hilos").hidden = !(s && s.tipo === "caja");
@@ -598,6 +599,20 @@
     if (r && r.ok) $("modal-lz").hidden = true;
   }
 
+  /** Changes the name of the chosen box (the mufa was named when it was created from the KMZ; the KMZ may call it something else now). */
+  async function renombrarCaja() {
+    const s = st.seleccion;
+    if (!puedeEditar() || !s || s.tipo !== "caja") return;
+    const e = st.elementos.get(s.id);
+    const nombre = await pedirNombre("Nombre de la mufa", e.nombre);
+    if (!nombre || nombre === e.nombre) return;
+    const r = await Redes.llamar("renombrar_elemento_zona", { proyecto_id: st.proyectoId, elemento_id: e.id, nombre });
+    if (!r.ok) { mensaje((r.errores && Object.values(r.errores).join(" · ")) || r.error, "error"); return; }
+    await cargar(st.proyectoId, true);
+    if (st.pos.has(e.id)) seleccionar({ tipo: "caja", id: e.id });
+    mensaje(`Ahora se llama «${r.elemento.nombre}»`, "ok");
+  }
+
   // ------------------------------------------------------------------ las mufas del KMZ que la zona no tiene (nuevas o renombradas)
   async function abrirMufasKmz() {
     if (!st.proyectoId) return;
@@ -606,26 +621,30 @@
     if (!r.ok) { mensaje((r.errores && Object.values(r.errores).join(" · ")) || r.error, "error"); return; }
     mensaje("");
     st.kmzNuevas = r.nuevas;
+    st.kmzNombres = r.nombres_cambiados || [];
     $("lz-kmz-titulo").textContent = `Mufas del KMZ que faltan en ${st.datos.proyecto.zona || st.datos.proyecto.nombre}`;
     $("lz-kmz-resumen").textContent = r.nuevas.length
       ? `${r.nuevas.length} mufa(s) del KMZ no están en la zona (la zona tiene ${r.en_zona}; el KMZ, ${r.en_kmz} alrededor). Marque las que quiere agregar al esquema.`
-      : `La zona está al día con el KMZ: ${r.en_zona} elementos en la zona, ${r.en_kmz} puntos del KMZ alrededor.`;
+      : st.kmzNombres.length ? "" : `La zona está al día con el KMZ: ${r.en_zona} elementos en la zona, ${r.en_kmz} puntos del KMZ alrededor.`;
+    $("lz-kmz-nombres").hidden = !st.kmzNombres.length;
+    $("lz-kmz-nombres-lista").innerHTML = st.kmzNombres.map((n, i) => `<tr data-nombre="${esc(`${n.nombre} ${n.nombre_kmz}`.toLowerCase())}"><td><input type="checkbox" data-lz-kmz-sel data-lz-kmz-nom="${i}" aria-label="Renombrar ${esc(n.nombre)}" ${puedeEditar() ? "checked" : "disabled"}></td>
+      <td>${esc(n.nombre)}</td><td><b>${esc(n.nombre_kmz)}</b></td></tr>`).join("");
     $("lz-kmz-filtro").value = "";
     $("lz-kmz-lista").innerHTML = r.nuevas.map((n, i) => `<tr data-i="${i}" data-nombre="${esc(n.nombre.toLowerCase())}"><td><input type="checkbox" data-lz-kmz-sel="${i}" aria-label="Agregar ${esc(n.nombre)}" ${puedeEditar() ? "checked" : "disabled"}></td>
       <td><b>${esc(n.nombre)}</b><div class="nota">${n.categoria === "reserva" ? "Reserva" : n.categoria === "nodo" ? "Nodo" : "Mufa"} · ${n.lat.toFixed(6)}, ${n.lon.toFixed(6)}</div></td>
       <td><select data-lz-kmz="${i}" ${puedeEditar() ? "" : "disabled"}>
         ${n.cercana ? `<option value="renombrar" selected>Es «${esc(n.cercana.nombre)}» renombrada (a ${Math.round(n.cercana.distancia_m)} m)</option><option value="agregar">Agregar como mufa nueva</option>` : `<option value="agregar" selected>Agregar como mufa nueva</option>`}
         </select></td></tr>`).join("");
-    $("lz-kmz-aplicar").hidden = !r.nuevas.length || !puedeEditar();
+    $("lz-kmz-aplicar").hidden = !(r.nuevas.length || st.kmzNombres.length) || !puedeEditar();
     $("modal-lz-kmz").hidden = false;
     contarMarcadas();
   }
 
   /** The rows that pass the filter (all of them when it is empty). */
-  const filasKmzVisibles = () => [...document.querySelectorAll("#lz-kmz-lista tr")].filter((tr) => !tr.hidden);
+  const filasKmzVisibles = () => [...document.querySelectorAll("#lz-kmz-lista tr, #lz-kmz-nombres-lista tr")].filter((tr) => !tr.hidden);
   function contarMarcadas() {
-    const marcadas = document.querySelectorAll("#lz-kmz-lista input[data-lz-kmz-sel]:checked").length;
-    $("lz-kmz-marcadas").textContent = st.kmzNuevas.length ? `${marcadas} de ${st.kmzNuevas.length} marcada(s)` : "";
+    const marcadas = document.querySelectorAll("#modal-lz-kmz input[data-lz-kmz-sel]:checked").length, total = st.kmzNuevas.length + (st.kmzNombres || []).length;
+    $("lz-kmz-marcadas").textContent = total ? `${marcadas} de ${total} marcada(s)` : "";
     $("lz-kmz-aplicar").textContent = marcadas ? `Aplicar (${marcadas})` : "Aplicar";
     $("lz-kmz-aplicar").disabled = !marcadas;
   }
@@ -642,6 +661,10 @@
       if (s.value === "renombrar") acciones.push({ kmz_id: n.kmz_id, accion: "renombrar", elemento_id: n.cercana.id });
       else if (s.value === "agregar") acciones.push({ kmz_id: n.kmz_id, accion: "agregar" });
     });
+    document.querySelectorAll("#lz-kmz-nombres-lista input[data-lz-kmz-nom]:checked").forEach((c) => {
+      const n = st.kmzNombres[Number(c.dataset.lzKmzNom)];
+      acciones.push({ accion: "actualizar_nombre", elemento_id: n.elemento_id, version: n.version });
+    });
     if (!acciones.length) { $("modal-lz-kmz").hidden = true; return; }
     $("lz-kmz-aplicar").disabled = true;
     const r = await Redes.llamar("aplicar_mufas_kmz_zona", { proyecto_id: st.proyectoId, acciones });
@@ -652,7 +675,7 @@
     const z = st.zonas.find((x) => x.id === st.proyectoId);
     await cargar(st.proyectoId, true);
     if (z) { z.mufas = [...st.elementos.values()].filter((e) => e.tipo === "mufa").length; pintarZonas(st.proyectoId); }
-    mensaje(`${r.agregadas} mufa(s) agregada(s), ${r.renombradas} renombrada(s): ya están en la lista para arrastrarlas al esquema`, "ok");
+    mensaje(`${r.agregadas} mufa(s) agregada(s), ${r.renombradas} renombrada(s)${r.nombres_actualizados ? `, ${r.nombres_actualizados} nombre(s) puesto(s) como en el KMZ` : ""}: ya están en la lista para arrastrarlas al esquema`, "ok");
   }
 
   // ------------------------------------------------------------------ el nodo / ODF que alimenta la red
@@ -743,7 +766,7 @@
     $("lz-kmz-lista").addEventListener("change", (e) => { if (e.target.matches("input[data-lz-kmz-sel]")) contarMarcadas(); });
     $("lz-kmz-filtro").addEventListener("input", (e) => {
       const t = e.target.value.trim().toLowerCase();
-      document.querySelectorAll("#lz-kmz-lista tr").forEach((tr) => { tr.hidden = !!t && !tr.dataset.nombre.includes(t); });
+      document.querySelectorAll("#lz-kmz-lista tr, #lz-kmz-nombres-lista tr").forEach((tr) => { tr.hidden = !!t && !tr.dataset.nombre.includes(t); });
     });
     $("lz-kmz-cerrar").addEventListener("click", () => { $("modal-lz-kmz").hidden = true; $("lz-kmz-error").textContent = ""; });
     $("lz-validar-todo").addEventListener("click", validarTodo);
@@ -777,6 +800,7 @@
     $("lz-alejar").addEventListener("click", () => st.stage.scale({ x: st.stage.scaleX() / 1.2, y: st.stage.scaleY() / 1.2 }));
     $("lz-conectar").addEventListener("click", () => modoCable(st.modo !== "cable"));
     $("lz-quitar").addEventListener("click", quitarSeleccion);
+    $("lz-renombrar-mufa").addEventListener("click", renombrarCaja);
     $("lz-eliminar-cable").addEventListener("click", eliminarCable);
     const abrirExtremo = (campo) => { const c = st.seleccion && st.seleccion.tipo === "cable" && st.cables.find((x) => x.id === st.seleccion.id); const e = c && st.elementos.get(c[campo]); if (e) entrar(e); };
     const hilosEn = (campo) => {                                          // hilo-to-hilo connections in the mufa at one end of the chosen cable
@@ -832,6 +856,7 @@
       const encima = ["modal-mufa", "modal-confirmar", "modal-lz-cable", "modal-lz-nombre", "modal-lz-fuente", "modal-lz-kmz", "modal-fh"].some((id) => $(id) && !$(id).hidden);
       if (e.key === "Escape" && !encima) { e.stopPropagation(); if (st.modo === "cable") modoCable(false); else cerrar(); return; }
       if (encima || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName || ""))) return;
+      if (e.key === "F2") { e.preventDefault(); renombrarCaja(); return; }
       if (e.key === "Delete" || e.key === "Supr") { if (st.seleccion && st.seleccion.tipo === "cable") eliminarCable(); else quitarSeleccion(); }
     }, true);
   }

@@ -35,7 +35,7 @@
         const r = await this.llamar("mufa_existente", { nombre, lat: lat ?? null, lon: lon ?? null });
         if (r.ok && r.mufa) { window.EditorMufa.abrir(r.mufa.id, r.mufa.nombre); return true; }
       }
-      if (window.visor) window.visor.abrirDiagramaPorNombre(nombre);
+      if (window.visor) window.visor.abrirDiagramaPorNombre(nombre, lat ?? null, lon ?? null);
       return false;
     },
 
@@ -53,7 +53,7 @@
           return false;
         }
       }
-      if (window.visor) window.visor.abrirDiagramaPorNombre(nombre);
+      if (window.visor) window.visor.abrirDiagramaPorNombre(nombre, lat ?? null, lon ?? null);
       return false;
     },
 
