@@ -32,7 +32,7 @@ NOMBRE_ESTADO = {"activo": "activo", "oscura": "fibra oscura", "baja": "cliente 
 
 def _mufa(con: Any, mufa_id: int) -> dict[str, Any]:
     fila = con.execute("SELECT id, proyecto_id, tipo, subtipo, nombre, codigo, propiedades, fuente, confianza, estado_migracion, "
-                       "ref_visio ->> 'nombre_visio' AS nombre_visio, ref_visio ->> 'nodo_id' AS nodo_visio, "
+                       "ref_visio ->> 'nombre_visio' AS nombre_visio, ref_visio ->> 'nodo_id' AS nodo_visio, coalesce((ref_visio ->> 'sin_visio')::boolean, false) AS sin_visio, "
                        "ST_Y(ubicacion::geometry) AS lat, ST_X(ubicacion::geometry) AS lon, version FROM redes.elementos "
                        "WHERE id = %s AND borrado_en IS NULL", (int(mufa_id),)).fetchone()
     if fila is None or fila["tipo"] not in ("mufa", "nodo", "odf"):
@@ -131,7 +131,7 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
         "ORDER BY id", (m["id"],)).fetchall()]
     return {"proyecto": dict(proyecto), "mufa": {**{k: m[k] for k in ("id", "tipo", "subtipo", "nombre", "codigo", "fuente", "confianza",
                                                                       "estado_migracion", "nombre_visio", "lat", "lon", "version")},
-                                                 "nodo_visio": int(m["nodo_visio"]) if str(m["nodo_visio"] or "").isdigit() else None,
+                                                 "nodo_visio": int(m["nodo_visio"]) if str(m["nodo_visio"] or "").isdigit() else None, "sin_visio": bool(m["sin_visio"]),
                                                  "propiedades": m["propiedades"] or {},
                                                  "puede_editar": proyectos.puede_editar(con, actor, m["proyecto_id"])},
             "cables": cables, "splitters": splitters, "conectores": conectores, "conexiones": conexiones, "notas": notas,

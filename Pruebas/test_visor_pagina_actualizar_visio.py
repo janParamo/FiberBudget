@@ -21,7 +21,7 @@ async def _recorrido(con, origen):
         assert await p.evaluar("document.getElementById('mg-visio').hidden") is False                        # an administrator sees it
         await p.evaluar("document.getElementById('mg-visio').click(); true")
         await p.esperar("!document.getElementById('modal-mg-visio').hidden && document.getElementById('mg-visio-carpeta').textContent.includes('1 archivo')", 10)
-        assert await p.evaluar("document.getElementById('mg-visio-actualizar').disabled") is True            # nothing uploaded yet
+        assert await p.evaluar("document.getElementById('mg-visio-actualizar').disabled") is False           # nothing uploaded yet, but the folder has a diagram: the base can be updated from it
         # two files: one replaces the existing, one is new; a wrong one is refused with the reason
         await p.evaluar("""window.__fin = false; (async () => {
           const f = (n, b) => new File([new Uint8Array(b)], n);

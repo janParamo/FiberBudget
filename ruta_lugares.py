@@ -17,8 +17,9 @@ def dueno_de_la_api() -> dict[str, str] | None:
     return {"usuario_windows": valor}
 
 
-def guardar(req: Any, seg: Any, route: Any, dueno: dict[str, str] | None) -> dict[str, Any] | None:
-    """Saves the route of the budget in the «Presupuestos» folder of the owner's Mis lugares (to see it on the map and edit it). Never blocks:
+def guardar(req: Any, seg: Any, route: Any, dueno: dict[str, str] | None, extra: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Saves the route of the budget in the «Presupuestos» folder of the owner's Mis lugares (to see it on the map and edit it), in a folder of its own with the exact point of
+    the client, the drop and the new poles (`extra["postes_nuevos"]`). Never blocks:
     returns {"ok": True, "nombre", "accion"} or {"ok": False, "error"} (None when there is no owner or no route)."""
     if not dueno or len(route.points) < 2:
         return None
@@ -26,9 +27,12 @@ def guardar(req: Any, seg: Any, route: Any, dueno: dict[str, str] | None) -> dic
         from visor_rutas.redes import lugares_presupuesto
         distancia = f"{route.distance_m:,.0f} m"
         descripcion = f"Ticket {req.ticket_id} · {distancia} desde {seg.nombre or seg.tipo}".replace("&", "&amp;").replace("<", "&lt;")
+        extra = extra or {}
         r = lugares_presupuesto.guardar_de(
             dueno, nombre=lugares_presupuesto.nombre_ruta(req.client_code, req.client_name), puntos=route.points, descripcion=descripcion,
-            propiedades={"ticket": req.ticket_id, "cliente": req.client_name, "codigo": req.client_code, "distancia_m": round(route.distance_m, 1)})
+            propiedades={"ticket": req.ticket_id, "cliente": req.client_name, "codigo": req.client_code, "distancia_m": round(route.distance_m, 1), **(extra.get("propiedades") or {})},
+            cliente={"lat": getattr(req, "latitude", None), "lon": getattr(req, "longitude", None), "nombre": req.client_name, "codigo": req.client_code},
+            postes_nuevos=[tuple(p) for p in (extra.get("postes_nuevos") or [])])
         return {"ok": True, "nombre": r["nombre"], "accion": r["accion"]}
     except Exception as exc:                                  # noqa: BLE001 - the budget must come out even without the network database
         log.warning("Ticket %s: the route was not saved in Mis lugares (%s: %s)", req.ticket_id, type(exc).__name__, str(exc)[:160])

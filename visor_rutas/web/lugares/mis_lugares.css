@@ -177,3 +177,5 @@ body.editando-red .barra-herramientas { display: none; }
 .ml-ic-texto { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .ml-ic-texto input { height: 28px; padding: 0 6px; border: 1px solid var(--borde); border-radius: 6px; font: inherit; }
 .ml-ic-error { color: var(--error); }
+.ml-d-sub { margin: 14px 0 6px; font-size: 13px; }
+.ml-d-aviso { margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.4; background: #fff4e5; color: #8a4b00; border: 1px solid #f0c27b; }

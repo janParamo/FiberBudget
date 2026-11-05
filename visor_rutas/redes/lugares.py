@@ -512,6 +512,9 @@ def guardar_lugar(con: Any, actor: dict[str, Any], *, id: int | None = None, car
             except ConflictoVersion:
                 raise ConflictoVersion("El lugar cambió mientras lo editaba. Recargue Mis lugares.") from None
             repositorio.registrar(con, actor["id"], "lugar", int(id), "editar", repositorio.diferencias(antes, despues))
+            if e["tipo"] == "ruta" and "geom" in cambios and (e["propiedades"] or {}).get("origen") == "presupuesto":
+                from visor_rutas.redes import lugares_presupuesto          # the route of a budget: its drop follows it and the new poles it stopped using are deleted
+                lugares_presupuesto.al_editar_ruta(con, actor, int(id))
             if e["tipo"] in lugares_red.PUNTUALES_RED and "geom" in cambios:
                 p = json.loads(con.execute("SELECT ST_AsGeoJSON(geom, 8) AS g FROM redes.lugares_elementos WHERE id = %s", (int(id),)).fetchone()["g"])["coordinates"]
                 lugares_red.seguir_elemento(con, actor["id"], int(id), p[0], p[1])

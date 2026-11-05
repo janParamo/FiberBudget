@@ -88,3 +88,37 @@ def test_las_colinas_abbreviation_is_recognised():
     config = rules["traffic_origin"]
     matcher = _AliasMatcher(config["nodes"], config["ignore_label_words"])
     assert matcher.node_in("SPL 1X16 SECUNDARIO PUERTO 0/2/5 OLT L. COLINAS -19.92 dBm") == "OLT LAS COLINAS"
+
+
+def test_a_latitude_typed_with_the_wrong_sign_is_still_read():
+    # the real label of MUFA PLAZA INMACULADA (Granada): «-11.9359844,-85.9592186» (Nicaragua is north: the minus is a typo)
+    lat, lon, _, _ = imp.parse_coord("MUFA PLAZA INMACULADA -11.9359844,-85.9592186")
+    assert (round(lat, 6), round(lon, 6)) == (11.935984, -85.959219)
+    lat, lon, _, _ = imp.parse_coord("MF CENTRO 12.123°, -86.123°")
+    assert (lat, lon) == (12.123, -86.123)                                                          # the normal ones are unchanged
+    assert imp.parse_coord("MUFA -33.5,-70.6") is None                                              # still only Nicaragua
+
+
+def _textos(*items):
+    return [{"texto": t, "x": x, "y": 10.0, "pagina": 0} for t, x in items]
+
+
+def test_a_mufa_drawn_with_only_its_name_in_a_network_diagram_becomes_a_node_without_coordinates():
+    # «Mufas Nindirí.vsdx»: many mufas have their coordinate; MUFA EL BALCON DE LA LAGUNA is just a title (no coordinate)
+    con_coord = [("MUFA N%d\n11.99%d, -86.11%d" % (i, i, i), 100.0 + i) for i in range(1, 8)]
+    ruido = [("C32683 Claudia Patricia Aguilera Caballero", 120.0), ("MUFA", 50.0), ("NODO PRINCIPAL", 60.0), ("MUFAS RED NINDIRI", 55.0),
+             ("MUFA DE CORTE / 11°26'44.394\"N 85°49'42.816\"W", 65.0), ("MF DE CORTE PLANA / SIN COORDENADAS", 66.0), ("MUFA SIN INFO", 67.0),
+             ("MUFA DE UN DIAGRAMA CON UN NOMBRE MUY LARGO QUE ES MAS BIEN UNA FRASE DE EXPLICACION DEL DIBUJO", 70.0)]
+    info = imp.interpretar(_textos(*con_coord, ("MUFA EL BALCON DE LA LAGUNA", 410.6), *ruido), "Mufas Nindirí.vsdx")
+    assert info["tipo"] == "red" and len(info["nodos"]) == 7
+    assert [s["nombre"] for s in imp.mufas_rotuladas_sin_coordenada(info)] == ["MUFA EL BALCON DE LA LAGUNA"]       # not a client, a title, a note, a degrees coordinate or a sentence
+    # one diagram per mufa («de mufa» type): its own title is already handled as the principal one, not here
+    assert imp.mufas_rotuladas_sin_coordenada(imp.interpretar(_textos(("MUFA EL BALCON DE LA LAGUNA", 10.0)), "1 Mufa El Balcon.vsd")) == []
+    # a diagram where most mufas have no coordinate (a ring listing its route) is not read this way
+    solo_nombres = [("MUFA R%d" % i, 100.0 + i) for i in range(1, 6)]
+    assert imp.mufas_rotuladas_sin_coordenada(imp.interpretar(_textos(con_coord[0], *solo_nombres), "MUFAS RED ANILLO.vsd")) == []
+    # joined by name with the one that has coordinates elsewhere
+    reg = imp.Registro()
+    con = reg.obtener("MUFA EL BALCON DE LA LAGUNA", 11.99, -86.11, "Red Nindirí")
+    assert reg.obtener("MUFA EL BALCON DE LA LAGUNA", None, None, "Red Nindirí") == con
+    assert reg.obtener("MF EL BALCON DE LA LAGUNA", None, None, "Red Nindirí") == con                                # MF / MUFA are the same name

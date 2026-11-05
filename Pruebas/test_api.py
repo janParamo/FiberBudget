@@ -630,7 +630,7 @@ def test_the_route_of_an_api_budget_goes_to_the_owner_of_the_env_in_mis_lugares(
     """LUGARES_USUARIO_PRESUPUESTOS: the budget of the API (n8n, a ticket) saves its route for that user; without it nothing is saved."""
     import main
     llamadas = []
-    monkeypatch.setattr(main, "_ruta_a_lugares", lambda req, seg, route, dueno: llamadas.append((req.ticket_id, len(route.points), dueno)))
+    monkeypatch.setattr(main, "_ruta_a_lugares", lambda req, seg, route, dueno, extra=None: llamadas.append((req.ticket_id, len(route.points), dueno)))
     monkeypatch.delenv("LUGARES_USUARIO_PRESUPUESTOS", raising=False)
     assert client.post("/presupuesto", json={**BODY, "ticket_id": "LUG-1"}, headers=HEADERS).status_code == 200
     assert llamadas == [("LUG-1", 3, None)]

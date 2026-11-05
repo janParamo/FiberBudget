@@ -17,6 +17,14 @@ VSDX_2 = b"PK\x03\x04" + b"visio-2" * 20
 VSD = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"viejo" * 20
 
 
+@pytest.fixture(autouse=True)
+def _sin_actualizacion_previa():
+    """The state of the last update lives in the module (the page tests of the same run may have started one): every test starts without it."""
+    actualizar_visio._trabajo.update(id=None, proceso=None, inicio=None, fin=None, codigo=None, por=None)
+    actualizar_visio._trabajo["lineas"].clear()
+    yield
+
+
 @pytest.fixture
 def origen(tmp_path, monkeypatch):
     carpeta = tmp_path / "visio" / "DIAGRAMAS ACTUALIZADOS"

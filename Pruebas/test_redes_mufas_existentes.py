@@ -167,3 +167,28 @@ def test_a_mufa_of_a_zone_wins_over_the_empty_one_made_from_the_map(red_base):
     assert buscar() == vacia["id"]                                                                                        # the only one
     nueva = red.guardar(con, admin, proyecto_id=p["id"], cambios={"elementos": [{"id": "z", "tipo": "mufa", "nombre": "MF LOS POLLOS", "lat": 11.92569, "lon": -85.955211}]})["ids"]["z"]
     assert buscar() == nueva                                                                                              # then the same one added to the zone: «Entrar» goes to it
+
+
+def test_mark_a_mufa_as_without_visio_diagram_and_undo_it(red_base):
+    con, admin, p, ids, _ = red_base
+    leer = lambda: mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id=321, nombre_visio="MF X")["mufa"]
+    assert leer()["sin_visio"] is False and leer()["nodo_visio"] == 321
+    m = mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id=None, nombre_visio="", sin_visio=True)["mufa"]
+    assert (m["sin_visio"], m["nodo_visio"], m["nombre_visio"]) == (True, None, None)              # no node, and marked: nothing is guessed for it
+    assert con.execute("SELECT ref_visio ? 'clave' AS c FROM redes.elementos WHERE id = %s", (ids["b"],)).fetchone()["c"] is True       # what it had from the migration stays
+    m = leer()                                                                                     # choosing a diagram clears the mark
+    assert (m["sin_visio"], m["nodo_visio"]) == (False, 321)
+    mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id=None, nombre_visio="", sin_visio=True)
+    m = mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id=None, nombre_visio="")["mufa"]       # «quitar la marca»
+    assert m["sin_visio"] is False
+    lector = usuarios.guardar(con, admin, datos={"nombre": "Ana", "rol": "lector", "persona_visor": "ana"})["usuario"]
+    with pytest.raises(db.SinPermiso):
+        mufas_existentes.asignar_visio(con, lector, mufa_id=ids["b"], nodo_id=None, nombre_visio="", sin_visio=True)
+
+
+def test_the_mufa_found_from_the_map_says_which_visio_mufa_it_has_assigned(red_base):
+    con, admin, p, ids, _ = red_base
+    assert mufas_existentes.buscar(con, admin, nombre="MF CENTRO")["mufa"]["nodo_visio"] is None
+    mufas_existentes.asignar_visio(con, admin, mufa_id=ids["b"], nodo_id=321, nombre_visio="MUFA EL BALCON DE LA LAGUNA")
+    m = mufas_existentes.buscar(con, admin, nombre="MF CENTRO", lat=12.110, lon=-86.300)["mufa"]
+    assert (m["id"], m["nodo_visio"], m["nombre_visio"]) == (ids["b"], 321, "MUFA EL BALCON DE LA LAGUNA")       # «Ver diagrama Visio» from the map uses it

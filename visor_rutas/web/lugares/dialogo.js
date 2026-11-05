@@ -5,7 +5,7 @@
  *
  *   Dialogo.abrir({tipo, titulo, nombre, carpetas: [{id, etiqueta}], carpetaId, lat, lon, estilo, vista, descripcionHtml, adjuntos,
  *                  cargarAdjunto(id) -> Promise<dataURL>, mapa, alCambiar({lat, lon, estilo}), alAceptar(datos) -> Promise<{ok, error}>,
- *                  alCancelar()}) -> {ponerCoordenada(lat, lon), ponerMedidas(m), cerrar()}
+ *                  alCancelar()}) -> {ponerCoordenada(lat, lon), ponerMedidas(m), ponerResumen(r), cerrar()}
  *   Dialogo.pedirTexto(titulo, valor, etiqueta) -> Promise<string | null>
  */
 (function () {
@@ -208,15 +208,40 @@
     $("ml-d-e-coord").textContent = "";
   }
 
+  /** The rows of a budget route's summary (visor_rutas/redes/lugares_presupuesto.resumen_ruta), under the measures. */
+  function htmlResumen(r) {
+    if (!r) return "";
+    const metros = (v) => `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 1 })} m`;
+    const filas = [["Longitud de la ruta", metros(r.distancia_m)]];
+    if (r.reserva_m !== undefined) filas.push(["Reserva", metros(r.reserva_m)], ["Metraje final (ruta + reserva)", metros(r.metraje_final_m)]);
+    filas.push(["Acometida al cliente", r.acometida_m ? metros(r.acometida_m) : "sin acometida"]);
+    if (r.metraje_total_m !== undefined) filas.push(["Metraje total (con acometida)", metros(r.metraje_total_m)]);
+    if (r.postes_existentes !== undefined) filas.push(["Postes existentes en la ruta", r.postes_existentes], ["Postes nuevos que pide el presupuesto", r.postes_nuevos_necesarios]);
+    if (r.postes_guardados) filas.push(["Postes nuevos guardados que se usan", `${r.postes_guardados_usados} de ${r.postes_guardados}`]);
+    const borrar = r.postes_a_borrar || [];
+    return `<h4 class="ml-d-sub">Presupuesto de esta ruta</h4><dl class="ml-d-dl">${filas.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
+      + (borrar.length ? `<p class="ml-d-aviso">Al guardar se borrarán ${borrar.length} poste(s) nuevo(s) que la ruta ya no usa: ${esc(borrar.map((p) => p.nombre).join(", "))}.</p>` : "")
+      + (r.avisos && r.avisos.length ? `<p class="ml-d-nota">${esc(r.avisos.join(" · "))}</p>` : "");
+  }
+
+  function ponerResumen(r) {
+    if (!actual || esPunto(actual.op.tipo)) return;
+    actual.resumen = r;
+    if (actual.ultimasMedidas) ponerMedidas(actual.ultimasMedidas);
+    else $("ml-d-medidas").innerHTML = htmlResumen(r);
+  }
+
   function ponerMedidas(m) {
     if (!actual || esPunto(actual.op.tipo)) return;
+    actual.ultimasMedidas = m;
     const metros = (v) => `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 1 })} m`;
     const filas = [["Puntos", m.puntos]];
     if (actual.op.tipo !== "poligono") filas.push(["Longitud", `${metros(m.longitud_m)} (${(m.longitud_m / 1000).toFixed(3)} km)`]);
     else filas.push(["Perímetro", `${metros(m.perimetro_m)} (${(m.perimetro_m / 1000).toFixed(3)} km)`],
       ["Área", `${Number(m.area_m2).toLocaleString("en-US", { maximumFractionDigits: 1 })} m² · ${(m.area_m2 / 10000).toFixed(3)} ha · ${(m.area_m2 / 1e6).toFixed(4)} km²`]);
     $("ml-d-medidas").innerHTML = `<dl class="ml-d-dl">${filas.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
-      + `<p class="ml-d-nota">${actual.op.tipo !== "poligono" ? "Se actualiza al agregar, mover o quitar puntos de la línea en el mapa." : "Se actualiza al mover los puntos del polígono en el mapa."}</p>`;
+      + `<p class="ml-d-nota">${actual.op.tipo !== "poligono" ? "Se actualiza al agregar, mover o quitar puntos de la línea en el mapa." : "Se actualiza al mover los puntos del polígono en el mapa."}</p>`
+      + htmlResumen(actual.resumen);
   }
 
   // ------------------------------------------------------------------ descripción (Quill)
@@ -319,7 +344,7 @@
     if (actual === instancia && actual.quill && html) actual.quill.clipboard.dangerouslyPasteHTML(0, html);
     else if (actual === instancia && !actual.quill && html) $("ml-d-texto-plano").value = html.replace(/<[^>]+>/g, "");
     if (actual === instancia) { actual.quill && actual.quill.setSelection(0, 0); $("ml-d-nombre").focus(); $("ml-d-nombre").select(); }
-    return { ponerCoordenada, ponerMedidas, cerrar: () => cerrar(false), get abierto() { return actual === instancia; } };
+    return { ponerCoordenada, ponerMedidas, ponerResumen, cerrar: () => cerrar(false), get abierto() { return actual === instancia; } };
   }
 
   async function aceptar() {

@@ -1155,7 +1155,9 @@
   }
 
   const MAX_MISMO_NOMBRE_M = 1500;      // a Visio mufa with the same name farther than this is another mufa
-  const RADIO_POR_COORDENADA_M = 150;   // the Visio and the KMZ agree on the place: a Visio mufa this close is the one, whatever its name
+  const RADIO_POR_COORDENADA_M = 30;    // the Visio and the KMZ agree on the place to a few metres: a Visio mufa this close is the one, whatever its name (the next mufa on the street is not)
+  /** MF, MC and MUFA(S) are one word for a mufa (as the importer reads them): «MF EL BALCON» is «MUFA EL BALCON». */
+  const canonico = (t) => String(t || "").replace(/[^a-z0-9 ]+/g, " ").replace(/\b(mf|mc|mufas?)\b/g, "mufa").replace(/\s+/g, " ").trim();
   const metrosEntre = (a, b) => (a.lat == null || b.lat == null ? Infinity : Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180)));
 
   /** The Visio mufa meant by `q` ({nombre, nodo_id?, lat?, lon?}), among the name search `resultados`. Its Visio node if it has one; else the nearest of the same name (not if
@@ -1163,24 +1165,30 @@
    *  Without a coordinate there is nothing to check against, so the first of the same name (or of the list) is kept. */
   async function elegirMufa(resultados, q, normal) {
     // the saved node counts only while it is still that mufa: a new import of the diagrams renumbers the nodes, and an old number may now be another mufa
+    const mismo = (a, b) => canonico(normal(a)) === canonico(normal(b));
     if (q.nodo_id) {
       const exacta = resultados.find((x) => x.id === Number(q.nodo_id));
-      if (exacta && (normal(exacta.nombre) === normal(q.nombre) || metrosEntre(q, exacta) <= RADIO_POR_COORDENADA_M)) return exacta;
+      if (exacta && (mismo(exacta.nombre, q.nombre) || metrosEntre(q, exacta) <= RADIO_POR_COORDENADA_M)) return exacta;
     }
-    const iguales = resultados.filter((x) => normal(x.nombre) === normal(q.nombre));
+    const iguales = resultados.filter((x) => mismo(x.nombre, q.nombre));
     if (q.lat == null || q.lon == null) return (iguales.length ? iguales : resultados)[0];
     const cerca = [...iguales].sort((a, b) => metrosEntre(q, a) - metrosEntre(q, b)).filter((x) => metrosEntre(q, x) <= MAX_MISMO_NOMBRE_M);
     if (cerca.length) return cerca[0];
+    const sinCoordenada = iguales.filter((x) => x.lat == null || x.lon == null);          // a mufa the diagram draws with only its name: there is no place to compare, the name is all there is
+    if (sinCoordenada.length === 1) return sinCoordenada[0];
     let res;
     try { res = await api.buscar_mufa_cerca(q.lat, q.lon, RADIO_POR_COORDENADA_M); } catch (e) { res = { ok: false }; }
     const delLugar = res && res.ok ? res.resultados.filter((x) => x.diagramas) : [];
     return delLugar[0] || null;
   }
 
+  /** The place of the mufa asked for (when it has one), for a Visio node that has none. */
+  const q_lugar = (quien) => (quien && typeof quien === "object" && quien.lat != null && quien.lon != null ? { lat: quien.lat, lon: quien.lon } : null);
+
   async function mostrarDiagramaDeMufa(quien, { alLado = false, indice = 0 } = {}) {
     const m = await mufaConDiagrama(quien);
     if (!m) return false;
-    await seleccionarMufa(m);
+    await seleccionarMufa(m, q_lugar(quien));
     if (!diagramaActual || !diagramaActual.archivos.length) return false;
     diagramaActual.indice = Math.min(indice, diagramaActual.archivos.length - 1);
     if (alLado) document.body.classList.add("visio-al-lado");
@@ -1268,7 +1276,7 @@
   // ------------------------------------------------------------------ buscador de mufas
   /** The search box is mapa/buscador.js; the viewer only closes its list and registers its own source (conectarBuscador). */
   const ocultarResultados = () => { if (window.Buscador) window.Buscador.ocultar(); };
-  async function seleccionarMufa(m) {
+  async function seleccionarMufa(m, lugar = null) {
     ocultarResultados();
     $("buscar-mufa").value = m.nombre;
     $("buscar-mufa").blur();
@@ -1276,7 +1284,9 @@
     let res;
     try { res = await api.mufa(m.id); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return; }
-    const d = res.mufa;
+    let d = res.mufa;
+    const prestada = !tieneCoord(d) && lugar && lugar.lat != null && lugar.lon != null;       // the diagram has no coordinate for it: the one of the mufa it was assigned to is used
+    if (prestada) d = { ...d, lat: lugar.lat, lon: lugar.lon };
     mostrarDiagrama(d.nombre, htmlInfoMufa(d), (d.archivos || []).filter((a) => a.diagrama), 0, d.nombre, d.nodo_id || m.id);
     capas.busqueda.clearLayers();
     if (tieneCoord(d)) {
@@ -1289,7 +1299,7 @@
       // centre it in the part of the map the (now wider) panel does not cover
       mapa.setView([d.lat, d.lon], Math.max(mapa.getZoom(), 18), { animate: false });
       mapa.panBy([($("panel").offsetWidth + 20) / 2, 0], { animate: false });
-      mensaje(`${d.nombre} · ${coordTexto(d.lat, d.lon)}`, "ok");
+      mensaje(`${d.nombre} · ${coordTexto(d.lat, d.lon)}${prestada ? " (la posición es la de la mufa asignada: el diagrama no trae coordenada)" : ""}`, "ok");
     } else {
       mensaje(`${d.nombre}: sin coordenadas en la base, no se puede ubicar en el mapa`, "error");
     }
@@ -1301,14 +1311,21 @@
     const limpio = String(nombre || "").trim();
     if (!limpio) return;
     mensaje(`Buscando el diagrama de ${limpio}…`, "cargando");
+    let buscado = limpio, nodoId = null;
+    if (window.Redes && window.Redes.disponible && lat != null && lon != null) {
+      try {
+        const r = await window.Redes.llamar("mufa_existente", { nombre: limpio, lat, lon });
+        if (r.ok && r.mufa && r.mufa.nodo_visio) { nodoId = r.mufa.nodo_visio; buscado = r.mufa.nombre_visio || limpio; }          // the mufa of the network has its Visio mufa assigned: that is the one
+      } catch (e) { /* without the network module the search goes by name and place */ }
+    }
     let res;
-    try { res = await api.buscar_mufa(limpio); } catch (e) { res = { ok: false, error: String(e) }; }
+    try { res = await api.buscar_mufa(buscado); } catch (e) { res = { ok: false, error: String(e) }; }
     if (!res.ok) { mensaje(res.error, "error"); return; }
     const normal = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-    const m = await elegirMufa(res.resultados, { nombre: limpio, lat: lat ?? null, lon: lon ?? null }, normal);
+    const m = await elegirMufa(res.resultados, { nombre: buscado, nodo_id: nodoId, lat: lat ?? null, lon: lon ?? null }, normal);
     if (!m) { mensaje(`${limpio}: no está en los diagramas Visio`, "error"); return; }
     if (!m.diagramas) { mensaje(`${m.nombre}: no tiene diagrama Visio`, "error"); return; }
-    seleccionarMufa(m);
+    seleccionarMufa(m, lat != null && lon != null ? { lat, lon } : null);
   }
 
   function conectarBuscador() {

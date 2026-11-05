@@ -33,13 +33,14 @@ def buscar(con: Any, actor: dict[str, Any], *, nombre: str | None = None, lat: f
     """{"mufa": {id, nombre, proyecto_id, proyecto} | None} among the mufas the user can see."""
     visibles = "(p.es_red_base OR %(admin)s OR EXISTS (SELECT 1 FROM redes.proyecto_usuarios pu WHERE pu.proyecto_id = p.id AND pu.usuario_id = %(u)s))"
     base = ("SELECT e.id, e.nombre, e.proyecto_id, p.nombre AS proyecto, e.ref_visio ->> 'nombre_visio' AS nombre_visio, "
-            "{dist} AS d FROM redes.elementos e JOIN redes.proyectos p ON p.id = e.proyecto_id "
+            "e.ref_visio ->> 'nodo_id' AS nodo_visio, {dist} AS d FROM redes.elementos e JOIN redes.proyectos p ON p.id = e.proyecto_id "
             f"WHERE e.borrado_en IS NULL AND p.borrado_en IS NULL AND e.tipo = ANY(%(tipos)s) AND {visibles} ")
     args = {"admin": bool(actor.get("rol") == "administrador"), "u": actor.get("id"), "tipos": list(TIPOS_MUFA),
             "lat": lat, "lon": lon}
     hay_punto = lat is not None and lon is not None
     dist = ("ST_Distance(e.ubicacion::geography, ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography)" if hay_punto else "NULL::float8")
-    publico = lambda f: {k: f[k] for k in ("id", "nombre", "proyecto_id", "proyecto")} if f else None
+    publico = lambda f: ({**{k: f[k] for k in ("id", "nombre", "proyecto_id", "proyecto")}, "nombre_visio": f["nombre_visio"],
+                          "nodo_visio": int(f["nodo_visio"]) if str(f["nodo_visio"] or "").isdigit() else None} if f else None)
     if kmz_punto_id is not None:
         f = con.execute(base.format(dist=dist) + "AND (e.ref_externa -> 'kmz' ->> 'kmz_punto_id')::bigint = %(k)s ORDER BY e.id LIMIT 1",
                         {**args, "k": int(kmz_punto_id)}).fetchone()
@@ -177,9 +178,10 @@ def validar_zona(con: Any, actor: dict[str, Any], *, proyecto_id: int) -> dict[s
     return {"validadas": len(pendientes), "ya_validadas": len(filas) - len(pendientes)}
 
 
-def asignar_visio(con: Any, actor: dict[str, Any], *, mufa_id: int, nodo_id: Any, nombre_visio: Any) -> dict[str, Any]:
+def asignar_visio(con: Any, actor: dict[str, Any], *, mufa_id: int, nodo_id: Any, nombre_visio: Any, sin_visio: bool = False) -> dict[str, Any]:
     """Links the mufa to the Visio node (and so to its diagram) chosen by a person: «Ver Visio original» looks for the diagram by that node.
-    For the mufas the Visio search does not find by name (renamed, created from the KMZ…). `nodo_id` None / empty removes the link."""
+    For the mufas the Visio search does not find by name (renamed, created from the KMZ…). `nodo_id` None / empty removes the link; with `sin_visio` the mufa is marked as having
+    NO Visio diagram (a mufa that is new in the field, drawn by hand): «Ver Visio original» no longer guesses one for it. Choosing a node, or removing, clears that mark."""
     m = _elemento_editable(con, actor, mufa_id)
     quitar = nodo_id in (None, "")
     try:
@@ -190,13 +192,17 @@ def asignar_visio(con: Any, actor: dict[str, Any], *, mufa_id: int, nodo_id: Any
     if nodo is not None and not nombre:
         raise DatosInvalidos({"nombre_visio": "falta el nombre de la mufa del Visio"})
     with con.transaction():
-        if nodo is None:
-            con.execute("UPDATE redes.elementos SET ref_visio = nullif(ref_visio - 'nodo_id' - 'nombre_visio', '{}'::jsonb), version = version + 1, "
+        if nodo is None and sin_visio:
+            con.execute("UPDATE redes.elementos SET ref_visio = (coalesce(ref_visio, '{}'::jsonb) - 'nodo_id' - 'nombre_visio') || '{\"sin_visio\": true}'::jsonb, "
+                        "version = version + 1, actualizado_en = now(), actualizado_por = %s WHERE id = %s", (actor["id"], m["id"]))
+        elif nodo is None:
+            con.execute("UPDATE redes.elementos SET ref_visio = nullif(ref_visio - 'nodo_id' - 'nombre_visio' - 'sin_visio', '{}'::jsonb), version = version + 1, "
                         "actualizado_en = now(), actualizado_por = %s WHERE id = %s", (actor["id"], m["id"]))
         else:
-            con.execute("UPDATE redes.elementos SET ref_visio = coalesce(ref_visio, '{}'::jsonb) || jsonb_build_object('nodo_id', %s::int, 'nombre_visio', %s::text), "
+            con.execute("UPDATE redes.elementos SET ref_visio = (coalesce(ref_visio, '{}'::jsonb) - 'sin_visio') || jsonb_build_object('nodo_id', %s::int, 'nombre_visio', %s::text), "
                         "version = version + 1, actualizado_en = now(), actualizado_por = %s WHERE id = %s", (nodo, nombre, actor["id"], m["id"]))
-        repositorio.registrar(con, actor["id"], "elemento", m["id"], "editar", {"diagrama_visio": [None, nombre or None]}, proyecto_id=m["proyecto_id"])
+        repositorio.registrar(con, actor["id"], "elemento", m["id"], "editar",
+                              {"diagrama_visio": [None, nombre or ("sin diagrama" if sin_visio else None)]}, proyecto_id=m["proyecto_id"])
     return mufa.leer(con, actor, mufa_id=m["id"])
 
 

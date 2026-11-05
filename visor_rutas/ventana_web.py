@@ -56,6 +56,52 @@ except Exception as _exc:          # ImportError in the .exe; RuntimeError when 
 
 TITULO = "Visor de rutas – Fiber Budget"
 HTML = Path(__file__).resolve().parent / "web" / "visor.html"
+ICONO = Path(__file__).resolve().parent / "web" / "fiber_budget.ico"          # herramientas/icono_fiber_budget.py lo genera
+APP_ID = "IDEAY.FiberBudget.Visor"
+
+
+def identidad_windows() -> None:
+    """Makes Windows treat the viewer as its own program («Fiber Budget»), not as python: its icon in the taskbar is the one of the shortcut, not Python's. Before the first window."""
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)        # type: ignore[attr-defined]  # only exists on Windows
+    except Exception:                                                                # noqa: BLE001 - another system: nothing to do
+        pass
+
+
+def _icono_en_ventana(titulo: str, espera_s: float = 15.0) -> bool:
+    """Puts the Fiber Budget icon on the window with that title (title bar, Alt+Tab). It only POSTS the messages to the window: it never waits for its thread, so
+    it cannot freeze a window that is still being built. False if the window did not show up (or this is not Windows)."""
+    if not ICONO.is_file() or os.name != "nt":
+        return False
+    usuario32 = ctypes.windll.user32                                                  # type: ignore[attr-defined]  # Windows only
+    usuario32.FindWindowW.restype = ctypes.c_void_p
+    usuario32.LoadImageW.restype = ctypes.c_void_p
+    limite = time.time() + espera_s
+    ventana = None
+    while time.time() < limite:
+        ventana = usuario32.FindWindowW(None, titulo)
+        if ventana:
+            break
+        time.sleep(0.2)
+    if not ventana:
+        return False
+    for grande, metrica in ((1, 11), (0, 49)):                                         # ICON_BIG (SM_CXICON), ICON_SMALL (SM_CXSMICON)
+        lado = usuario32.GetSystemMetrics(metrica)
+        icono = usuario32.LoadImageW(None, str(ICONO), 1, lado, lado, 0x10)            # IMAGE_ICON, LR_LOADFROMFILE
+        if icono:
+            usuario32.PostMessageW(ctypes.c_void_p(ventana), 0x0080, grande, ctypes.c_void_p(icono))   # WM_SETICON
+    return True
+
+
+def poner_icono(titulo: str) -> None:
+    """The icon of Fiber Budget on the window called `titulo`, from a thread of its own (the window is built meanwhile). Whatever fails leaves the default icon."""
+    def _poner() -> None:
+        try:
+            _icono_en_ventana(titulo)
+        except Exception as exc:                                                     # noqa: BLE001 - the icon is only decoration
+            log.debug("Visor web: no se pudo poner el icono de la ventana (%s)", exc)
+    threading.Thread(target=_poner, name="visor-icono", daemon=True).start()
+
 # "Calles": Esri World Street Map. OpenStreetMap was tried first (as in the Tkinter window), but
 # WebView2 sends no Referer from file:// pages and OSM answers every tile with an
 # "Access blocked" image (HTTP 200, so it looks like a normal tile). Esri has no such restriction.
@@ -1236,6 +1282,7 @@ class Api:
             # The parameters go after «#»: with «?» WebView2 takes it as part of the file name of a file:// URL (ERR_FILE_NOT_FOUND).
             webview.create_window(titulo, url=HTML.as_uri() + "#" + urlencode(consulta), js_api=self, width=1100, height=820,
                                   min_size=(640, 420), text_select=True)
+            poner_icono(titulo)
         except Exception as exc:                                    # noqa: BLE001
             log.warning("Visor web: window %s could not be opened (%s)", tipo, exc)
             return {"ok": False, "error": f"No se pudo abrir la ventana: {exc}"}
@@ -1272,11 +1319,13 @@ def abrir(forzar_remoto: bool = False) -> None:
 
     if not HTML.is_file():
         raise FileNotFoundError(f"No se encontró {HTML}")
+    identidad_windows()
     api = Api(config_visor.leer(), forzar_remoto=forzar_remoto)
     log.info("Visor mode: %s%s", api._modo, f" ({api._remoto.servidor})" if api._remoto else "")
     ventana = webview.create_window(TITULO, url=HTML.as_uri(), js_api=api, maximized=True,
                                     min_size=(900, 600), text_select=True)
     assert ventana is not None
+    poner_icono(TITULO)
     api._ventana = ventana               # save dialogs ("Guardar Excel / PDF como…")
     if LOCAL_DISPONIBLE:
         # Visor budgets older than OUTPUT_RETENTION_DAYS (output/visor only; never the API's files).

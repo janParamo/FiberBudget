@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import psycopg
 
-from visor_rutas.redes import (actualizar_red, actualizar_visio, incorporar_kmz, bandejas, campo, db, diagrama, lienzo, lugares, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, planificacion, problemas,
+from visor_rutas.redes import (actualizar_red, actualizar_visio, incorporar_kmz, bandejas, campo, db, diagrama, lienzo, lugares, lugares_presupuesto, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, planificacion, problemas,
                                proyectos, red, respaldo, splitters, trazado, usuarios, verificar)
 
 log = logging.getLogger(__name__)
@@ -169,6 +169,7 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "mufas_kmz_zona": lienzo.mufas_kmz,
     "aplicar_mufas_kmz_zona": lienzo.aplicar_mufas_kmz,
     "renombrar_elemento_zona": lienzo.renombrar_elemento,
+    "resumen_ruta_presupuesto": lugares_presupuesto.resumen_ruta,
     # sección 8: integridad de los datos
     "verificar_base": verificar.verificar,
 }

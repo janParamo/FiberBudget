@@ -73,15 +73,15 @@
 
   // ------------------------------------------------------------------ actualizar los diagramas Visio subiendo los archivos
   const esAdmin = () => !!(window.Redes && Redes.estado && Redes.estado.puede && Redes.estado.puede.administrar);
-  const vis = { subidos: { reemplazados: [], nuevos: [], rechazados: [] }, sondeo: null, ocupado: false };
+  const vis = { subidos: { reemplazados: [], nuevos: [], rechazados: [] }, sondeo: null, ocupado: false, visio: 0 };          // visio: how many Visio files the folder has
   const avisoVisio = (t, tipo) => Redes.estadoEn($("mg-visio-estado"), t, tipo);
 
   function pintarResumenVisio() {
     const s = vis.subidos;
     const lista = (titulo, items, fila) => (items.length ? `<div class="mg-visio-grupo"><b>${titulo} (${items.length})</b><ul>${items.slice(0, 40).map((x) => `<li>${fila(x)}</li>`).join("")}${items.length > 40 ? `<li class="nota">… y ${items.length - 40} más</li>` : ""}</ul></div>` : "");
     $("mg-visio-resumen").innerHTML = lista("Reemplazados", s.reemplazados, (x) => esc(x)) + lista("Nuevos", s.nuevos, (x) => esc(x))
-      + lista("No se subieron", s.rechazados, (x) => `${esc(x.nombre)} <span class="nota">· ${esc(x.motivo)}</span>`) || `<p class="nota">Todavía no se subió ningún archivo en esta sesión.</p>`;
-    $("mg-visio-actualizar").disabled = vis.ocupado || !(s.reemplazados.length || s.nuevos.length);
+      + lista("No se subieron", s.rechazados, (x) => `${esc(x.nombre)} <span class="nota">· ${esc(x.motivo)}</span>`) || `<p class="nota">Todavía no se subió ningún archivo en esta sesión. «Actualizar la base de diagramas» también sirve con los archivos que ya están en la carpeta (por ejemplo, tras una corrección del lector de diagramas).</p>`;
+    $("mg-visio-actualizar").disabled = vis.ocupado || !(vis.visio > 0 || s.reemplazados.length || s.nuevos.length);          // the folder is what is read, not only what was uploaded now
   }
 
   function pintarProgresoVisio(a) {
@@ -107,6 +107,7 @@
     const r = await Redes.llamar("visio_estado", {});
     if (!r.ok) { avisoVisio(r.error, "error"); return; }
     $("mg-visio-carpeta").textContent = `${r.archivos} archivo(s) (${r.visio} Visio) en ${r.carpeta}`;
+    vis.visio = r.visio;
     pintarResumenVisio();
     pintarProgresoVisio(r.actualizacion);
     if (r.actualizacion && r.actualizacion.activa) { vis.ocupado = true; sondearVisio(); }
@@ -127,7 +128,7 @@
     avisoVisio("");
     pintarResumenVisio();
     const r = await Redes.llamar("visio_estado", {});
-    if (r.ok) $("mg-visio-carpeta").textContent = `${r.archivos} archivo(s) (${r.visio} Visio) en ${r.carpeta}`;
+    if (r.ok) { $("mg-visio-carpeta").textContent = `${r.archivos} archivo(s) (${r.visio} Visio) en ${r.carpeta}`; vis.visio = r.visio; pintarResumenVisio(); }
   }
 
   async function actualizarVisio() {

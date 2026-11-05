@@ -54,14 +54,15 @@ def test_windows_of_same_name_mufas_are_not_the_same_window(monkeypatch):
 pytestmark_pagina = pytest.mark.skipif(not hay_edge(), reason="necesita Edge y la librería websockets")
 
 MUFAS = [{"id": 1, "nombre": "MF CENTRO", "tipo": "MUFA", "zona": "Norte", "diagramas": 1, "lat": 12.50, "lon": -86.10},
-         {"id": 2, "nombre": "MF CENTRO", "tipo": "MUFA", "zona": "Sur", "diagramas": 1, "lat": 12.10, "lon": -86.30}]
+         {"id": 2, "nombre": "MF CENTRO", "tipo": "MUFA", "zona": "Sur", "diagramas": 1, "lat": 12.10, "lon": -86.30},
+         {"id": 3, "nombre": "MUFA EL BALCON DE LA LAGUNA", "tipo": "MUFA", "zona": "Nindirí", "diagramas": 1, "lat": None, "lon": None}]      # drawn with its name only: no coordinate
 DETALLE = {"id": 0, "nombre": "MF CENTRO", "tipo": "MUFA", "zona": "Sur", "propietario": "IDEAY", "lat": 12.1, "lon": -86.3, "textos": [], "hilos": [],
            "archivos": [{"diagrama": True, "md5": "a" * 32, "ruta_relativa": "SUR/MF.vsd", "nombre": "MF.vsd", "rol": "principal", "tipo_diagrama": "mufa", "ancla": None}]}
 STUBS = """(() => { window.__mufas = [];
   window.__stubs.buscar_mufa = () => ({ok: true, resultados: %s});
-  window.__stubs.mufa = (id) => { window.__mufas.push(id); return {ok: true, mufa: Object.assign(%s, {id})}; };
+  window.__stubs.mufa = (id) => { window.__mufas.push(id); return {ok: true, mufa: Object.assign(%s, {id}, id === 3 ? {nombre: 'MUFA EL BALCON DE LA LAGUNA', lat: null, lon: null} : {})}; };
   window.__stubs.diagrama = () => ({ok: false, error: 'sin imagen en la prueba'});
-  window.__stubs.buscar_mufa_cerca = () => ({ok: true, resultados: [%s]});
+  window.__radios = []; window.__stubs.buscar_mufa_cerca = (lat, lon, radio) => { window.__radios.push(radio); return {ok: true, resultados: [%s]}; };
   return true; })()""" % (json.dumps(MUFAS), json.dumps(DETALLE), json.dumps(MUFAS[1]))
 
 
@@ -88,6 +89,14 @@ async def _recorrido():
         await p.evaluar("window.visor.verVisioAlLado({nombre: 'MF CENTRO VIEJO', nodo_id: 1, lat: 12.1, lon: -86.3}); true")
         await p.esperar("window.__mufas.length === 5", 10)
         assert (await p.evaluar("window.__mufas"))[-1] == 2
+        # by place only the mufa AT the point (a few metres), never the next one on the street (the Visio and the KMZ agree to a few metres)
+        assert await p.evaluar("window.__radios.every((r) => r <= 30) && window.__radios.length > 0") is True
+        # a mufa the diagram draws with only its name (no coordinate): «MF» is «MUFA», the lone node of that name is the one, and it is placed where the mufa asked for is
+        await p.evaluar("window.visor.verVisioAlLado({nombre: 'MF EL BALCON DE LA LAGUNA', lat: 11.999516, lon: -86.118638}); true")
+        await p.esperar("window.__mufas.length === 6", 10)
+        assert (await p.evaluar("window.__mufas"))[-1] == 3
+        mensaje = await p.evaluar("document.getElementById('mensaje-texto').textContent")
+        assert "sin coordenadas" not in mensaje and "11.999516" in mensaje and "posición es la de la mufa asignada" in mensaje
         assert await p.errores() == []
 
 
@@ -114,3 +123,22 @@ async def _cerrar_visio_al_lado():
 @pytestmark_pagina
 def test_the_close_button_of_the_visio_beside_the_editor_is_always_reachable():
     asyncio.run(_cerrar_visio_al_lado())
+
+
+async def _botones_del_popup():
+    async with pagina_edge(1366, 768) as p:
+        await p.esperar("window.visor && window.visor.mapa", 20)
+        # the popup of a KMZ mufa: two rows of buttons that together are wider than the popup; none may stick out of its box
+        await p.evaluar("""(() => { const d = document.createElement('div'); d.id = 'caja-prueba'; d.style.cssText = 'position:fixed;left:20px;top:20px;width:340px;z-index:9999;background:#fff';
+          const b = (t) => '<button type="button" class="btn btn-chico">' + t + '</button>';
+          d.innerHTML = '<div class="popup"><div class="acciones">' + ['Copiar', 'Entrar a la mufa', 'Ver diagrama Visio'].map(b).join('') + '</div>'
+            + '<div class="acciones kc-acciones">' + ['Renombrar', 'Mover', 'Cambiar ícono…', 'Eliminar', 'Deshacer cambios'].map(b).join('') + '</div></div>';
+          document.body.appendChild(d); return true; })()""")
+        sobran = await p.evaluar("""(() => { const c = document.getElementById('caja-prueba').getBoundingClientRect();
+          return [...document.querySelectorAll('#caja-prueba button')].filter((x) => x.getBoundingClientRect().right > c.right + 0.5).length; })()""")
+        assert sobran == 0, sobran
+
+
+@pytestmark_pagina
+def test_popup_buttons_wrap_inside_the_box():
+    asyncio.run(_botones_del_popup())

@@ -74,18 +74,10 @@ tiene un KMZ nuevo). Las casillas que deje marcadas se guardan en %APPDATA%\\Vis
 
 
 def crear_icono() -> None:
-    """Blue rounded square with a white map pin, in the sizes Windows uses."""
-    from PIL import Image, ImageDraw
-    lado = 256
-    imagen = Image.new("RGBA", (lado, lado), (0, 0, 0, 0))
-    dibujo = ImageDraw.Draw(imagen)
-    dibujo.rounded_rectangle((8, 8, lado - 8, lado - 8), radius=48, fill=(31, 111, 235, 255))
-    dibujo.line([(40, 196), (100, 120), (150, 160), (216, 70)], fill=(255, 212, 0, 255), width=18, joint="curve")
-    dibujo.ellipse((150, 36, 230, 116), fill=(255, 255, 255, 255))
-    dibujo.polygon([(158, 92), (222, 92), (190, 150)], fill=(255, 255, 255, 255))
-    dibujo.ellipse((174, 58, 206, 90), fill=(230, 30, 30, 255))
-    ICONO.parent.mkdir(parents=True, exist_ok=True)
-    imagen.save(ICONO, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    """The Fiber Budget icon (herramientas/icono_fiber_budget.py), in the sizes Windows uses."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from icono_fiber_budget import guardar
+    guardar(ICONO)
 
 
 def ejecutar_pyinstaller() -> None:

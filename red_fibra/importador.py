@@ -141,7 +141,8 @@ def parse_coord(texto):
             b = -b
         if (m.group(2) or '').upper() == 'S' and a > 0:
             a = -a
-        cand = [(a, b), (b, a), (a, -abs(b)), (b, -abs(a))]
+        cand = [(a, b), (b, a), (a, -abs(b)), (b, -abs(a)),
+                (abs(a), -abs(b)), (abs(b), -abs(a))]          # the sign typed wrong on the latitude: «-11.9359844,-85.9592186»; Nicaragua is north / west
         for lat, lon in cand:
             if LAT_MIN <= lat <= LAT_MAX and LON_MIN <= lon <= LON_MAX:
                 return lat, lon, m.start(), m.end()
@@ -568,6 +569,30 @@ def interpretar(textos, nombre_archivo):
             'sin_coord': [s for s in sin_coord if not s.get('usado')], 'principal': principal}
 
 
+MAX_LARGO_ROTULO = 70
+PROPORCION_CON_COORDENADA = 5          # el diagrama debe traer, por cada rótulo sin coordenada, al menos tantas mufas CON coordenada
+RE_ROTULO_DUDOSO = re.compile(r"[°/¿?]|\bSIN\b|\bCOORD|\bVALIDAR\b|\bPOSIBLEMENTE\b|\bOPGW\b", re.I)    # notas, coordenadas en grados o dudas: no son un nombre limpio
+
+
+def mufas_rotuladas_sin_coordenada(info):
+    """Mufas que un diagrama de RED dibuja solo con su nombre («MUFA EL BALCON DE LA LAGUNA»), sin coordenada en la etiqueta. Antes se descartaban: la mufa no existía para
+    el visor aunque el dibujo la mostrara. Quedan como nodos sin coordenada (se unen por nombre a la que ya exista con coordenada en otro diagrama).
+    Con cuidado, para no llenar la base de basura: solo diagramas de red donde casi todas las mufas traen su coordenada (los de anillos listan muchas sin ella), solo rótulos
+    cortos que empiezan por MUFA / MF / MC, que no son un nombre genérico ni el título del diagrama («MUFAS RED …»), y sin notas ni coordenadas en grados."""
+    if info['tipo'] != 'red':
+        return []
+    salida, vistos = [], set()
+    for s in info['sin_coord']:
+        nombre = s['nombre']
+        norm = normalizar(nombre)
+        if (not nombre or len(nombre) > MAX_LARGO_ROTULO or not norm.startswith('MUFA ') or es_generico(norm) or RE_SOLO_NUM.match(nombre) or norm in vistos
+                or re.match(r'\s*MUFAS\b', nombre, re.I) or RE_ROTULO_DUDOSO.search(nombre)):
+            continue
+        vistos.add(norm)
+        salida.append(s)
+    return salida if len(info['nodos']) >= PROPORCION_CON_COORDENADA * len(salida) else []
+
+
 # ---------------------------------------------------------------------------
 # Registro de nodos (une apariciones entre archivos)
 # ---------------------------------------------------------------------------
@@ -808,6 +833,10 @@ def main():
                 apariciones.append((i, a['id'], 'vecino' if info['tipo'] == 'mufa' else 'red',
                                     n['nombre'], n['lat'], n['lon'], n['texto']))
                 idx_nodos.append((i, n))
+
+            for s in mufas_rotuladas_sin_coordenada(info):
+                i = reg.obtener(s['nombre'], None, None, zona)
+                apariciones.append((i, a['id'], 'red', s['nombre'], None, None, s['texto']))
 
             principal_idx = None
             if info['principal']:

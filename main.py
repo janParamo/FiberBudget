@@ -545,9 +545,11 @@ def dueno_de_la_api() -> dict[str, str] | None:
     return ruta_lugares.dueno_de_la_api()
 
 
-def _ruta_a_lugares(req: TicketRequest, seg: db.Segment, route: routing.Route, dueno: dict[str, str] | None) -> dict[str, Any] | None:
-    """The route of the budget in the owner's Mis lugares, to see it on the map and edit it; never blocks (see ruta_lugares.guardar)."""
-    return ruta_lugares.guardar(req, seg, route, dueno)
+def _ruta_a_lugares(req: TicketRequest, seg: db.Segment, route: routing.Route, dueno: dict[str, str] | None,
+                    extra: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """The route of the budget in the owner's Mis lugares, to see it on the map and edit it, with what it uses: the new poles, the client point and the drop; never blocks
+    (see ruta_lugares.guardar). `extra`: {"postes_nuevos": [(lat, lon)], "propiedades": {...numbers of the budget...}}."""
+    return ruta_lugares.guardar(req, seg, route, dueno, extra)
 
 
 def _generar_presupuesto(req: TicketRequest) -> dict[str, Any]:
@@ -798,7 +800,9 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     # Satellite map of the route for the "ESQUEMA DE RUTA PROYECTADA" box; never blocks.
     nuevos_en_mapa = new_pole_points(route.points, route.distance_m, rules, existing_pole_positions_m, duct_spans or None)[:max(0, quantities[new_pole_label])]
     map_png = _route_map(req, seg, route, busqueda, desde_visio, existing_pole_records, rules, output_dir, nuevos_en_mapa)
-    en_lugares = _ruta_a_lugares(req, seg, route, dueno_lugares)  # the same line, in Mis lugares of whoever made the budget
+    en_lugares = _ruta_a_lugares(req, seg, route, dueno_lugares, {                         # the same line, in Mis lugares of whoever made the budget, with its new poles, the client point and the drop
+        "postes_nuevos": nuevos_en_mapa,
+        "propiedades": {"metraje_final_m": final_distance_m, "reserva_m": reserve_m, "postes_existentes": existing_poles, "postes_nuevos_n": quantities[new_pole_label]}})
     google_maps_url = (f"https://www.google.com/maps/dir/?api=1&origin={seg.lat:.6f},{seg.lon:.6f}"
                        f"&destination={req.latitude:.6f},{req.longitude:.6f}&travelmode=walking")
 

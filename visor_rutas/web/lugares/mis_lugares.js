@@ -171,6 +171,15 @@
       else { const m = medidas(ll, "poligono"); filas.push(["Área", `${m.area_m2.toLocaleString("en-US", { maximumFractionDigits: 1 })} m²`], ["Perímetro", `${m.perimetro_m.toLocaleString("en-US", { maximumFractionDigits: 1 })} m`]); }
     }
     if (window.DibujarRed && window.DibujarRed.esRed(e.tipo)) filas.unshift(...window.DibujarRed.filasPopup(e, (id) => (ml.elementos.get(id) || {}).nombre));
+    const p = e.propiedades || {};
+    if (e.tipo === "ruta" && p.origen === "presupuesto") {                                                   // the numbers of the budget this route came from
+      const m = (v) => `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 1 })} m`;
+      if (p.reserva_m !== undefined) filas.push(["Reserva", m(p.reserva_m)]);
+      if (p.metraje_final_m !== undefined) filas.push(["Metraje final", m(p.metraje_final_m)]);
+      filas.push(["Acometida al cliente", p.acometida_m ? m(p.acometida_m) : "sin acometida"]);
+      if (p.postes_existentes !== undefined) filas.push(["Postes existentes", p.postes_existentes]);
+      filas.push(["Postes nuevos guardados", (p.postes_nuevos || []).length]);
+    }
     return { c, filas };
   }
 
@@ -313,7 +322,21 @@
       t.capa = L.marker(punto, { draggable: true, icon: Iconos.leaflet(t.estilo.icono || Iconos.DEFECTO), pane: "mlPuntos", zIndexOffset: 1500 }).addTo(mapa);
       t.capa.on("drag dragend", () => { punto = t.capa.getLatLng(); t.dialogo && t.dialogo.ponerCoordenada(punto.lat, punto.lng); });
     };
-    const medir = () => { if (t.capa && t.dialogo && !puntual) t.dialogo.ponerMedidas(medidas(lineaDe(t.capa), tipo === "poligono" ? "poligono" : "ruta")); };
+    const esPresupuesto = !!e && tipo === "ruta" && (e.propiedades || {}).origen === "presupuesto";      // the route of a budget: its drop and new poles go with it
+    let pedido = 0, espera = null;
+    const resumir = () => {                                                                                // what the route would be with this edit, like when a line is measured
+      clearTimeout(espera);
+      const mio = ++pedido;
+      espera = setTimeout(async () => {
+        if (!t.capa || !t.dialogo) return;
+        const r = await llamar("resumen_ruta_presupuesto", { id: e.id, puntos: lineaDe(t.capa).map((p) => [p.lat, p.lng]) });
+        if (mio === pedido && r.ok && t.dialogo) t.dialogo.ponerResumen(r.resumen);
+      }, 400);
+    };
+    const medir = () => {
+      if (t.capa && t.dialogo && !puntual) t.dialogo.ponerMedidas(medidas(lineaDe(t.capa), tipo === "poligono" ? "poligono" : "ruta"));
+      if (esPresupuesto && t.capa && t.dialogo) resumir();
+    };
     const lineaDe = (capa) => { const ll = capa.getLatLngs(); return tipo === "poligono" ? ll[0] : ll; };
 
     const alCambiar = (cambio) => {
@@ -380,6 +403,7 @@
       t.capa = (tipo === "poligono" ? L.polygon : L.polyline)(ll, opcionesLinea(t.estilo, { pane: tipo === "poligono" ? "mlPoligonos" : "mlLineas", fill: tipo === "poligono" })).addTo(mapa);
       activarEdicion(t, medir);
       medir();
+      if (esPresupuesto) { const pestana = document.getElementById("ml-d-pest-medidas"); if (pestana) pestana.click(); }          // the numbers first: this is what is edited the route for
     } else if (latlngsIniciales) {                          // a cable just drawn with the magnet: its vertices can still be adjusted
       mapa.doubleClickZoom.disable();
       sincronizarMapa();
