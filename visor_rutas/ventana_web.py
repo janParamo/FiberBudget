@@ -350,13 +350,13 @@ class Api:
         """Where the planning app is (/planificacion/ of the service) and the key to enter it, for the «Planificación» window of the viewer.
         Server mode: the server and the key of the configuration. Local mode: this computer's service (API_HOST / API_PORT) and the viewer key of the .env
         of the person «planificacion» (or one whose name has it: «janPlanificacion»), else of this Windows user, else the first one."""
-        import getpass
-        import urllib.request
-        import visor_api
         if self._modo == "remoto":
             if not self._config.remoto_completo:
                 return {"ok": False, "error": "Falta la dirección del servidor y la clave: se ponen en Configuración"}
             return {"ok": True, "url": self._config.url, "clave": self._config.clave, "modo": "remoto"}
+        import getpass                                               # only this computer's own service needs these: the .exe (remote mode) does not carry visor_api
+        import urllib.request
+        import visor_api
         ajustes = get_settings()
         host = "127.0.0.1" if ajustes.api_host in ("", "0.0.0.0", "::") else ajustes.api_host
         url = f"http://{host}:{ajustes.api_port}"

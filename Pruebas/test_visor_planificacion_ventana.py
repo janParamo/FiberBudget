@@ -75,3 +75,16 @@ def test_the_window_is_in_the_menu_and_shows_the_app_or_why_it_cannot():
             assert await p.errores() == []
 
     asyncio.run(recorrido())
+
+
+def test_the_exe_opens_the_planning_without_the_service_modules(monkeypatch):
+    """VisorRutas.exe (remote mode only) does not carry visor_api: Planificación must not import it to answer where the planning app is (it did, and the window said ModuleNotFoundError)."""
+    import sys
+
+    from visor_rutas import config_visor
+    from visor_rutas.ventana_web import Api
+    monkeypatch.setitem(sys.modules, "visor_api", None)                 # an import of it now raises ImportError, as inside the .exe
+    api = Api()
+    api._modo = "remoto"
+    api._config = config_visor.ConfigVisor(modo="remoto", url="https://servidor.example", clave="k-remota")
+    assert api.planificacion_acceso() == {"ok": True, "url": "https://servidor.example", "clave": "k-remota", "modo": "remoto"}
