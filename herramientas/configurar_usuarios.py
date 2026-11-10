@@ -105,8 +105,8 @@ def main():
     if args.aplicar:
         pendientes = migrar.aplicar(con)                          # the roles need the last migration (the service applies it with its first request; this does not wait for it)
         if pendientes:
-            print(f"Migraciones aplicadas: {pendientes}
-")
+            print(f"Migraciones aplicadas: {pendientes}")
+            print()
     plan = construir_plan(con, desactivar_otros=args.desactivar_otros)
     for accion, persona, d in plan:
         if accion == "crear":

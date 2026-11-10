@@ -217,3 +217,44 @@ def test_the_script_sets_the_roles_creates_guest_and_prueba_and_deactivates_the_
                       "jparamo": ("administrador", False), "janPlanificacion": ("administrador", False)}
     assert [a for a, _, _ in configurar_usuarios.construir_plan(con, desactivar_otros=True)] == ["igual"] * 5                # again: nothing to do
     assert con.execute("SELECT count(*) AS n FROM redes.historial WHERE entidad = 'usuario'").fetchone()["n"] >= 6              # every change has its history
+
+
+def test_applying_on_a_database_that_does_not_have_the_last_migration_yet_applies_it_first(base_redes, tmp_path, monkeypatch):
+    """The VM case: the service had not received a request yet, so the roles migration was missing when the script ran."""
+    import os
+    import secrets
+    import shutil
+    import sys
+    from pathlib import Path
+
+    from redes_base import PREFIJO, _admin
+    from visor_rutas.redes import migrar
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "herramientas"))
+    import configurar_usuarios
+    _, params = base_redes
+    nombre = f"{PREFIJO}_{os.getpid()}_{secrets.token_hex(3)}_026"
+    admin_pg = _admin(params)
+    admin_pg.execute(f'CREATE DATABASE "{nombre}"')
+    previas = tmp_path / "hasta_025"
+    previas.mkdir()
+    for archivo in migrar.CARPETA.glob("*.sql"):
+        if int(archivo.name[:3]) <= 25:
+            shutil.copy(archivo, previas / archivo.name)
+    propios = {**params, "dbname": nombre}
+    con = db.conectar(params=propios)
+    try:
+        migrar.aplicar(con, previas)
+        con.execute("INSERT INTO redes.usuarios (nombre, rol, persona_visor) VALUES ('jan', 'tecnico', 'jan'), ('otro', 'administrador', 'otro')")
+        with pytest.raises(Exception):
+            con.execute("UPDATE redes.usuarios SET rol = 'super_administrador' WHERE nombre = 'jan'")      # the old constraint refuses the new role
+        con.rollback()
+        monkeypatch.setattr(db, "conectar", lambda *a, **k: con)
+        monkeypatch.setattr(sys, "argv", ["configurar_usuarios.py", "--aplicar", "--desactivar-otros"])
+        configurar_usuarios.main()
+        roles = {f["nombre"]: (f["rol"], f["borrado_en"] is None) for f in con.execute("SELECT nombre, rol, borrado_en FROM redes.usuarios").fetchall()}
+        assert roles["jan"] == ("super_administrador", True) and roles["guest"] == ("guest", True) and roles["otro"][1] is False
+    finally:
+        con.close()
+        assert nombre.startswith(PREFIJO)
+        admin_pg.execute(f'DROP DATABASE IF EXISTS "{nombre}" WITH (FORCE)')
+        admin_pg.close()
