@@ -156,3 +156,63 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 /* ---------------------------------------------------------------- editor de mufa: paleta de clientes */
 .mu-paleta { border-radius: var(--radio-md); box-shadow: var(--sombra); border-color: var(--borde); }
 .mu-pal-item { border-radius: var(--radio-sm); }
+
+/* ---------------------------------------------------------------- Tickets: las carpetas (Presupuesto, Incidencias masivas, Instalaciones) */
+.tk-carpetas { display: flex; flex-wrap: wrap; gap: var(--e2); padding: var(--e3) var(--e4) 0; }
+.tk-carpeta { display: inline-flex; align-items: center; gap: var(--e2); height: 36px; padding: 0 var(--e4); border: 1px solid var(--borde); border-radius: var(--radio-md);
+  background: var(--fondo); color: var(--texto-suave); font: inherit; font-weight: 500; cursor: pointer; }
+.tk-carpeta:hover { background: var(--fondo-suave); color: var(--texto); }
+.tk-carpeta.activa { background: var(--primario-suave); border-color: var(--primario-borde); color: var(--primario); font-weight: 600; }
+.tk-carpeta svg { flex: none; opacity: .85; }
+.tk-carpeta-n { min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--fondo-hundido); color: var(--texto-suave); font-size: 11px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+.tk-carpeta.activa .tk-carpeta-n { background: var(--primario); color: #fff; }
+.tk-tipo { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; background: var(--fondo-hundido); color: var(--texto-suave); font-size: 11px; font-weight: 600; white-space: nowrap; }
+
+/* Tickets: pestañas como de navegador (la principal es la lista; cada ticket abierto tiene la suya), alto de la lista ajustable e historial */
+.tk-carpetas[hidden], .tk-cuerpo[hidden], .tk-pagina[hidden] { display: none; }
+.tk-pestanas { display: flex; align-items: flex-end; gap: 2px; padding: var(--e2) var(--e4) 0; overflow-x: auto; border-bottom: 1px solid var(--borde); scrollbar-width: thin; }
+.tk-pest-caja { display: inline-flex; align-items: center; flex: none; max-width: 260px; border: 1px solid var(--borde); border-bottom: 0; border-radius: var(--radio-md) var(--radio-md) 0 0; background: var(--fondo-hundido); }
+.tk-pest-caja.activa { background: var(--fondo); box-shadow: 0 1px 0 var(--fondo); position: relative; top: 1px; }
+.tk-pest { display: inline-flex; align-items: baseline; gap: var(--e2); height: 34px; padding: 0 var(--e3); border: 0; background: transparent; color: var(--texto-suave); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-pest small { color: var(--texto-tenue); font-size: 11px; font-weight: 500; }
+.tk-pest.activa, .tk-pest-caja.activa .tk-pest { color: var(--primario); font-weight: 600; }
+.tk-pest:not(.activa):hover { color: var(--texto); }
+.tk-pestanas > .tk-pest { border: 1px solid var(--borde); border-bottom: 0; border-radius: var(--radio-md) var(--radio-md) 0 0; background: var(--fondo-hundido); }
+.tk-pestanas > .tk-pest.activa { background: var(--fondo); position: relative; top: 1px; box-shadow: 0 1px 0 var(--fondo); }
+.tk-pest-x { width: 22px; height: 22px; margin-right: var(--e1); border: 0; border-radius: var(--radio-sm); background: transparent; color: var(--texto-tenue); cursor: pointer; font-size: 12px; }
+.tk-pest-x:hover { background: var(--fondo-hundido); color: var(--error); }
+.tk-pest-caja.activa .tk-pest-x:hover { background: var(--error-suave); }
+
+.tk-tabla-caja { height: var(--tk-alto, auto); max-height: var(--tk-alto, 46%); }
+.tk-divisor { flex: none; height: 10px; margin: -6px 0; border-radius: 5px; cursor: row-resize; position: relative; touch-action: none; }
+.tk-divisor::after { content: ""; position: absolute; left: 50%; top: 3px; width: 56px; height: 4px; margin-left: -28px; border-radius: 2px; background: var(--borde-fuerte); transition: background-color .15s; }
+.tk-divisor:hover::after, .tk-divisor.activo::after, .tk-divisor:focus-visible::after { background: var(--primario); }
+
+.tk-pagina { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--e3); padding: var(--e3) var(--e4); }
+.tk-pagina-barra { flex: none; display: flex; align-items: center; gap: var(--e3); }
+.tk-pagina-cuerpo { flex: 1; min-height: 0; overflow: auto; background: var(--fondo); border: 1px solid var(--borde); border-radius: var(--radio-md); padding: var(--e4) var(--e5); }
+.tk-titulo-fila { display: flex; align-items: flex-start; gap: var(--e3); }
+.tk-titulo-fila h2 { flex: 1; min-width: 0; }
+.tk-historial { margin-top: var(--e4); padding-top: var(--e3); border-top: 1px solid var(--borde); }
+.tk-historial h3 { margin: 0 0 var(--e2); font-size: 14px; }
+.tk-hist-resumen { margin: 0 0 var(--e3); color: var(--texto-suave); font-size: 12px; }
+.tk-hist-cuerpo { display: flex; flex-direction: column; gap: var(--e3); }
+.tk-msg, .tk-nota-k { border: 1px solid var(--borde); border-radius: var(--radio-md); padding: var(--e3) var(--e4); background: var(--fondo); }
+.tk-msg.cliente { background: var(--fondo-suave); }
+.tk-msg.privado { border-style: dashed; }
+.tk-nota-k { background: var(--aviso-fondo); border-color: #ecd88a; color: var(--aviso-texto); }
+.tk-msg header, .tk-nota-k header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--e2); margin-bottom: var(--e2); font-size: 12px; color: var(--texto-suave); }
+.tk-nota-k header { color: var(--aviso-texto); }
+.tk-msg header b, .tk-nota-k header b { color: var(--texto); font-size: 13px; }
+.tk-msg header time, .tk-nota-k header time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.tk-etiqueta { padding: 1px 8px; border-radius: 10px; background: var(--fondo-hundido); color: var(--texto-suave); font-size: 11px; font-weight: 600; }
+.tk-etiqueta.personal { background: var(--primario-suave); color: var(--primario); }
+.tk-msg-texto { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.5; }
+
+/* la pestaña de un ticket: los datos a la izquierda y el historial (lo que se lee) a la derecha, cada uno con su desplazamiento */
+@media (min-width: 1000px) {
+  .tk-pagina-cuerpo { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); column-gap: var(--e5); overflow: hidden; }
+  .tk-pagina-cuerpo > .tk-titulo-fila { grid-column: 1 / -1; }
+  .tk-pagina-cuerpo > .tk-datos { grid-column: 1; grid-row: 2; grid-template-columns: 120px minmax(0, 1fr); align-content: start; overflow: auto; margin: 0; padding-right: var(--e2); }
+  .tk-pagina-cuerpo > .tk-historial { grid-column: 2; grid-row: 2; margin: 0; padding: 0 0 0 var(--e5); border-top: 0; border-left: 1px solid var(--borde); overflow: auto; min-height: 0; }
+}

@@ -19,7 +19,12 @@ from typing import Any, Callable
 log = logging.getLogger(__name__)
 
 POR_DEFECTO = {"departamento_like": "%Fibra%Optica%", "tipo_like": "%", "estados": ["Abierto"], "campo_ejecutivo_id": 64, "dias_atras": 30,
-               "campos_personalizados": ["Código de Cliente", "Sucursal", "Ejecutivo de Cuenta", "Tipo de Cliente", "Servicio Asociado", "Medio", "Coordenadas"]}
+               "campos_personalizados": ["Código de Cliente", "Sucursal", "Ejecutivo de Cuenta", "Tipo de Cliente", "Servicio Asociado", "Medio", "Coordenadas"],
+               # the other folders of the «Tickets» view: the tickets of a department (no date, no type) in the wanted statuses (`estados`) or, without that list,
+               # in every status except the ones in `excluir_estados`
+               "carpetas": {"incidencias_masivas": {"titulo": "Incidencias masivas", "departamento": "Incidencias Masivas", "excluir_estados": ["Cerrado"]},
+                            "instalaciones": {"titulo": "Instalaciones", "departamento": "Instalaciones",
+                                              "estados": ["Abierto", "Agendado", "Planificación", "En Progreso", "En Espera del Cliente"]}}}
 _RE_ETIQUETA = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -60,9 +65,10 @@ def conectar() -> Any:
     return con
 
 
-def consulta(base: str, estados: int, con_tipo: bool = True) -> str:
+def consulta(base: str, estados: int, con_tipo: bool = True, excluir: bool = False) -> str:
     """The SELECT of the tickets (the query of n8n plus what Kayako's own list shows: priority, organization, last replier, replies, owner and due time; the dates stay
-    as Unix numbers and are converted here). `estados`: how many status placeholders; `con_tipo`: filter by the ticket type (with «%» every type is wanted)."""
+    as Unix numbers and are converted here). `estados`: how many status placeholders; `con_tipo`: filter by the ticket type (with «%» every type is wanted);
+    `excluir`: the statuses are the ones left OUT (NOT IN) instead of the only ones wanted."""
     if not _RE_ETIQUETA.match(base):
         raise ValueError("Nombre de base no válido")
     ultima = ("GREATEST(IFNULL(T.dateline, 0), IFNULL(T.lastactivity, 0), IFNULL(TP.editeddateline, 0), IFNULL(TL.dateline, 0), IFNULL(TL.editeddateline, 0))")
@@ -81,7 +87,7 @@ FROM {base}.swtickets AS T
   LEFT JOIN {base}.swticketposts AS TL ON TL.ticketpostid = T.lastpostid
   LEFT JOIN {base}.swcustomfieldvalues AS CFV ON CFV.typeid = T.ticketid AND CFV.customfieldid = %s
   LEFT JOIN {base}.swcustomfieldoptions AS CFO ON CFO.customfieldoptionid = CFV.fieldvalue
-WHERE T.departmenttitle LIKE %s{" AND T.tickettypetitle LIKE %s" if con_tipo else ""} AND T.ticketstatustitle IN ({", ".join(["%s"] * estados)}) AND {ultima} >= %s
+WHERE T.departmenttitle LIKE %s{" AND T.tickettypetitle LIKE %s" if con_tipo else ""} AND T.ticketstatustitle {"NOT IN" if excluir else "IN"} ({", ".join(["%s"] * estados)}) AND {ultima} >= %s
 ORDER BY {ultima} DESC
 LIMIT %s"""
 
@@ -98,17 +104,24 @@ FROM {base}.swcustomfieldvalues AS V
 WHERE V.typeid IN ({", ".join(["%s"] * tickets)}) AND F.title IN ({", ".join(["%s"] * titulos)})"""
 
 
-def tickets(desde_unix: int, limite: int = 500, abrir: Callable[[], Any] = conectar) -> list[dict[str, Any]]:
+def tickets(desde_unix: int, limite: int = 500, abrir: Callable[[], Any] = conectar, *, departamento_like: str | None = None, estados: list[str] | None = None,
+            excluir: bool = False) -> list[dict[str, Any]]:
     """The tickets of the filters (business_rules.yaml, `kayako`) with activity since `desde_unix`, newest activity first. Read only.
+    `departamento_like`, `estados` and `excluir` replace the configured department and statuses (the other folders of the «Tickets» view, which have no type filter);
+    with `excluir` the statuses are the ones left out.
     Each one also carries `personalizados` ({title: value} of its additional fields); if that second query fails the tickets still come, without them."""
     cfg = configuracion()
-    estados = [str(e) for e in cfg["estados"]] or ["Abierto"]
+    if estados is None:
+        estados = [str(e) for e in cfg["estados"]] or ["Abierto"]
+    else:
+        estados = [str(e) for e in estados] or ["Cerrado"]
+    departamento = departamento_like if departamento_like is not None else cfg["departamento_like"]
     con = abrir()
     try:
         with con.cursor() as cur:
-            con_tipo = str(cfg["tipo_like"] or "%").strip() not in ("", "%")
-            cur.execute(consulta(_entorno()["base"], len(estados), con_tipo),
-                        (int(cfg["campo_ejecutivo_id"]), cfg["departamento_like"], *([cfg["tipo_like"]] if con_tipo else []), *estados, int(desde_unix), max(1, min(int(limite), 5000))))
+            con_tipo = departamento_like is None and str(cfg["tipo_like"] or "%").strip() not in ("", "%")          # the type filter is the budget folder's
+            cur.execute(consulta(_entorno()["base"], len(estados), con_tipo, excluir),
+                        (int(cfg["campo_ejecutivo_id"]), departamento, *([cfg["tipo_like"]] if con_tipo else []), *estados, int(desde_unix), max(1, min(int(limite), 5000))))
             filas = list(cur.fetchall())
             titulos = [str(t) for t in cfg["campos_personalizados"] or []]
             por_ticket: dict[Any, dict[str, str]] = {}
@@ -207,3 +220,56 @@ def vista_previa(dias: float | None = None, limite: int = 50, abrir: Callable[[]
     """The tickets that would reach planning (last `dias` days of activity), parsed. Reads only; creates nothing anywhere."""
     dias = float(dias if dias is not None else configuracion()["dias_atras"])
     return [datos_del_ticket(f) for f in tickets(int(time.time() - dias * 86400), limite, abrir)]
+
+
+def carpetas_de_tickets() -> dict[str, dict[str, Any]]:
+    """The folders of the «Tickets» view besides the budget one: {key: {titulo, departamento, excluir_estados}} (business_rules.yaml, `kayako.carpetas`)."""
+    return {str(k): dict(v) for k, v in (configuracion().get("carpetas") or {}).items() if isinstance(v, dict) and v.get("departamento")}
+
+
+def tickets_de_carpeta(clave: str, limite: int = 1000, abrir: Callable[[], Any] = conectar) -> list[dict[str, Any]]:
+    """The tickets of the department of a folder (any date, any type) in its wanted statuses (`estados`) or, without that list, in every status but its excluded ones
+    (the closed), parsed like the budget ones. KeyError when the folder does not exist. Reads only."""
+    carpeta = carpetas_de_tickets()[clave]
+    quiere = [str(e) for e in carpeta.get("estados") or []]
+    return [datos_del_ticket(f) for f in tickets(0, limite, abrir, departamento_like=str(carpeta["departamento"]),
+                                                  estados=quiere or [str(e) for e in carpeta.get("excluir_estados") or ["Cerrado"]], excluir=not quiere)]
+
+
+MAX_HISTORIAL = 300                                                  # comments (and notes) of a ticket that are read
+MAX_TEXTO = 30000
+
+
+def _base() -> str:
+    base = _entorno()["base"]
+    if not _RE_ETIQUETA.match(base):
+        raise ValueError("Nombre de base no válido")
+    return base
+
+
+def historial(kayako_id: int, abrir: Callable[[], Any] = conectar) -> dict[str, Any]:
+    """The whole history of a ticket of the folders of «Tickets»: its comments (replies, in order) and its notes (the yellow notes staff leave). Read only.
+    KeyError when the ticket is not of a department of those folders (so nothing else of Kayako can be read through here)."""
+    departamentos = [str(c["departamento"]) for c in carpetas_de_tickets().values()]
+    if not departamentos:
+        raise KeyError(kayako_id)
+    base, ticket = _base(), int(kayako_id)
+    con = abrir()
+    try:
+        with con.cursor() as cur:
+            cur.execute(f"SELECT ticketid FROM {base}.swtickets WHERE ticketid = %s AND departmenttitle IN ({', '.join(['%s'] * len(departamentos))})", (ticket, *departamentos))
+            if cur.fetchone() is None:
+                raise KeyError(kayako_id)
+            cur.execute(f"SELECT ticketpostid AS id, dateline, fullname AS autor, creator, staffid, isprivate, ishtml, hasattachments, contents FROM {base}.swticketposts "
+                        "WHERE ticketid = %s ORDER BY dateline, ticketpostid LIMIT %s", (ticket, MAX_HISTORIAL))
+            posts = list(cur.fetchall())
+            cur.execute(f"SELECT ticketnoteid AS id, dateline, staffname AS autor, isedited, notecolor, note FROM {base}.swticketnotes "
+                        "WHERE linktype = 1 AND linktypeid = %s ORDER BY dateline, ticketnoteid LIMIT %s", (ticket, MAX_HISTORIAL))
+            notas = list(cur.fetchall())
+    finally:
+        con.close()
+    comentarios = [{"id": p["id"], "fecha": _fecha(p["dateline"]), "autor": str(p.get("autor") or ""), "origen": "cliente" if p.get("creator") == 2 else "personal" if (p.get("creator") == 1 or p.get("staffid")) else "otro",
+                    "privado": bool(p.get("isprivate")), "adjuntos": bool(p.get("hasattachments")), "texto": a_texto(p.get("contents"), p.get("ishtml"))[:MAX_TEXTO]} for p in posts]
+    return {"comentarios": comentarios,
+            "notas": [{"id": n["id"], "fecha": _fecha(n["dateline"]), "autor": str(n.get("autor") or ""), "editada": bool(n.get("isedited")), "color": int(n.get("notecolor") or 0),
+                       "texto": a_texto(n.get("note"), False)[:MAX_TEXTO]} for n in notas]}

@@ -320,6 +320,11 @@ kayako:
   estados: ["Abierto"]          # solo los abiertos, como la vista de Kayako (los «En Espera» no llegan)
   campo_ejecutivo_id: 64        # campo personalizado «Ejecutivo de cuenta»
   dias_atras: 30                # la vista previa mira la actividad de los ultimos dias
+  # Las otras carpetas de la vista «Tickets» (la de presupuesto es la de arriba): los tickets del departamento, de cualquier fecha y tipo.
+  # Con `estados` salen solo los de esos estados; sin esa lista salen todos menos los de `excluir_estados`. El nombre del departamento y los estados son los de Kayako, tal cual.
+  carpetas:
+    incidencias_masivas: {titulo: "Incidencias masivas", departamento: "Incidencias Masivas", excluir_estados: ["Cerrado"]}
+    instalaciones: {titulo: "Instalaciones", departamento: "Instalaciones", estados: ["Abierto", "Agendado", "Planificación", "En Progreso", "En Espera del Cliente"]}
 
 # Coordenadas masivas del visor (visor_rutas/masivas.py): un presupuesto aproximado por cada coordenada, en segundo plano.
 #   google_por_minuto: rutas de Google (Directions) que se piden por minuto; el lote espera si las alcanza

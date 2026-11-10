@@ -166,3 +166,111 @@ def test_the_pending_tickets_of_the_viewer_api(tmp_path, monkeypatch):
     monkeypatch.setattr(kayako, "tickets", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("password is secret123")))
     caido = api.tickets_pendientes()
     assert caido["ok"] is False and "VPN" in caido["error"] and "secret123" not in caido["error"]
+
+
+# --------------------------------------------------------------------------- the other folders of «Tickets»: incidencias masivas, instalaciones
+
+def test_the_folders_read_their_department_incidencias_all_but_the_closed_and_instalaciones_in_five_statuses():
+    con = Conexion()
+    filas = kayako.tickets_de_carpeta("instalaciones", abrir=lambda: con)
+    assert [t["ticket"] for t in filas] == ["XKJ-813-61728"] and con.cerrada
+    sql, params = con.ejecutados[0]
+    assert sql.strip().upper().startswith("SELECT") and "ticketstatustitle IN" in sql and "NOT IN" not in sql and "tickettypetitle LIKE" not in sql and sql.count("%s") == len(params)
+    assert params == (64, "Instalaciones", "Abierto", "Agendado", "Planificación", "En Progreso", "En Espera del Cliente", 0, 1000)      # only those statuses, from the beginning (no date), any type
+    con = Conexion()
+    kayako.tickets_de_carpeta("incidencias_masivas", abrir=lambda: con)
+    sql, params = con.ejecutados[0]
+    assert "ticketstatustitle NOT IN" in sql and params[1] == "Incidencias Masivas" and params[2] == "Cerrado"                          # every status but «Cerrado»
+    with pytest.raises(KeyError):
+        kayako.tickets_de_carpeta("presupuesto")                                    # the budget folder has its own read
+    assert set(kayako.carpetas_de_tickets()) == {"incidencias_masivas", "instalaciones"}
+    # the budget query is the same as before: only the open ones, with the date
+    assert "ticketstatustitle IN" in kayako.consulta("kayako_fusion", 1) and "NOT IN" not in kayako.consulta("kayako_fusion", 1)
+
+
+def test_the_folder_tickets_of_the_viewer_api(monkeypatch):
+    from visor_rutas.ventana_web import Api
+    api = Api()
+    api._modo = "local"
+    for k in ("KAYAKO_DB_HOST", "KAYAKO_DB_USER", "KAYAKO_DB_PASSWORD"):
+        monkeypatch.setenv(k, "")
+    assert api.tickets_carpeta("nada")["ok"] is False and "no existe" in api.tickets_carpeta("nada")["error"]
+    assert api.tickets_carpeta("instalaciones")["ok"] is False and "KAYAKO_DB_HOST" in api.tickets_carpeta("instalaciones")["error"]
+    monkeypatch.setenv("KAYAKO_DB_HOST", "10.0.0.5")
+    monkeypatch.setenv("KAYAKO_DB_USER", "lector")
+    monkeypatch.setenv("KAYAKO_DB_PASSWORD", "x")
+    pedidas = []
+    monkeypatch.setattr(kayako, "tickets_de_carpeta", lambda clave, *a, **k: pedidas.append(clave) or [kayako.datos_del_ticket(dict(LICORERA))])
+    r = api.tickets_carpeta("incidencias_masivas")
+    assert r["ok"] and r["carpeta"] == "incidencias_masivas" and r["titulo"] == "Incidencias masivas" and [t["ticket"] for t in r["tickets"]] == ["DTF-377-48662"] and pedidas == ["incidencias_masivas"]
+    monkeypatch.setattr(kayako, "tickets_de_carpeta", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("password is secret123")))
+    caido = api.tickets_carpeta("instalaciones")
+    assert caido["ok"] is False and "VPN" in caido["error"] and "secret123" not in caido["error"]
+
+
+# --------------------------------------------------------------------------- the history of a ticket: its comments and its notes
+
+class CursorHistorial:
+    def __init__(self, con):
+        self.con = con
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        self.con.ejecutados.append((sql, params))
+        self.ultimo = sql
+
+    def fetchone(self):
+        return {"ticketid": 270846} if self.con.es_de_las_carpetas else None
+
+    def fetchall(self):
+        if "swticketposts" in self.ultimo:
+            return [{"id": 1, "dateline": 1_794_319_337, "autor": "Andrew Reyes", "creator": 1, "staffid": 268, "isprivate": 0, "ishtml": 0, "hasattachments": 0, "contents": "Apertura: corte de fibra"},
+                    {"id": 2, "dateline": 1_794_330_000, "autor": "Cliente Uno", "creator": 2, "staffid": 0, "isprivate": 0, "ishtml": 1, "hasattachments": 1, "contents": "<p>Gracias</p><p>Seguimos sin servicio</p>"}]
+        return [{"id": 9, "dateline": 1_794_325_063, "autor": "César Muñoz", "isedited": 1, "notecolor": 1, "note": "| MGA-ENT-OLT-001 | 0/2/1 | 20 | C29715 ILSE |"}]
+
+
+class ConexionHistorial(Conexion):
+    def __init__(self, es_de_las_carpetas=True):
+        super().__init__()
+        self.es_de_las_carpetas = es_de_las_carpetas
+
+    def cursor(self):
+        return CursorHistorial(self)
+
+
+def test_the_history_has_the_comments_and_the_notes_and_only_of_tickets_of_the_folders():
+    con = ConexionHistorial()
+    h = kayako.historial(270846, abrir=lambda: con)
+    assert con.cerrada and [c["autor"] for c in h["comentarios"]] == ["Andrew Reyes", "Cliente Uno"]
+    assert [c["origen"] for c in h["comentarios"]] == ["personal", "cliente"] and h["comentarios"][1]["adjuntos"] is True and h["comentarios"][1]["texto"] == "Gracias\nSeguimos sin servicio"      # html turned into lines
+    assert h["notas"] == [{"id": 9, "fecha": kayako._fecha(1_794_325_063), "autor": "César Muñoz", "editada": True, "color": 1, "texto": "| MGA-ENT-OLT-001 | 0/2/1 | 20 | C29715 ILSE |"}]
+    for sql, params in con.ejecutados:
+        assert sql.strip().upper().startswith("SELECT") and sql.count("%s") == len(params)
+    assert con.ejecutados[0][1] == (270846, "Incidencias Masivas", "Instalaciones")                       # the ticket must be of a department of the folders
+    with pytest.raises(KeyError):
+        kayako.historial(1, abrir=lambda: ConexionHistorial(False))                                       # any other ticket of Kayako is not read through here
+
+
+def test_the_history_of_the_viewer_api(monkeypatch):
+    from visor_rutas.ventana_web import Api
+    api = Api()
+    api._modo = "local"
+    for k in ("KAYAKO_DB_HOST", "KAYAKO_DB_USER", "KAYAKO_DB_PASSWORD"):
+        monkeypatch.setenv(k, "")
+    assert api.ticket_historial("abc")["ok"] is False and api.ticket_historial(5)["ok"] is False and "KAYAKO_DB_HOST" in api.ticket_historial(5)["error"]
+    monkeypatch.setenv("KAYAKO_DB_HOST", "10.0.0.5")
+    monkeypatch.setenv("KAYAKO_DB_USER", "lector")
+    monkeypatch.setenv("KAYAKO_DB_PASSWORD", "x")
+    monkeypatch.setattr(kayako, "historial", lambda n, *a, **k: {"comentarios": [{"id": 1, "texto": "hola"}], "notas": []})
+    r = api.ticket_historial(270846)
+    assert r["ok"] and r["kayako_id"] == 270846 and r["comentarios"][0]["texto"] == "hola"
+    monkeypatch.setattr(kayako, "historial", lambda n, *a, **k: (_ for _ in ()).throw(KeyError(n)))
+    assert api.ticket_historial(1)["ok"] is False and "carpetas" in api.ticket_historial(1)["error"]
+    monkeypatch.setattr(kayako, "historial", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("password is secret123")))
+    caido = api.ticket_historial(2)
+    assert caido["ok"] is False and "VPN" in caido["error"] and "secret123" not in caido["error"]

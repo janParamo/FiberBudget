@@ -834,18 +834,26 @@
   <!-- Vista "Pendientes" (redes/pendientes.js, fase 7.2) -->
   <!-- Vista "Campo" (mapa/campo_visor.js): lo que levantan los técnicos, para revisar, corregir, aprobar o rechazar -->
   <!-- Vista "Tickets": los tickets de Kayako pendientes de presupuesto (tickets.js) -->
-  <section id="vista-tickets" class="vista vista-modulo" data-vista="tickets" hidden aria-label="Tickets pendientes de presupuesto">
+  <section id="vista-tickets" class="vista vista-modulo" data-vista="tickets" hidden aria-label="Tickets">
     <header class="vp-cabecera">
-      <h1>Tickets pendientes de presupuesto</h1>
-      <span class="vp-nota">Tickets abiertos de Kayako que piden un presupuesto de FO. Kayako solo se lee. <span id="tk-estado"></span></span>
-      <label class="nota"><input id="tk-con-hechos" type="checkbox"> Mostrar los que ya tienen presupuesto</label>
+      <h1 id="tk-titulo">Tickets pendientes de presupuesto</h1>
+      <span class="vp-nota"><span id="tk-nota">Tickets abiertos de Kayako que piden un presupuesto de FO.</span> Kayako solo se lee. <span id="tk-estado"></span></span>
+      <label class="nota" id="tk-hechos-caja"><input id="tk-con-hechos" type="checkbox"> Mostrar los que ya tienen presupuesto</label>
       <button id="tk-recargar" type="button" class="btn btn-chico">Actualizar</button>
     </header>
+    <nav id="tk-pestanas" class="tk-pestanas" role="tablist" aria-label="Pestañas de tickets"><button type="button" role="tab" class="tk-pest activa" data-pestana="lista" aria-selected="true">Tickets</button></nav>
+    <nav class="tk-carpetas" role="tablist" aria-label="Carpetas de tickets">
+      <button type="button" role="tab" class="tk-carpeta activa" data-carpeta="presupuesto" aria-selected="true"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3l2 2H19.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="currentColor"/></svg><span>Presupuesto</span><b class="tk-carpeta-n" id="tk-n-presupuesto" hidden></b></button>
+      <button type="button" role="tab" class="tk-carpeta" data-carpeta="incidencias_masivas" aria-selected="false"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3l2 2H19.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="currentColor"/></svg><span>Incidencias masivas</span><b class="tk-carpeta-n" id="tk-n-incidencias_masivas" hidden></b></button>
+      <button type="button" role="tab" class="tk-carpeta" data-carpeta="instalaciones" aria-selected="false"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3l2 2H19.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="currentColor"/></svg><span>Instalaciones</span><b class="tk-carpeta-n" id="tk-n-instalaciones" hidden></b></button>
+    </nav>
     <div class="tk-cuerpo">
       <div class="tk-tabla-caja"><table id="tk-lista" class="tk-tabla"><thead><tr><th>Ticket ID</th><th>Prioridad</th><th>Organización</th><th>Estado</th><th>Asunto</th>
         <th class="orden">Última actividad ▾</th><th>Último en responder</th><th>Respuestas</th><th>Dueño</th></tr></thead><tbody></tbody></table></div>
+      <div id="tk-divisor" class="tk-divisor" role="separator" aria-orientation="horizontal" tabindex="0" title="Arrastre para cambiar el alto de la lista (doble clic: restablecer)"></div>
       <div id="tk-detalle" class="tk-detalle"></div>
     </div>
+    <div id="tk-pagina" class="tk-pagina" hidden></div>
   </section>
 
   <!-- Vista "Planificación": la app de planificación (/planificacion/ del servicio) dentro del visor -->

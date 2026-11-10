@@ -458,6 +458,20 @@ def tickets_pendientes(persona: str = Depends(persona_visor)) -> dict[str, Any]:
         return _resultado_ok(_para_remoto(api_local().tickets_pendientes()), estado)
 
 
+@router.get("/tickets/carpeta/{carpeta}")
+def tickets_de_carpeta(carpeta: str = PathParam(pattern=r"^[a-z0-9_]{1,40}$"), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The other folders of «Tickets» (incidencias masivas, instalaciones): every ticket of the department except the closed ones (the server reads Kayako; read only)."""
+    with _registro(persona, f"tickets/{carpeta}") as estado:
+        return _resultado_ok(_para_remoto(api_local().tickets_carpeta(carpeta)), estado)
+
+
+@router.get("/tickets/{kayako_id}/historial")
+def historial_del_ticket(kayako_id: int = PathParam(ge=1, le=2_000_000_000), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The comments and notes of a ticket of «Incidencias masivas» / «Instalaciones» (the server reads Kayako; read only)."""
+    with _registro(persona, f"tickets/{kayako_id}/historial") as estado:
+        return _resultado_ok(_para_remoto(api_local().ticket_historial(kayako_id)), estado)
+
+
 class PdfPedido(BaseModel):
     archivos: list[str] = Field(default_factory=list, max_length=600)
     carpetas: list[str] = Field(default_factory=list, max_length=100)

@@ -310,6 +310,42 @@ class Api:
             t["pendiente"] = not t["presupuestos"]
         return {"ok": True, "tickets": a_json(lista)}
 
+    def tickets_carpeta(self, carpeta: str) -> dict[str, Any]:
+        """The tickets of another folder of «Tickets» («incidencias_masivas», «instalaciones»): every ticket of that Kayako department except the closed ones. Read only.
+        Remote mode: the server's Kayako connection."""
+        if self._modo == "remoto":
+            return self._remota("tickets_carpeta", carpeta)
+        from visor_rutas import kayako
+        if carpeta not in kayako.carpetas_de_tickets():
+            return {"ok": False, "error": "Esa carpeta de tickets no existe"}
+        if not kayako.configurada():
+            return {"ok": False, "error": "Falta la conexión de Kayako en el .env (KAYAKO_DB_HOST, KAYAKO_DB_USER y KAYAKO_DB_PASSWORD)"}
+        try:
+            lista = kayako.tickets_de_carpeta(carpeta)
+        except Exception as exc:                                       # noqa: BLE001 - the VPN is off, the password changed...: in words, without the detail
+            log.warning("Visor web: Kayako could not be read (%s: %s)", type(exc).__name__, str(exc)[:160])
+            return {"ok": False, "error": f"No se pudo leer Kayako ({type(exc).__name__}): revise la VPN y los datos KAYAKO_DB_* del .env"}
+        return {"ok": True, "carpeta": carpeta, "titulo": kayako.carpetas_de_tickets()[carpeta].get("titulo") or carpeta, "tickets": a_json(lista)}
+
+    def ticket_historial(self, kayako_id: int) -> dict[str, Any]:
+        """The comments and the notes of a ticket of the folders «Incidencias masivas» / «Instalaciones» (Kayako is only read). Remote mode: the server's connection."""
+        if self._modo == "remoto":
+            return self._remota("ticket_historial", kayako_id)
+        from visor_rutas import kayako
+        try:
+            numero = int(kayako_id)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Ticket no válido"}
+        if not kayako.configurada():
+            return {"ok": False, "error": "Falta la conexión de Kayako en el .env (KAYAKO_DB_HOST, KAYAKO_DB_USER y KAYAKO_DB_PASSWORD)"}
+        try:
+            return {"ok": True, "kayako_id": numero, **a_json(kayako.historial(numero))}
+        except KeyError:
+            return {"ok": False, "error": "Ese ticket no es de una de las carpetas de Incidencias masivas o Instalaciones"}
+        except Exception as exc:                                       # noqa: BLE001 - the VPN is off, the password changed...: in words, without the detail
+            log.warning("Visor web: the history of a ticket could not be read (%s: %s)", type(exc).__name__, str(exc)[:160])
+            return {"ok": False, "error": f"No se pudo leer Kayako ({type(exc).__name__}): revise la VPN y los datos KAYAKO_DB_* del .env"}
+
     def planificacion_acceso(self) -> dict[str, Any]:
         """Where the planning app is (/planificacion/ of the service) and the key to enter it, for the «Planificación» window of the viewer.
         Server mode: the server and the key of the configuration. Local mode: this computer's service (API_HOST / API_PORT) and the viewer key of the .env

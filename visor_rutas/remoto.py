@@ -409,6 +409,12 @@ class ProveedorRemoto:
     def tickets_pendientes(self) -> dict[str, Any]:
         return self._seguro(lambda: self._json("GET", "/visor/tickets", timeout=TIMEOUT_PRESUPUESTO_S))
 
+    def tickets_carpeta(self, carpeta: str) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", f"/visor/tickets/carpeta/{quote(str(carpeta), safe='')}", timeout=TIMEOUT_PRESUPUESTO_S))
+
+    def ticket_historial(self, kayako_id: int) -> dict[str, Any]:
+        return self._seguro(lambda: self._json("GET", f"/visor/tickets/{int(kayako_id)}/historial", timeout=TIMEOUT_PRESUPUESTO_S))
+
     def pdf_carpetas(self) -> dict[str, Any]:
         return self._seguro(lambda: self._json("GET", "/visor/pdf/carpetas"))
 
