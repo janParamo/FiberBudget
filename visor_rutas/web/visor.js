@@ -2278,6 +2278,11 @@
     }
     if (!r.ok) { configEstado(r.error, "error"); return; }
     cerrarConfiguracion();
+    if (!window.__sinRecargarAlGuardar) {                  // the network, the KMZ, the menu and the roles load when the viewer opens: with another server (or the first one) they load again
+      mensaje("Configuración guardada: cargando el visor con el servidor…", "ok");
+      setTimeout(() => window.location.reload(), 500);
+      return;
+    }
     pres.config = null;                 // the budget form options may come from another server now
     pres.cargaConfig = null;
     try { cfg = { ...cfg, ...(await api.configuracion()) }; } catch (e) { /* keep the current map */ }
