@@ -225,3 +225,25 @@ def test_the_budget_hook_sends_the_client_point_and_the_new_poles(monkeypatch):
     datos = llamadas[0]
     assert datos["cliente"] == {"lat": 12.1011, "lon": -86.2485, "nombre": "Cliente", "codigo": "C9"} and datos["postes_nuevos"] == [(12.1005, -86.25)]
     assert datos["propiedades"]["metraje_final_m"] == 300.0 and datos["propiedades"]["reserva_m"] == 50.0 and datos["propiedades"]["ticket"] == "T9"
+
+
+def test_an_icon_chosen_by_hand_on_the_client_or_a_pole_is_kept_and_the_type_icon_comes_back_without_it(jan):
+    con, actor = jan
+    _con_todo(con, actor)
+    todo = _todo(con, actor, "C23839_Constructores Unidos")
+    cliente, poste = todo["cliente"][0], todo["poste"][0]
+    for nombre, elemento, figura in (("cliente", cliente, "cuadrado"), ("poste", poste, "triangulo")):
+        lugar = lugares.obtener(con, actor, id=elemento[3])["lugar"]
+        assert lugar["estilo"]["icono"].get("personalizado") is None                        # saved with the icon of its type
+        propio = {"tipo": "figura", "id": figura, "color": "#112233", "escala": 1.4, "opacidad": 1, "personalizado": True}
+        guardado = lugares.guardar_lugar(con, actor, id=elemento[3], version=lugar["version"], estilo={"icono": propio})["lugar"]
+        assert guardado["estilo"]["icono"]["id"] == figura and guardado["estilo"]["icono"]["personalizado"] is True and guardado["estilo"]["icono"]["color"] == "#112233"
+    # changing the subtype of the pole does not undo the icon chosen by hand
+    lugar = lugares.obtener(con, actor, id=poste[3])["lugar"]
+    cambiado = lugares.guardar_lugar(con, actor, id=poste[3], version=lugar["version"], propiedades={"subtipo": "madera"}, estilo=lugar["estilo"])["lugar"]
+    assert cambiado["estilo"]["icono"]["id"] == "triangulo" and cambiado["estilo"]["icono"]["color"] == "#112233"
+    # without the flag the icon follows the subtype again
+    lugar = lugares.obtener(con, actor, id=poste[3])["lugar"]
+    sin_marca = {k: v for k, v in lugar["estilo"]["icono"].items() if k != "personalizado"}
+    vuelto = lugares.guardar_lugar(con, actor, id=poste[3], version=lugar["version"], propiedades={"subtipo": "madera"}, estilo={"icono": sin_marca})["lugar"]
+    assert vuelto["estilo"]["icono"]["id"] == "circulo" and vuelto["estilo"]["icono"]["color"] == "#8b5a2b"

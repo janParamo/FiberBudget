@@ -126,7 +126,7 @@ def test_materials_use_adss_hardware_for_long_routes():
     assert materials["quantities"]["Clevis tipo D Chico"] == 20
     assert materials["quantities"]['Cinta Band It 3/4" (50mts)'] == 20
     assert materials["quantities"]["Hebilla Band It 3/4"] == 20
-    assert materials["quantities"]["Grapa Metalica en S"] == 0
+    assert materials["quantities"]["Grapa Metalica en S"] == 40      # the template's formula, untouched: twice the buckles
     assert materials["quantities"]["Grapa p/ cable fibra FTTH"] == 0
     assert materials["quantities"]["Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"] == 40      # twice the buckles
 
@@ -138,7 +138,7 @@ def test_hardware_internal_count_is_per_pole_and_the_green_preformed_is_twice_th
     materials = calcular_materiales(500, 18, production_rules, existing_poles=10)          # 10 existing + 8 new
     q = materials["quantities"]
     assert (q["Clevis tipo D Chico"], q['Cinta Band It 3/4" (50mts)'], q["Hebilla Band It 3/4"]) == (18, 18, 18)
-    assert q["Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"] == 36 and q["Grapa Metalica en S"] == 0
+    assert q["Preformada Punto Verde ADSS 11.7 mm / 12.8 mm"] == 36 and q["Grapa Metalica en S"] == 36
     assert materials["cable_type"] == "ADSS 24 hilos"                                      # even 500 m: only GPON routes are in use
     production_rules["cable"]["hardware_poles"] = "existing"
     assert calcular_materiales(500, 18, production_rules, existing_poles=10)["quantities"]["Hebilla Band It 3/4"] == 10

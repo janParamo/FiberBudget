@@ -141,8 +141,8 @@ def test_success_generates_excel(client):
         "Texto de validacion fijo.\nSujeto a disponibilidad de postes de concreto sobre la ruta\n\n\n--- Comentario original del ticket ---\n"
         + RAW_COMMENT.replace("\x0b", ""))
     assert {"G81:I81", "C64:I73"} <= {str(r) for r in budget_sheet.merged_cells.ranges}
-    # ADSS (always, 2026-10-23): the template computes the hardware itself and the rules only zero the S clamp (row 38); the rest keeps the fixture formulas.
-    hardware_rows = {38: 0, 40: "=G35*2", 41: "=G13"}
+    # ADSS (always, 2026-10-23): the template computes the hardware itself and the rules write nothing over the S clamp (row 38) either: its formula stays as the template has it.
+    hardware_rows = {40: "=G35*2", 41: "=G13"}
     for row in range(34, 52):
         assert budget_sheet[f"G{row}"].value == hardware_rows.get(row, "=G12+G27")
     # POSTE 8 MTRS (row 45) has a formula in this fixture: kept, and reported.
@@ -621,9 +621,9 @@ def test_mufa_connection_is_used_for_routing_and_route_sheet(client, monkeypatch
 
     workbook = load_workbook(data["excel_path"], data_only=False)
     assert workbook["Ruta proyectada"]["B2"].value == f"{mufa.lat:.6f}, {mufa.lon:.6f}"
-    # 189 m -> ADSS all the same (only GPON routes): the S clamp is zero; the rest keeps the template formulas.
+    # 189 m -> ADSS all the same (only GPON routes): every hardware row keeps the template formula, the S clamp too.
     budget_sheet = workbook["Presupuesto"]
-    assert (budget_sheet["G38"].value, budget_sheet["G40"].value) == (0, "=G35*2")
+    assert (budget_sheet["G38"].value, budget_sheet["G40"].value) == ("=G12+G27", "=G35*2")
 
 
 def test_the_route_of_an_api_budget_goes_to_the_owner_of_the_env_in_mis_lugares(client, monkeypatch):

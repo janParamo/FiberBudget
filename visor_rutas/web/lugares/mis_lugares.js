@@ -343,7 +343,9 @@
       if (cambio.estilo) t.estilo = cambio.estilo;
       if (cambio.propiedades && esRed) {                    // the icon / line of a network element follows its type
         const nuevo = window.DibujarRed.estiloInicial(tipo, cambio.propiedades);
-        t.estilo = nuevo.icono ? { ...t.estilo, icono: nuevo.icono } : { ...t.estilo, linea: { ...(t.estilo.linea || {}), ...nuevo.linea } };
+        const propio = t.estilo.icono && t.estilo.icono.personalizado;                  // an icon chosen by hand stays when the subtype changes
+        t.estilo = nuevo.icono ? { ...t.estilo, icono: propio ? t.estilo.icono : nuevo.icono } : { ...t.estilo, linea: { ...(t.estilo.linea || {}), ...nuevo.linea } };
+        if (nuevo.icono && t.dialogo && t.dialogo.ponerIcono) t.dialogo.ponerIcono(t.estilo.icono);
       }
       if (puntual) {
         if (cambio.lat !== undefined) { punto = L.latLng(cambio.lat, cambio.lon); mapa.panTo(punto); }

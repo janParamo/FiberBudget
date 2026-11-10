@@ -5,7 +5,7 @@
  *
  *   Dialogo.abrir({tipo, titulo, nombre, carpetas: [{id, etiqueta}], carpetaId, lat, lon, estilo, vista, descripcionHtml, adjuntos,
  *                  cargarAdjunto(id) -> Promise<dataURL>, mapa, alCambiar({lat, lon, estilo}), alAceptar(datos) -> Promise<{ok, error}>,
- *                  alCancelar()}) -> {ponerCoordenada(lat, lon), ponerMedidas(m), ponerResumen(r), cerrar()}
+ *                  alCancelar()}) -> {ponerCoordenada(lat, lon), ponerMedidas(m), ponerResumen(r), ponerIcono(i), cerrar()}
  *   Dialogo.pedirTexto(titulo, valor, etiqueta) -> Promise<string | null>
  */
 (function () {
@@ -25,7 +25,7 @@
           <button type="button" class="btn-icono" id="ml-d-cerrar" aria-label="Cancelar">✕</button></header>
         <form id="ml-d-form" class="ml-d-cuerpo" autocomplete="off" novalidate>
           <div class="vp-campo"><label for="ml-d-nombre">Nombre *</label>
-            <div class="ml-d-nombre"><input id="ml-d-nombre" maxlength="160"><button type="button" id="ml-d-icono" class="ml-d-icono-btn" title="Cambiar el ícono"></button></div>
+            <div class="ml-d-nombre"><input id="ml-d-nombre" maxlength="160"><button type="button" id="ml-d-icono" class="ml-d-icono-btn" title="Cambiar el ícono"></button><button type="button" id="ml-d-icono-reset" class="btn btn-chico" hidden title="Volver al ícono propio del tipo">↺ Del tipo</button></div>
             <small id="ml-d-e-nombre"></small></div>
           <div class="vp-campo"><label for="ml-d-carpeta">Carpeta</label><select id="ml-d-carpeta"></select><small id="ml-d-e-carpeta"></small></div>
           <div id="ml-d-coords"><div class="vp-fila">
@@ -74,6 +74,7 @@
     $("ml-dialogo").addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.target.closest(".ql-editor")) { e.stopPropagation(); cerrar(true); } });
     document.querySelectorAll(".ml-d-pest").forEach((b) => b.addEventListener("click", () => pestana(b.dataset.mlPest)));
     $("ml-d-icono").addEventListener("click", cambiarIcono);
+    $("ml-d-icono-reset").addEventListener("click", iconoDelTipo);
     $("ml-d-vinculo").addEventListener("click", agregarVinculo);
     $("ml-d-imagen").addEventListener("click", () => $("ml-d-archivo").click());
     $("ml-d-archivo").addEventListener("change", agregarImagen);
@@ -116,16 +117,32 @@
 
   // ------------------------------------------------------------------ estilo
   function pintarIconoBoton() {
-    if (actual.op.tipo !== "marca") return;
+    if (!esPunto(actual.op.tipo)) return;
     $("ml-d-icono").innerHTML = Iconos.svg(actual.estilo.icono || Iconos.DEFECTO, 26);
+    $("ml-d-icono-reset").hidden = !(actual.op.red && actual.estilo.icono && actual.estilo.icono.personalizado);
   }
 
   async function cambiarIcono() {
     const elegido = await Iconos.seleccionar(actual.estilo.icono || Iconos.DEFECTO);
     if (!elegido || !actual) return;
-    actual.estilo.icono = elegido;
+    actual.estilo.icono = actual.op.red ? { ...elegido, personalizado: true } : elegido;       // on a network element it stops following the type
     pintarIconoBoton();
     estiloCambio();
+  }
+
+  /** Back to the icon the type (and subtype) of a network element has. */
+  function iconoDelTipo() {
+    if (!actual || !actual.op.red || !window.DibujarRed) return;
+    actual.estilo.icono = window.DibujarRed.icono(actual.op.tipo, (actual.op.red.leer() || {}).subtipo);
+    pintarIconoBoton();
+    estiloCambio();
+  }
+
+  /** The icon a network element has now (its type changed and it follows it). */
+  function ponerIcono(icono) {
+    if (!actual || !esPunto(actual.op.tipo) || !icono) return;
+    actual.estilo.icono = icono;
+    pintarIconoBoton();
   }
 
   function estiloCambio() {
@@ -324,7 +341,7 @@
     $("ml-d-e-nombre").textContent = ""; $("ml-d-e-carpeta").textContent = ""; $("ml-d-e-coord").textContent = ""; avisoEstado("");
     $("ml-d-carpeta").innerHTML = (op.carpetas || []).map((c) => `<option value="${c.id}"${c.id === op.carpetaId ? " selected" : ""}>${esc(c.etiqueta)}</option>`).join("");
     $("ml-d-coords").hidden = !esPunto(op.tipo);
-    $("ml-d-icono").hidden = op.tipo !== "marca";
+    $("ml-d-icono").hidden = !esPunto(op.tipo);                            // a mark or a network element (a pole, the client…): its icon can be chosen
     $("ml-d-pest-medidas").hidden = esPunto(op.tipo);
     $("ml-d-pest-red").hidden = !op.red;                                   // network elements: their own data first; their style comes from the type
     document.querySelector('.ml-d-pest[data-ml-pest="estilo"]').hidden = !!op.red;
@@ -344,7 +361,7 @@
     if (actual === instancia && actual.quill && html) actual.quill.clipboard.dangerouslyPasteHTML(0, html);
     else if (actual === instancia && !actual.quill && html) $("ml-d-texto-plano").value = html.replace(/<[^>]+>/g, "");
     if (actual === instancia) { actual.quill && actual.quill.setSelection(0, 0); $("ml-d-nombre").focus(); $("ml-d-nombre").select(); }
-    return { ponerCoordenada, ponerMedidas, ponerResumen, cerrar: () => cerrar(false), get abierto() { return actual === instancia; } };
+    return { ponerCoordenada, ponerMedidas, ponerResumen, ponerIcono, cerrar: () => cerrar(false), get abierto() { return actual === instancia; } };
   }
 
   async function aceptar() {

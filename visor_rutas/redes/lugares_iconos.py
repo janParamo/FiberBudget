@@ -57,6 +57,8 @@ def limpiar_icono(valor: Any) -> dict[str, Any] | None:
               "escala": round(escala, 2), "opacidad": round(opacidad, 2)}
     if datos is not None:
         salida["datos"] = datos
+    if valor.get("personalizado") is True:                      # chosen by hand on a network element (a pole, the client): it no longer follows the type
+        salida["personalizado"] = True
     return salida
 
 

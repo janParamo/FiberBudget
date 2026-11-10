@@ -54,3 +54,36 @@ async def _recorrido(mundo):
 
 def test_editing_a_budget_route_shows_its_numbers_and_what_will_be_deleted(mundo):
     asyncio.run(_recorrido(mundo))
+
+
+async def _icono_del_cliente(mundo):
+    con, lectura, admin = mundo
+    r = lugares_presupuesto.guardar_ruta(con, admin, nombre="C23839_Constructores Unidos", puntos=RUTA, cliente=CLIENTE, postes_nuevos=POSTES)
+    cliente_id = lectura.execute("SELECT id FROM redes.lugares_elementos WHERE tipo = 'cliente' AND borrado_en IS NULL").fetchone()["id"]
+    async with pagina_edge(1366, 768, con=con) as p:
+        await p.esperar("window.MisLugares && window.MisLugares.estado.listo && window.MisLugares.estado.elementos >= 5", 20)
+        await p.evaluar("window.MisLugares.editar(%d); true" % cliente_id)
+        await p.esperar("document.getElementById('ml-dialogo') && !document.getElementById('ml-dialogo').hidden", 10)
+        assert await p.evaluar("document.getElementById('ml-d-icono').hidden") is False                        # the icon of a network point can be changed
+        assert await p.evaluar("document.getElementById('ml-d-icono-reset').hidden") is True
+        await p.evaluar("document.getElementById('ml-d-icono').click(); true")
+        await p.esperar("document.getElementById('ml-iconos') && !document.getElementById('ml-iconos').hidden", 5)
+        await p.evaluar("[...document.querySelectorAll('#ml-iconos-rejilla [data-ic]')].find((b) => JSON.parse(b.dataset.ic).id === 'cuadrado').click(); document.querySelector('[data-ml-ic=aceptar]').click(); true")
+        await p.esperar("!document.getElementById('ml-d-icono-reset').hidden", 5)                             # now it is the user's: a way back to the type's icon
+        await p.evaluar("document.getElementById('ml-d-form').requestSubmit()")
+        await p.esperar("!document.getElementById('ml-dialogo') || document.getElementById('ml-dialogo').hidden", 10)
+        await asyncio.sleep(0.5)
+        estilo = lectura.execute("SELECT estilo FROM redes.lugares_elementos WHERE id = %s", (cliente_id,)).fetchone()["estilo"]
+        assert estilo["icono"]["id"] == "cuadrado" and estilo["icono"]["personalizado"] is True
+        # opened again, «Del tipo» brings back the diamond of the client
+        await p.evaluar("window.MisLugares.editar(%d); true" % cliente_id)
+        await p.esperar("document.getElementById('ml-dialogo') && !document.getElementById('ml-dialogo').hidden && !document.getElementById('ml-d-icono-reset').hidden", 10)
+        await p.evaluar("document.getElementById('ml-d-icono-reset').click(); document.getElementById('ml-d-form').requestSubmit(); true")
+        await asyncio.sleep(0.8)
+        estilo = lectura.execute("SELECT estilo FROM redes.lugares_elementos WHERE id = %s", (cliente_id,)).fetchone()["estilo"]
+        assert estilo["icono"]["id"] == "rombo" and not estilo["icono"].get("personalizado")
+        assert await p.errores() == []
+
+
+def test_the_icon_of_the_saved_client_can_be_changed_and_restored(mundo):
+    asyncio.run(_icono_del_cliente(mundo))

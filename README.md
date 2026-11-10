@@ -276,8 +276,8 @@ curl https://fiber-api.example.com/health
 - **Hanging hardware:** `cable.hardware_by_cable_type` sets these MATERIALES rows by
   cable type and may replace their template formula. Flat: 2 S clamps per pole
   (template formula) and as many FTTH clamps (live formula to the S-clamp row); green
-  preformed 0. ADSS: no clamps, only one green preformed per pole (live formula
-  to the Band It buckle row); S and FTTH clamps 0.
+  preformed 0. ADSS: the template's own formulas stay untouched, the S clamp
+  included (2 x buckle); the green preformed is twice the buckle (`=G37*2`).
 - **Pole material:** new 8 m poles are also written to `poles.new_pole_material_row_label`
   (`POSTE 8 MTRS`), unless the template already computes that row. This also lets the
   ALCALDIA row (10% when poles are charged) activate.

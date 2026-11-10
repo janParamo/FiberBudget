@@ -45,7 +45,7 @@
     return JSON.stringify({
       cables: st.cables.map((c) => ({ id: c.id, x: c.x, y: c.y, movido: c.movido })),
       splitters: [...st.splitters.values()], conectores: [...st.conectores.values()], conexiones: [...st.conexiones.values()],
-      notas: [...st.notas.values()], hilos: [...st.hilos.entries()], hiloClientes: [...st.hiloClientes.entries()],
+      notas: [...st.notas.values()], hilos: [...st.hilos.entries()], hiloClientes: [...st.hiloClientes.entries()], puertoClientes: [...st.puertoClientes.entries()],
       borrados: Object.fromEntries(Object.entries(st.borrados).map(([k, v]) => [k, [...v]])), sucios: [...st.sucios], temporal: st.temporal,
     });
   }
@@ -58,6 +58,7 @@
     st.notas = new Map(s.notas.map((x) => [x.id, x]));
     st.hilos = new Map(s.hilos);
     st.hiloClientes = new Map(s.hiloClientes || []);
+    st.puertoClientes = new Map(s.puertoClientes || []);
     st.borrados = Object.fromEntries(Object.entries(s.borrados).map(([k, v]) => [k, new Map(v)]));
     st.sucios = new Set(s.sucios);
     st.temporal = s.temporal;
@@ -69,7 +70,7 @@
   }
   function deshacer() { if (!st.pilas.deshacer.length) return; st.pilas.rehacer.push(instantanea()); restaurar(st.pilas.deshacer.pop()); st.seleccion = []; dibujar(); }
   function rehacer() { if (!st.pilas.rehacer.length) return; st.pilas.deshacer.push(instantanea()); restaurar(st.pilas.rehacer.pop()); st.seleccion = []; dibujar(); }
-  const nCambios = () => st.sucios.size + st.hilos.size + st.hiloClientes.size + Object.values(st.borrados).reduce((n, m) => n + m.size, 0)
+  const nCambios = () => st.sucios.size + st.hilos.size + st.hiloClientes.size + st.puertoClientes.size + Object.values(st.borrados).reduce((n, m) => n + m.size, 0)
     + st.cables.filter((c) => c.movido).length;
 
   function actualizarBarra() {
@@ -126,6 +127,7 @@
     st.notas = new Map(r.notas.map((n) => [n.id, n]));
     st.hilos = new Map();
     st.hiloClientes = new Map();
+    st.puertoClientes = new Map();
     st.borrados = { splitters: new Map(), conectores: new Map(), conexiones: new Map(), notas: new Map() };
     st.sucios = new Set();
     st.pilas = { deshacer: [], rehacer: [] };
@@ -221,6 +223,7 @@
     dibujarConexiones();
     dibujarNotas();
     resaltar();
+    pintarPaleta();
     st.capa.draw();             // synchronous: the hit graph must match the new shapes before the next click
     pintarResumen();
   }
@@ -338,23 +341,82 @@
     circulo.on("mouseenter", () => tooltip(htmlFibra(c, f)));
     circulo.on("mouseleave", () => tooltip(null));
     cajaDestinoHilo(g, c, f, cy, izq, idx);
-    etiquetaCliente(g, f, cx, cy, izq);
+    etiquetaCliente(g, f, cx, cy, izq, TIA[idx]);
   }
 
-  /** A small green tag with the code of the client that is on this fibre by itself (the full name is in the tooltip). Double click on it: change the client. */
-  function etiquetaCliente(g, f, cx, cy, izq) {
+  const LARGO_CLIENTE = 44;                           // from the end of the fibre to the client object
+
+  /** The client that is on this fibre by itself, drawn as an object (see objetoCliente). */
+  function etiquetaCliente(g, f, cx, cy, izq, color) {
     const cl = clienteDeHilo(f.id);
     if (!cl) return;
+    objetoCliente(g, cl, { x0: cx + (izq ? 8 : -8), y: cy, salida: izq ? 1 : -1, largo: LARGO_CLIENTE, color: color || "#2e9d4a", lugar: { hilo: f.id } });
+  }
+
+  /** A client drawn as an object: a house icon (the client) joined by a line to the fibre or to the output of the splitter it is on, so the fibre is seen reaching the client.
+   *  It is dragged onto another fibre or splitter output to move it; double click: change it; right click: change / take off. The full name is in the tooltip.
+   *  `lugar` is {hilo} or {splitter, numero}; `compacto` (the splitter outputs, close together) puts the text beside the icon and makes it smaller. */
+  function objetoCliente(g, cl, { x0, y, salida, largo, color, lugar, compacto = false }) {
+    const x1 = x0 + salida * largo, k = compacto ? 0.72 : 1;
     const texto = cl.codigo_cliente || (cl.nombre || cl.id_servicio || "").slice(0, 10);
-    const ancho = Math.max(34, texto.length * 6.4 + 10);
-    const etiqueta = new Konva.Group({ x: izq ? cx + 12 : cx - 12 - ancho, y: cy - 7, name: "cliente-hilo" });
-    etiqueta.add(new Konva.Rect({ width: ancho, height: 14, fill: "#d8f3e0", stroke: "#2e9d4a", cornerRadius: 7 }));
-    etiqueta.add(new Konva.Text({ width: ancho, y: 2.5, text: texto, fontSize: 9.5, fontStyle: "bold", fill: "#14532d", align: "center", listening: false }));
-    etiqueta.on("click", (e) => { e.cancelBubble = true; seleccionar({ tipo: "hilo", id: f.id }); });
-    etiqueta.on("dblclick dbltap", (e) => { e.cancelBubble = true; if (st.puedeEditar) abrirClienteHilo(f.id); });
-    etiqueta.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tooltip(`<div class="mu-tt-titulo">Cliente en el hilo ${f.numero}</div><div><b>${esc(textoCliente(cl))}</b>${cl.id_servicio ? ` · ${esc(cl.id_servicio)}` : ""}</div>${st.puedeEditar ? '<div class="mu-tt-sec">Doble clic: cambiar</div>' : ""}`); });
-    etiqueta.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
-    g.add(etiqueta);
+    const hilo = new Konva.Line({ points: [x0, y, x1, y], stroke: color || "#2e9d4a", strokeWidth: 3, listening: false, name: "hilo-cliente" });
+    g.add(hilo);
+    const objeto = new Konva.Group({ x: x1, y, name: "cliente-hilo", draggable: st.puedeEditar });
+    if (compacto) objeto.add(new Konva.Text({ x: 15 * k + 4, y: -5, width: 150, text: textoServicio(cl) || cl.id_servicio || "", fontSize: 9.5, fill: "#0a6b3d", wrap: "none", ellipsis: true, listening: false }));
+    else objeto.add(new Konva.Text({ x: -42, y: 17, width: 84, text: texto, fontSize: 10, fontStyle: "bold", fill: "#14532d", align: "center", listening: false }));
+    const icono = new Konva.Group({ scaleX: k, scaleY: k });
+    icono.add(new Konva.Circle({ radius: 15, fill: "#d8f3e0", stroke: "#2e9d4a", strokeWidth: 2 }));
+    icono.add(new Konva.Line({ points: [-8, 8, -8, -1, 0, -9, 8, -1, 8, 8], closed: true, fill: "#ffffff", stroke: "#14532d", strokeWidth: 1.6, lineJoin: "round", listening: false }));
+    icono.add(new Konva.Rect({ x: -2.5, y: 2, width: 5, height: 6, fill: "#2e9d4a", listening: false }));
+    objeto.add(icono);
+    const seleccion = lugar.hilo != null ? { tipo: "hilo", id: lugar.hilo } : { tipo: "splitter", id: lugar.splitter };
+    objeto.on("click", (e) => { e.cancelBubble = true; seleccionar(seleccion); });
+    objeto.on("dblclick dbltap", (e) => { e.cancelBubble = true; if (st.puedeEditar) abrirClienteHilo(lugar); });
+    objeto.on("contextmenu", (e) => { e.evt.preventDefault(); e.cancelBubble = true; seleccionar(seleccion); menuCliente(e.evt, lugar); });
+    objeto.on("mouseenter", () => { st.stage.container().style.cursor = st.puedeEditar ? "grab" : "pointer"; tooltip(`<div class="mu-tt-titulo">Cliente en ${esc(textoLugar(lugar))}</div><div><b>${esc(textoCliente(cl))}</b>${cl.id_servicio ? ` · ${esc(cl.id_servicio)}` : ""}</div>${st.puedeEditar ? '<div class="mu-tt-sec">Arrastrar a otro hilo o salida: moverlo · Doble clic: cambiar</div>' : ""}`); });
+    objeto.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
+    if (st.puedeEditar) {
+      objeto.on("dragstart", (e) => { e.cancelBubble = true; tooltip(null); st.stage.draggable(false); });
+      objeto.on("dragmove", (e) => {
+        e.cancelBubble = true;                                              // the cable or splitter must not move with it
+        hilo.points([x0, y, objeto.x(), objeto.y()]);
+        marcarDestino(puertoClienteCercano(puntoLienzo()));
+        g.getLayer().batchDraw();
+      });
+      objeto.on("dragend", (e) => {
+        e.cancelBubble = true;
+        const destino = puertoClienteCercano(puntoLienzo());
+        marcarDestino(null);
+        st.stage.draggable(true);
+        setTimeout(() => {                                                  // a drop on another fibre or output moves the client; anywhere else it goes back
+          if (destino && !mismoLugar(destino.lugar, lugar)) asignarCliente(destino.lugar, cl, lugar); else dibujar();
+        }, 0);
+      });
+    }
+    g.add(objeto);
+  }
+
+  /** The fibre circle or splitter output nearest to a point of the canvas (within a few pixels): where a dragged client would be dropped. */
+  function puertoClienteCercano(p, radio = 24) {
+    let mejor = null;
+    st.puertos.forEach((info, clave) => {
+      const r = info.ref;
+      const lugar = /^h:\d+$/.test(clave) ? { hilo: r.hilo } : (r.splitter != null && r.lado === "salida" ? { splitter: r.splitter, numero: r.numero } : null);
+      if (!lugar) return;
+      const q = posicion(clave), d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d <= radio && (!mejor || d < mejor.d)) mejor = { clave, lugar, d, x: q.x, y: q.y };
+    });
+    return mejor;
+  }
+
+  /** A ring on the fibre where the client dragged would land. */
+  function marcarDestino(d) {
+    if (st.anillo) { st.anillo.destroy(); st.anillo = null; }
+    if (d) {
+      st.anillo = new Konva.Circle({ x: d.x, y: d.y, radius: 13, stroke: "#2e9d4a", strokeWidth: 3, dash: [4, 3], listening: false });
+      st.capaLineas.add(st.anillo);
+    }
+    st.capaLineas.batchDraw();
   }
 
   /** 5.3: a box with the destination at the end of every fibre in use (connected here or at the
@@ -400,10 +462,9 @@
       g.add(new Konva.Text({ x: 62, y: y - 4.5, width: 12, align: "center", text: String(n), fontSize: 8, fill: "#fff", listening: false }));
       registrarPuerto(cs, g, 74, y, { splitter: s.id, lado: "salida", numero: n }, 1, null);
       eventosPuerto(r, cs);
-      const servicio = (s.servicios || {})[n];
-      if (servicio) {                                   // the client (or splitter) this output feeds, from the Visio list
-        g.add(new Konva.Text({ x: 100, y: y - 5, width: 170, text: textoServicio(servicio) || servicio.id_servicio, fontSize: 9.5,
-                               fill: "#0a6b3d", wrap: "none", ellipsis: true, listening: false }));
+      const servicio = clienteEn({ splitter: s.id, numero: n });
+      if (servicio) {                                   // the client this output feeds (from the Visio list or put here): an object joined to the output
+        objetoCliente(g, servicio, { x0: 74, y, salida: 1, largo: 24, color: "#2e9d4a", lugar: { splitter: s.id, numero: n }, compacto: true });
       }
     }
     const p = s.propiedades || {};
@@ -974,9 +1035,6 @@
       ` › ${i === st.migas.length - 1 ? `<b>${esc(m.nombre)}</b>` : `<a href="#" data-miga="${i}">${esc(m.nombre)}</a>`}`).join("");
     $("mu-nombre").value = st.datos.mufa.nombre;
     pintarVecinas();
-    const n = (st.datos.clientes || []).length;
-    $("mu-clientes").textContent = n ? `Clientes (${n})` : "Clientes";
-    $("mu-clientes").disabled = !n;
     const mu = st.datos.mufa;
     $("mu-visio").disabled = !window.visor || !window.visor.verVisioAlLado;
     $("mu-asignar-visio").hidden = !st.puedeEditar || !window.visor || !window.visor.buscarMufasVisio;
@@ -1114,21 +1172,62 @@
     return [...vistos.values()].sort((a, b) => (a.codigo_cliente || a.nombre).localeCompare(b.codigo_cliente || b.nombre));
   }
 
-  function abrirClienteHilo(hiloId) {
+  // where a client can be: on a fibre ({hilo}) or on an output of a splitter ({splitter, numero})
+  const clavePuerto = (sid, n) => `${sid}:${n}`;
+  const mismoLugar = (a, b) => !!a && !!b && (a.hilo != null ? a.hilo === b.hilo : (a.hilo == null && b.hilo == null && a.splitter === b.splitter && a.numero === b.numero));
+  const claveCliente = (k) => `${k.codigo_cliente || ""}|${k.nombre || ""}`.toLowerCase();
+  const lugarDe = (arg) => (arg !== null && typeof arg === "object" ? arg : { hilo: arg });
+
+  /** What is saved at a place (a client with its version), or null. */
+  function guardadoEn(l) {
+    if (l.hilo != null) return (fibraPorId(l.hilo)[1] || {}).cliente || null;
+    return ((st.splitters.get(l.splitter) || {}).servicios || {})[l.numero] || null;
+  }
+  /** The client that is at a place now: what is waiting to be saved, else what is saved; null when there is none. */
+  function clienteEn(l) {
+    if (l.hilo != null) return clienteDeHilo(l.hilo);
+    const pendiente = st.puertoClientes.get(clavePuerto(l.splitter, l.numero));
+    if (pendiente) return pendiente.quitar ? null : pendiente;
+    return guardadoEn(l);
+  }
+  function textoLugar(l) {
+    if (l.hilo != null) { const [c, f] = fibraPorId(l.hilo); return f ? `hilo ${f.numero} de ${c.nombre}` : "un hilo"; }
+    const sp = st.splitters.get(l.splitter);
+    return `salida ${l.numero} de ${sp ? sp.nombre : "un splitter"}`;
+  }
+  function fijarCliente(l, k) {
+    const g = guardadoEn(l), version = g && g.version != null ? g.version : undefined;
+    const datos = { codigo_cliente: k.codigo_cliente || "", nombre: k.nombre || "", id_servicio: k.id_servicio || "", elemento_id: k.elemento_id || null, version };
+    if (l.hilo != null) st.hiloClientes.set(l.hilo, { hilo_id: l.hilo, ...datos });
+    else st.puertoClientes.set(clavePuerto(l.splitter, l.numero), { splitter: l.splitter, numero: l.numero, ...datos });
+  }
+  function retirarCliente(l) {
+    const g = guardadoEn(l);
+    const mapa = l.hilo != null ? st.hiloClientes : st.puertoClientes, clave = l.hilo != null ? l.hilo : clavePuerto(l.splitter, l.numero);
+    if (g) mapa.set(clave, l.hilo != null ? { hilo_id: l.hilo, quitar: true, version: g.version } : { splitter: l.splitter, numero: l.numero, quitar: true, version: g.version });
+    else mapa.delete(clave);                                        // it was only waiting to be saved
+  }
+  /** Where a client of this mufa is now (a fibre or a splitter output), or null. */
+  function lugarDeCliente(k) {
+    for (const c of st.cables) for (const fb of c.fibras) { const x = clienteDeHilo(fb.id); if (x && claveCliente(x) === claveCliente(k)) return { hilo: fb.id }; }
+    for (const sp of st.splitters.values()) {
+      for (let n = 1; n <= sp.salidas; n++) { const x = clienteEn({ splitter: sp.id, numero: n }); if (x && claveCliente(x) === claveCliente(k)) return { splitter: sp.id, numero: n }; }
+    }
+    return null;
+  }
+
+  function abrirClienteHilo(arg) {
     if (!st.puedeEditar) return;
-    const [c, f] = fibraPorId(hiloId);
-    if (!f) return;
-    const actual = clienteDeHilo(hiloId), conocidos = clientesConocidos(), form = $("mu-hc-form");
-    st.hiloCliente = { hiloId, conocidos };
-    // where each known client already is (the fibres of this mufa's cables), so a client is not put twice by mistake
-    const enHilo = new Map();
-    st.cables.forEach((cb) => cb.fibras.forEach((fb) => { const k = clienteDeHilo(fb.id); if (k) enHilo.set(`${k.codigo_cliente || ""}|${k.nombre || ""}`.toLowerCase(), `${cb.nombre}, hilo ${fb.numero}`); }));
-    const donde = (k) => enHilo.get(`${k.codigo_cliente || ""}|${k.nombre || ""}`.toLowerCase());
-    $("mu-hc-titulo").textContent = `Cliente del hilo ${f.numero} de ${c.nombre}`;
+    const lugar = lugarDe(arg);
+    if (lugar.hilo != null ? !fibraPorId(lugar.hilo)[1] : !st.splitters.has(lugar.splitter)) return;
+    const actual = clienteEn(lugar), conocidos = clientesConocidos(), form = $("mu-hc-form");
+    st.hiloCliente = { lugar, conocidos };
+    // where each known client already is (the fibres and splitter outputs of this mufa), so a client is not put twice by mistake
+    const donde = (k) => { const l = lugarDeCliente(k); return l ? textoLugar(l) : null; };
+    $("mu-hc-titulo").textContent = `Cliente del ${textoLugar(lugar)}`;
     form.elements.conocido.innerHTML = (conocidos.length ? `<option value="">— Elija un cliente de ${esc(st.datos.mufa.nombre)} —</option>` : `<option value="">Esta mufa no tiene clientes en su lista</option>`)
       + conocidos.map((k, i) => `<option value="${i}">${esc(textoCliente(k) || k.id_servicio)}${k.id_servicio ? ` · ${esc(k.id_servicio)}` : ""}${donde(k) ? ` — ya está en ${esc(donde(k))}` : ""}</option>`).join("");
-    const clave = (k) => `${k.codigo_cliente || ""}|${k.nombre || ""}`.toLowerCase();
-    const indice = actual ? conocidos.findIndex((k) => clave(k) === clave(actual)) : -1;
+    const indice = actual ? conocidos.findIndex((k) => claveCliente(k) === claveCliente(actual)) : -1;
     form.elements.conocido.value = indice >= 0 ? String(indice) : "";
     form.elements.manual.checked = !!actual && indice < 0;                          // a client that is not in the list stays editable
     form.elements.codigo.value = actual ? actual.codigo_cliente || "" : "";
@@ -1151,32 +1250,101 @@
 
   function guardarClienteHilo(ev) {
     ev.preventDefault();
-    const form = $("mu-hc-form"), { hiloId } = st.hiloCliente;
+    const form = $("mu-hc-form"), { lugar } = st.hiloCliente;
     const codigo = form.elements.codigo.value.trim().toUpperCase(), nombre = form.elements.nombre.value.trim(), servicio = form.elements.servicio.value.trim();
     if (!form.elements.manual.checked && form.elements.conocido.value === "") { $("mu-hc-error").textContent = "Elija un cliente de la lista de esta mufa (o marque «Escribir otro cliente»)"; return; }
     if (!(codigo || nombre || servicio)) { $("mu-hc-error").textContent = "Escriba el código, el nombre o el ID de servicio del cliente"; return; }
     if (codigo && !/^C\d{3,7}$/.test(codigo)) { $("mu-hc-error").textContent = "El código es una C seguida de números (por ejemplo C23839)"; return; }
-    const [, f] = fibraPorId(hiloId), previo = f.cliente;
     antesDeCambiar();
-    st.hiloClientes.set(hiloId, { hilo_id: hiloId, codigo_cliente: codigo, nombre, id_servicio: servicio, elemento_id: st.hiloCliente.elemento || null, version: previo ? previo.version : undefined });
+    fijarCliente(lugar, { codigo_cliente: codigo, nombre, id_servicio: servicio, elemento_id: st.hiloCliente.elemento || null });
     $("modal-mu-hcliente").hidden = true;
     dibujar();
   }
 
-  function quitarClienteHilo(hiloId) {
-    const [, f] = fibraPorId(hiloId);
-    if (!f || !clienteDeHilo(hiloId)) return;
+  function quitarClienteHilo(arg) {
+    const lugar = lugarDe(arg);
+    if (!clienteEn(lugar)) return;
     antesDeCambiar();
-    if (f.cliente) st.hiloClientes.set(hiloId, { hilo_id: hiloId, quitar: true, version: f.cliente.version });
-    else st.hiloClientes.delete(hiloId);                            // it was only waiting to be saved
+    retirarCliente(lugar);
     dibujar();
   }
 
-  function abrirClientes() {
-    $("mu-cl-titulo").textContent = `Clientes de ${st.datos.mufa.nombre}`;
-    $("mu-cl-lista").innerHTML = (st.datos.clientes || []).map((c) => `<tr><td>${esc(c.codigo_cliente || "—")}</td><td>${esc(c.nombre || "")}</td>`
-      + `<td>${esc(c.id_servicio || "")}</td><td>${c.elemento_id ? "sí" : "no"}</td></tr>`).join("");
-    $("modal-mu-clientes").hidden = false;
+  /** Drop a client at a place: dragged from the palette, or moved from where it was (origen). A fibre or output has one client; a client is in one place. */
+  function asignarCliente(destino, k, origen = null) {
+    if (!st.puedeEditar) return false;
+    const actual = clienteEn(destino);
+    if (actual && claveCliente(actual) === claveCliente(k)) { dibujar(); return false; }
+    if (actual) { mensaje(`En ${textoLugar(destino)} ya está el cliente ${textoCliente(actual) || actual.id_servicio}: quítelo antes`, "error"); dibujar(); return false; }
+    const antes = origen || lugarDeCliente(k);
+    antesDeCambiar();
+    if (antes) retirarCliente(antes);                               // it moves: it is not left in two places
+    fijarCliente(destino, k);
+    st.seleccion = [destino.hilo != null ? { tipo: "hilo", id: destino.hilo } : { tipo: "splitter", id: destino.splitter }];
+    dibujar();
+    mensaje(`${textoCliente(k) || k.id_servicio} ${antes ? "movido" : "asignado"} a ${textoLugar(destino)}`, "ok");
+    return true;
+  }
+
+  /** Right click on a client object: change it or take it off. */
+  function menuCliente(evt, lugar) {
+    if (!st.puedeEditar) return;
+    const menu = $("mu-menu"), cl = clienteEn(lugar);
+    if (!cl) return;
+    menu.innerHTML = `<li data-mu-cl-editar="1">Cambiar el cliente…</li><li data-mu-cl-quitar="1">Quitar el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})</li>`;
+    menu.dataset.lugar = JSON.stringify(lugar);
+    menu.style.left = `${evt.clientX}px`;
+    menu.style.top = `${evt.clientY}px`;
+    menu.hidden = false;
+  }
+
+  // the palette: the clients of this mufa as objects to drag onto a fibre
+  function pintarPaleta() {
+    const lista = $("mu-paleta-lista");
+    if (!lista) return;
+    const conocidos = clientesConocidos();
+    $("mu-clientes").textContent = conocidos.length ? `Clientes (${conocidos.length})` : "Clientes";
+    $("mu-clientes").disabled = !conocidos.length;
+    if (!conocidos.length) $("mu-paleta").hidden = true;
+    st.paleta = conocidos;
+    lista.innerHTML = conocidos.map((k, i) => {
+      const lg = lugarDeCliente(k);
+      return `<div class="mu-pal-item${lg ? " puesto" : ""}" draggable="${st.puedeEditar}" data-i="${i}" title="${esc(textoCliente(k))}">`
+        + `<svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#d8f3e0" stroke="#2e9d4a" stroke-width="2"/>`
+        + `<path d="M8 17V15L16 7l8 8v2h-2v7H10v-7z" fill="#fff" stroke="#14532d" stroke-width="1.6" stroke-linejoin="round"/><rect x="14" y="18" width="4" height="6" fill="#2e9d4a"/></svg>`
+        + `<span class="mu-pal-texto"><b>${esc(k.codigo_cliente || k.id_servicio || "—")}</b><small>${esc(k.nombre || "")}${lg ? ` · en ${esc(textoLugar(lg))}` : ""}</small></span></div>`;
+    }).join("");
+  }
+
+  function iniciarPaleta() {
+    const lista = $("mu-paleta-lista"), konva = $("mu-konva");
+    lista.addEventListener("dragstart", (e) => {
+      const it = e.target.closest(".mu-pal-item");
+      if (!it || !st.puedeEditar) { e.preventDefault(); return; }
+      st.clienteArrastrado = st.paleta[Number(it.dataset.i)];
+      e.dataTransfer.setData("text/plain", textoCliente(st.clienteArrastrado));
+      e.dataTransfer.effectAllowed = "move";
+      tooltip(null);
+    });
+    lista.addEventListener("dragend", () => { st.clienteArrastrado = null; marcarDestino(null); });
+    const sobre = (e) => { st.stage.setPointersPositions(e); return puertoClienteCercano(puntoLienzo()); };
+    konva.addEventListener("dragover", (e) => {
+      if (!st.clienteArrastrado) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      marcarDestino(sobre(e));
+    });
+    konva.addEventListener("dragleave", () => { if (st.clienteArrastrado) marcarDestino(null); });
+    konva.addEventListener("drop", (e) => {
+      if (!st.clienteArrastrado) return;
+      e.preventDefault();
+      const d = sobre(e), k = st.clienteArrastrado;
+      st.clienteArrastrado = null;
+      marcarDestino(null);
+      if (!d) { mensaje("Suelte el cliente sobre el círculo de un hilo o sobre una salida de splitter", "error"); return; }
+      asignarCliente(d.lugar, k);
+    });
+    $("mu-clientes").addEventListener("click", () => { $("mu-paleta").hidden = !$("mu-paleta").hidden; });
+    $("mu-paleta-cerrar").addEventListener("click", () => { $("mu-paleta").hidden = true; });
   }
 
   async function cargarMufa(id) {
@@ -1265,7 +1433,8 @@
   function cambiosParaGuardar() {
     const salida = { posiciones: st.cables.filter((c) => c.movido).map((c) => ({ cable_id: c.id, x: Math.round(c.x), y: Math.round(c.y),
                                                                                   version: c.pos_version ?? null })),
-                     splitters: [], conectores: [], conexiones: [], hilos: [...st.hilos.values()], hilo_clientes: [...st.hiloClientes.values()], notas: [] };
+                     splitters: [], conectores: [], conexiones: [], hilos: [...st.hilos.values()], hilo_clientes: [...st.hiloClientes.values()],
+                     puerto_clientes: [...st.puertoClientes.values()].filter((x) => x.quitar ? st.splitters.has(x.splitter) : (st.splitters.get(x.splitter) || { salidas: 0 }).salidas >= x.numero), notas: [] };
     st.sucios.forEach((k) => {
       const [tabla, ...resto] = k.split(":");
       const id = resto.join(":");
@@ -1335,7 +1504,7 @@
   // ------------------------------------------------------------------ eventos
   function teclado(e) {
     if ($("modal-mufa").hidden || !$("modal-mu-objeto").hidden || !$("modal-mu-nota").hidden || !$("modal-confirmar").hidden) return;
-    const encima = ["modal-mu-clientes", "modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente"].filter((id) => !$(id).hidden);
+    const encima = ["modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente"].filter((id) => !$(id).hidden);
     if (encima.length) {
       if (e.key === "Escape") encima.forEach((id) => { $(id).hidden = true; });
       return;
@@ -1389,7 +1558,7 @@
     });
     $("mu-sangria").addEventListener("click", alternarSangria);
     $("mu-trazar").addEventListener("click", () => { const s = st.seleccion[0]; if (s && s.tipo === "hilo") trazarHilo(s.id); });
-    $("mu-clientes").addEventListener("click", abrirClientes);
+    iniciarPaleta();
     $("mu-hc-form").addEventListener("submit", guardarClienteHilo);
     $("mu-hc-cancelar").addEventListener("click", () => { $("modal-mu-hcliente").hidden = true; });
     $("mu-hc-form").elements.manual.addEventListener("change", () => { modoManualCliente(); if ($("mu-hc-form").elements.manual.checked) $("mu-hc-form").elements.codigo.focus(); });
@@ -1418,6 +1587,12 @@
     $("mu-menu").addEventListener("click", (e) => {
       const li = e.target.closest("li");
       if (!li) return;
+      if (li.dataset.muClEditar || li.dataset.muClQuitar) {
+        const lugar = JSON.parse($("mu-menu").dataset.lugar);
+        if (li.dataset.muClEditar) abrirClienteHilo(lugar); else quitarClienteHilo(lugar);
+        ocultarMenu();
+        return;
+      }
       const hilo = Number($("mu-menu").dataset.hilo);
       if (li.dataset.muTrazar) trazarHilo(hilo);
       if (li.dataset.muEstado) cambiarEstado(hilo, li.dataset.muEstado);

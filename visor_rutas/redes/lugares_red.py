@@ -136,13 +136,17 @@ def limpiar_cable(con: Any, valor: Any, dueno_id: int, coords: list[list[float]]
 
 
 def estilo(tipo: str, propiedades: dict[str, Any], previo: dict[str, Any]) -> dict[str, Any]:
-    """The style a network element always has: its icon comes from the type and subtype, a cable's line from its class and color."""
+    """The style a network element always has: its icon comes from the type and subtype (unless it was chosen by hand), a cable's line from its class and color."""
     salida = dict(previo or {})
     if tipo == "cable":
         li = dict(salida.get("linea") or {})
         salida["linea"] = {"color": propiedades.get("color", COLOR_CABLE), "grosor": GROSOR_POR_CLASE.get(propiedades.get("clase"), 3),
                            "opacidad": li.get("opacidad", 1)}
         return salida
+    if (salida.get("icono") or {}).get("personalizado"):
+        if "etiqueta" not in salida:
+            salida["etiqueta"] = {"visible": tipo != "poste", "color": "#ffffff", "escala": 1.0}
+        return salida                                           # the icon chosen by hand is kept
     figura, color, escala = _ICONOS.get((tipo, propiedades.get("subtipo")), _ICONOS[(tipo, None)] if (tipo, None) in _ICONOS else ("circulo", "#ff8c00", 1.0))
     salida["icono"] = {"tipo": "figura", "id": figura, "color": color, "escala": escala, "opacidad": 1.0}
     if "etiqueta" not in salida:

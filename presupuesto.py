@@ -403,7 +403,7 @@ def calcular_materiales(distance_m: float, total_poles: int, rules: dict[str, An
         cable["clevis_label"]: pole_count,
         cable["band_label"]: pole_count,
         cable["buckle_label"]: pole_count,
-        cable["s_clamp_label"]: 0 if adss else pole_count * 2,
+        cable["s_clamp_label"]: pole_count * 2,                     # the template's own formula: twice the buckles, ADSS or Flat
         cable["ftth_clamp_label"]: 0 if adss else pole_count * 2,   # Flat: as many as S clamps
         cable["green_preformed_label"]: pole_count * 2 if adss else 0,   # ADSS only: twice the buckles
     }

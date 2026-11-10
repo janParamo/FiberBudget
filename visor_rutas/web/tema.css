@@ -1,0 +1,158 @@
+/* Tema del visor: la única fuente de verdad del aspecto (colores, escala de espacios, radios, sombras, foco).
+ * Se carga DESPUÉS de visor.css, redes.css y mis_lugares.css: redefine los tokens que esos archivos ya usan (var(--primario), var(--borde)…)
+ * y afina los componentes. No cambia tamaños de layout (el árbol de Lugares y el mapa dependen de ellos), solo presentación.
+ * Dirección: limpio y neutro, un solo acento azul, menú lateral oscuro, colores semánticos solo para estados. */
+
+:root {
+  /* neutros con un matiz frío hacia el acento */
+  --fondo: #ffffff;
+  --fondo-suave: #f5f6f9;
+  --fondo-hundido: #eceff4;
+  --borde: #e0e4eb;
+  --borde-fuerte: #c9cfda;
+  --texto: #1a2130;
+  --texto-suave: #586174;
+  --texto-tenue: #8892a3;
+  /* acento */
+  --primario: #2563eb;
+  --primario-hover: #1d4fd0;
+  --primario-suave: #e8effd;
+  --primario-borde: #b7ccf8;
+  /* semánticos */
+  --ok: #0f7a3d;
+  --ok-suave: #e3f5ea;
+  --aviso-fondo: #fff4cc;
+  --aviso-texto: #6b4a00;
+  --error: #b42318;
+  --error-suave: #fdeceb;
+  /* menú lateral */
+  --menu-fondo: #171d2b;
+  --menu-hover: #222a3c;
+  --menu-activo: #2a3550;
+  --menu-borde: #2b3447;
+  --menu-texto: #c4cddd;
+  --menu-acento: #6b9bf5;
+  /* escala de espacios (4/8), radios y sombras */
+  --e1: 4px; --e2: 8px; --e3: 12px; --e4: 16px; --e5: 24px;
+  --radio-sm: 6px; --radio-md: 10px; --radio-lg: 14px;
+  --sombra: 0 1px 2px rgba(16, 24, 40, .08), 0 6px 20px rgba(16, 24, 40, .16);
+  --sombra-suave: 0 1px 2px rgba(16, 24, 40, .06), 0 2px 8px rgba(16, 24, 40, .10);
+  --foco: 0 0 0 3px rgba(37, 99, 235, .28);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------- generales: foco visible, barras de desplazamiento finas, transiciones */
+* { scrollbar-width: thin; scrollbar-color: var(--borde-fuerte) transparent; }
+button, input, select, textarea { transition: background-color .15s, border-color .15s, box-shadow .15s, color .15s; }
+:focus-visible { outline: none; box-shadow: var(--foco); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: var(--primario); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation-duration: .01ms !important; } }
+
+:where(input[type="text"], input[type="search"], input[type="number"], input[type="password"], input:not([type]), select, textarea) {
+  border: 1px solid var(--borde-fuerte); border-radius: var(--radio-sm); background: var(--fondo); color: var(--texto);      /* especificidad cero: los campos con estilo propio (buscador, coordenada) lo conservan */
+}
+
+/* ---------------------------------------------------------------- botones */
+.btn { height: 34px; border-color: var(--borde-fuerte); border-radius: var(--radio-sm); font-weight: 500; }
+.btn:hover:not(:disabled) { background: var(--fondo-suave); border-color: var(--texto-tenue); }
+.btn-primario { box-shadow: 0 1px 2px rgba(37, 99, 235, .35); }
+.btn-primario:hover:not(:disabled) { border-color: var(--primario-hover); }
+.btn.activo { background: var(--primario-suave); border-color: var(--primario-borde); color: var(--primario); }
+.btn-chico { height: 28px; padding: 0 var(--e3); }
+.btn-icono { border-radius: var(--radio-sm); }
+.btn-icono:hover { background: var(--fondo-hundido); color: var(--texto); }
+
+/* ---------------------------------------------------------------- menú lateral: oscuro, con un acento y modo riel que se abre al pasar el mouse */
+.menu-lateral { background: var(--menu-fondo); color: var(--menu-texto); box-shadow: 1px 0 0 var(--menu-borde), 2px 0 12px rgba(0, 0, 0, .18); transition: width .16s ease; }
+.menu-plegar { height: 36px; background: transparent; color: var(--menu-texto); border-bottom: 1px solid var(--menu-borde); }
+.menu-plegar:hover { background: var(--menu-hover); color: #fff; }
+.menu-items { padding: var(--e2) 0; }
+.menu-item {
+  width: calc(100% - 16px); margin: 1px 8px; padding: 9px 12px; gap: var(--e3); border-left: 0; border-radius: var(--radio-sm);
+  font-size: 13.5px; font-weight: 500; color: var(--menu-texto);
+}
+.menu-item:hover:not([aria-disabled="true"]) { background: var(--menu-hover); color: #fff; }
+.menu-item.activo { background: var(--menu-activo); color: #fff; font-weight: 600; box-shadow: inset 3px 0 0 var(--menu-acento); }
+.menu-item[aria-disabled="true"] { opacity: .38; }
+.menu-separador { margin: var(--e2) var(--e4); background: var(--menu-borde); }
+.menu-pie { border-top-color: var(--menu-borde); color: var(--menu-texto); opacity: .85; }
+.menu-lateral.contraido .menu-item { width: calc(100% - 16px); padding: 9px 0; }
+/* riel: al pasar el mouse se abre SOBRE el mapa (el mapa no se mueve) */
+.menu-lateral.contraido:hover { width: 210px; box-shadow: 4px 0 24px rgba(0, 0, 0, .35); }
+.menu-lateral.contraido:hover .menu-item { padding: 9px 12px; justify-content: flex-start; gap: var(--e3); }
+.menu-lateral.contraido:hover .menu-texto, .menu-lateral.contraido:hover .menu-pie-texto { display: inline; }
+.menu-lateral.contraido:hover .menu-proximo { display: inline; }
+.menu-lateral.contraido:hover .menu-pie .menu-usuario { justify-content: flex-start; }
+
+/* ---------------------------------------------------------------- paneles sobre el mapa: Lugares, resumen, buscador, herramientas */
+.lugares { border-right: 1px solid var(--borde); box-shadow: 4px 0 16px rgba(16, 24, 40, .10); }
+.lg-cabecera { padding: var(--e3) var(--e2) var(--e2) var(--e4); border-bottom-color: var(--borde); }
+.lg-cabecera h2 { font-size: 15px; font-weight: 650; letter-spacing: -.005em; }
+.lg-busqueda { padding: var(--e2) var(--e2) var(--e1); }
+.lg-busqueda input[type="search"] { height: 30px; padding: 0 var(--e2); border-radius: var(--radio-sm); }
+.lg-opcion { color: var(--texto-suave); padding: var(--e1) var(--e3) var(--e2); }
+.lg-estado { background: var(--primario-suave); color: #1e3a8a; }
+.lg-estado.error { background: var(--error-suave); color: var(--error); }
+.lg-fila:hover { background: var(--fondo-suave); }
+.lg-fila.sel { background: var(--primario-suave); box-shadow: inset 3px 0 0 var(--primario); }
+.lg-fila.seccion { background: var(--fondo-suave); border-top: 1px solid var(--borde); font-weight: 600; color: var(--texto); }
+.lg-fila.seccion:hover { background: var(--fondo-hundido); }
+.lg-ir:hover { background: var(--primario-suave); color: var(--primario); }
+
+.panel { border-radius: var(--radio-lg); box-shadow: var(--sombra); background: var(--fondo); }
+.panel-cabecera { padding: var(--e3) var(--e3) var(--e2) var(--e4); border-bottom-color: var(--borde); }
+.tarjeta { border-radius: var(--radio-md); border-color: var(--borde); box-shadow: none; }
+.tarjeta h2 { font-weight: 650; letter-spacing: .06em; color: var(--texto-tenue); }
+.pestana { border-radius: var(--radio-sm); font-weight: 500; }
+.pestana.activa { background: var(--primario-suave); color: var(--primario); font-weight: 600; }
+
+.buscador { border-radius: 24px; box-shadow: var(--sombra); border: 1px solid var(--borde); }
+.buscador:focus-within { border-color: var(--primario-borde); box-shadow: var(--sombra), var(--foco); }
+.buscador input:focus-visible { box-shadow: none; }
+.buscar-resultados { border-radius: var(--radio-md); border: 1px solid var(--borde); }
+.barra-herramientas { border-radius: var(--radio-md); box-shadow: var(--sombra-suave); border: 1px solid var(--borde); padding: var(--e1); gap: 2px; }
+.bh-boton { border-radius: var(--radio-sm); color: var(--texto-suave); }
+.bh-boton:hover { background: var(--fondo-suave); color: var(--texto); }
+.bh-boton.activo { background: var(--primario-suave); color: var(--primario); box-shadow: inset 0 0 0 1.5px var(--primario-borde); }
+.bh-sep { background: var(--borde); }
+
+/* ---------------------------------------------------------------- barra inferior: un solo botón primario y el resto discretos */
+.barra { box-shadow: 0 -1px 0 var(--borde), 0 -4px 12px rgba(16, 24, 40, .05); gap: var(--e2); }
+.campo input { height: 34px; border-color: var(--borde-fuerte); }
+.hist-btn { height: 34px; border-color: var(--borde-fuerte); }
+.barra .btn:not(.btn-primario) { border-color: transparent; background: transparent; color: var(--texto-suave); }
+.barra .btn:not(.btn-primario):hover:not(:disabled) { background: var(--fondo-suave); color: var(--texto); border-color: var(--borde); }
+.barra .btn.activo { background: var(--primario-suave); color: var(--primario); border-color: var(--primario-borde); }
+.mensaje { border-radius: var(--radio-md); box-shadow: var(--sombra); }
+
+/* ---------------------------------------------------------------- ventanas, menús y mapa */
+.modal-caja { border-radius: var(--radio-lg); box-shadow: 0 24px 64px rgba(10, 16, 30, .45); border: 1px solid var(--borde); }
+.menu, .lg-menu, .ml-menu { border-radius: var(--radio-md); box-shadow: var(--sombra); border: 1px solid var(--borde); }
+.ml-dialogo { border-radius: var(--radio-lg); box-shadow: var(--sombra); }
+.leaflet-popup-content-wrapper { border-radius: var(--radio-md); box-shadow: var(--sombra); }
+.leaflet-bar { border: 1px solid var(--borde) !important; border-radius: var(--radio-md) !important; box-shadow: var(--sombra-suave) !important; overflow: hidden; }
+.leaflet-bar a { color: var(--texto-suave); }
+.leaflet-bar a:hover { background: var(--fondo-suave); color: var(--texto); }
+
+/* ---------------------------------------------------------------- vistas a pantalla completa (Tickets, Presupuestos…): menos color, estados como etiquetas suaves */
+.vp-cabecera { box-shadow: 0 1px 0 var(--borde); }
+.tk-tabla-caja, .tk-detalle { border-radius: var(--radio-md); border-color: var(--borde); }
+.tk-tabla th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-tenue); }
+.tk-tabla td { border-bottom: 1px solid var(--borde); }
+.tk-tabla tbody tr { background: var(--fondo); }
+.tk-tabla tbody tr:nth-child(even) { background: var(--fondo-suave); }
+.tk-tabla tbody tr:hover { background: var(--primario-suave); }
+.tk-tabla tbody tr.vencido { background: var(--error-suave); }
+.tk-tabla tbody tr.sel { outline-color: var(--primario); }
+.tk-tabla td.id, .tk-tabla td.asunto { color: var(--primario); }
+.tk-tabla td.prioridad.alta { background: var(--error-suave); color: var(--error); font-weight: 600; }
+.tk-tabla td.prioridad.nivel { color: var(--ok); }
+.tk-tabla td.estado { background: var(--aviso-fondo); color: var(--aviso-texto); font-weight: 600; }
+.tk-tabla td.actividad { color: var(--texto-suave); }
+.vp-tab { border-radius: var(--radio-sm); font-weight: 500; }
+.vp-tab.activa { background: var(--primario-suave); border-color: var(--primario-borde); }
+.insignia { font-weight: 600; letter-spacing: .01em; }
+
+/* ---------------------------------------------------------------- editor de mufa: paleta de clientes */
+.mu-paleta { border-radius: var(--radio-md); box-shadow: var(--sombra); border-color: var(--borde); }
+.mu-pal-item { border-radius: var(--radio-sm); }

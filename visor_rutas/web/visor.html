@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="visor.css">
   <link rel="stylesheet" href="redes/redes.css">
   <link rel="stylesheet" href="lugares/mis_lugares.css">
+  <link rel="stylesheet" href="tema.css">
 </head>
 <body>
   <main id="mapa" aria-label="Mapa"></main>
@@ -295,7 +296,7 @@
           <button id="mu-trazar" type="button" class="btn btn-chico" disabled title="Seguir el hilo seleccionado de punta a punta (T)">Trazar hilo</button>
           <button id="mu-sangria" type="button" class="btn btn-chico" disabled title="Marcar la conexión elegida como sangría: el hilo sigue su camino y además alimenta a un cliente en esta mufa (se dibuja en rojo)">Sangría</button>
           <button id="mu-diagrama" type="button" class="btn btn-chico" title="Diagrama lógico de red desde esta mufa">Diagrama lógico</button>
-          <button id="mu-clientes" type="button" class="btn btn-chico" title="Clientes de esta mufa sin puerto de splitter conocido (del Visio)" disabled>Clientes</button>
+          <button id="mu-clientes" type="button" class="btn btn-chico" title="Los clientes de esta mufa como objetos: arrástrelos hasta el hilo al que llegan" disabled>Clientes</button>
           <button id="mu-vista" type="button" class="btn btn-chico" title="Cambiar entre la vista de cables y la de bandejas">Ver bandejas</button>
           <button id="mu-red" type="button" class="btn btn-chico" title="Esta mufa y sus vecinas a 1 o 2 saltos; Enter o doble clic entra a otra">Red de mufas</button>
         </div>
@@ -314,6 +315,11 @@
         <div id="mu-red-vista" class="mu-red-vista" hidden></div>
         <div id="mu-konva" class="mu-konva"></div>
         <div id="mu-notas" class="mu-notas"></div>
+        <div id="mu-paleta" class="mu-paleta" hidden>
+          <div class="mu-pal-cab"><b>Clientes de la mufa</b><button id="mu-paleta-cerrar" type="button" class="btn-icono" aria-label="Cerrar">✕</button></div>
+          <p class="nota">Arrastre un cliente hasta el círculo del hilo o la salida del splitter a la que llega.</p>
+          <div id="mu-paleta-lista" class="mu-pal-lista"></div>
+        </div>
         <div id="mu-tooltip" class="mu-tooltip" hidden></div>
       </div>
       <footer class="mu-pie">
@@ -554,21 +560,6 @@
           <button type="button" class="btn" data-er-cerrar="modal-mu-cable">Cancelar</button>
           <button type="submit" class="btn btn-primario">Guardar</button></div>
       </form>
-    </div>
-  </div>
-
-  <div id="modal-mu-clientes" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-cl-titulo">
-    <div class="modal-caja config-caja mu-cl-caja">
-      <header class="modal-cabecera pr-cabecera"><h2 id="mu-cl-titulo">Clientes de la mufa</h2>
-        <button type="button" class="btn-icono" data-er-cerrar="modal-mu-clientes" aria-label="Cerrar">✕</button></header>
-      <div class="config-cuerpo">
-        <p class="nota">Listados en el Visio en esta mufa, sin puerto de splitter conocido (fusionados directo, en sangría…). Los que tienen
-          puerto se ven junto a la salida del splitter.</p>
-        <div class="mu-cl-tabla"><table class="dg-tabla">
-          <thead><tr><th>Código</th><th>Nombre</th><th>ID servicio</th><th>En el mapa</th></tr></thead>
-          <tbody id="mu-cl-lista"></tbody>
-        </table></div>
-      </div>
     </div>
   </div>
 

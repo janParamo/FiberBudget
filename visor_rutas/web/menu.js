@@ -74,7 +74,8 @@
     });
     try {
       const r = await ctx.api.preferencias();
-      contraido = !!(r && r.preferencias && r.preferencias.menu_contraido);
+      const guardada = r && r.preferencias ? r.preferencias.menu_contraido : undefined;
+      contraido = guardada === undefined ? true : !!guardada;          // sin elección guardada: riel de íconos (se abre al pasar el mouse); quien ya eligió conserva su elección
     } catch (e) { /* defaults */ }
     aplicarAncho();
   }

@@ -133,10 +133,9 @@ cable:
   # same_as / same_as_install write a live formula (times: N multiplies it).
   #   ADSS (always): the template computes the hanging hardware itself (2026-10-23): Clevis tipo D Chico, Cinta Band It and Hebilla Band It = one per
   #         installation of herraje (=G19+G20+G21: poles that already stand + new 8 m + new 9 m), and the green preformed = TWICE the buckle (=G37*2).
-  #         Those formulas are kept as they are. Only the S clamp is set: ADSS uses none (the template leaves it as 2 x buckle for the old Flat route).
+  #         Those formulas are kept as they are, the S clamp one too (2 x buckle, as the template has it and as it is used today): nothing is written there.
   hardware_by_cable_type:
-    adss:
-      "Grapa Metalica en S": 0
+    adss: {}
 
 splice:
   backbone_splice_row_label: "Empalme de fibra optica cables de Red Backbone (core/troncal)"

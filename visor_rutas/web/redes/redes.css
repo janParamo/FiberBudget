@@ -220,7 +220,7 @@ body.editando-red .abrir-lugares { top: calc(var(--alto-editor, 56px) + 10px); }
 
 /* ------------------------------------------------------------ editor de mufa (fase 4) */
 #modal-mufa { z-index: 3300; padding: 18px; }
-#modal-mu-objeto, #modal-mu-nota, #modal-mu-clientes, #modal-mu-modelo, #modal-mu-cable, #modal-mu-hcliente { z-index: 3400; }
+#modal-mu-objeto, #modal-mu-nota, #modal-mu-modelo, #modal-mu-cable, #modal-mu-hcliente { z-index: 3400; }
 .mu-colores { font-size: 12.5px; color: var(--texto-suave); }
 .mu-leyenda i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin: 0 3px 0 6px; }
 .mu-leyenda i.punteada { border-top-style: dashed; }
@@ -512,3 +512,16 @@ body.ventana-aparte #lz-aparte, body.ventana-aparte #lz-max { display: none !imp
 .fh-cliente { margin-left: 6px; padding: 1px 7px; border-radius: 8px; background: #d8f3e0; border: 1px solid #2e9d4a; color: #14532d; font-size: 11px; }
 .fh-cambio td { background: #fff8e1; }
 td.fh-flecha { text-align: center; padding: 0 6px; }
+
+.mu-paleta { position: absolute; left: 10px; top: 10px; z-index: 5; width: 250px; max-height: 70%; display: flex; flex-direction: column; background: #fff;
+  border: 1px solid #cfd6e0; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.18); padding: 8px; }
+.mu-paleta[hidden] { display: none; }
+.mu-pal-cab { display: flex; justify-content: space-between; align-items: center; }
+.mu-paleta .nota { margin: 4px 0 6px; font-size: 12px; }
+.mu-pal-lista { overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.mu-pal-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid #dfe5ec; border-radius: 6px; background: #f6fbf7; cursor: grab; user-select: none; }
+.mu-pal-item:hover { border-color: #2e9d4a; }
+.mu-pal-item.puesto { background: #fff; opacity: .75; }
+.mu-pal-item svg { flex: 0 0 auto; }
+.mu-pal-texto { display: flex; flex-direction: column; min-width: 0; }
+.mu-pal-texto small { color: #5b6270; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
