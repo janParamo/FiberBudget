@@ -99,7 +99,7 @@ Los datos viven fuera del contenedor: `volumenes/` (presupuestos, fotos de campo
 2. **`business_rules.yaml`** (reglas, etiquetas, umbrales): se edita el archivo de la VM; el servicio lo lee en cada petición. No hace falta reiniciar.
 3. **Las claves** (`VISOR_API_KEYS`, `CAMPO_API_KEYS`) del `.env`: se leen solas, sin reiniciar. Los demás valores del `.env` sí piden `docker compose up -d`.
 4. **La base:** las migraciones nuevas se aplican solas al arrancar la versión nueva (las que cambian datos hacen un respaldo antes en `volumenes/respaldos`).
-5. **El visor `.exe`** (Windows) no cambia con el contenedor: si cambian sus pantallas hay que regenerar `VisorRutas.zip` (`herramientas\build_visor.bat` en la PC de desarrollo).
+5. **El visor `.exe`** (Windows) no cambia con el contenedor, pero se actualiza solo en cada persona: ver «Actualización automática del visor».
 6. **La app del teléfono** se actualiza sola la próxima vez que se abre con señal.
 
 ## Respaldos
@@ -125,3 +125,29 @@ Los datos viven fuera del contenedor: `volumenes/` (presupuestos, fotos de campo
 | ngrok dice que la dirección ya está en línea | Está encendida en otro lado (la PC de desarrollo). Apagarla allá. |
 | Con `--profile https` Caddy no consigue el certificado | El DNS del subdominio debe apuntar a la VM y los puertos 80 y 443 deben estar abiertos desde internet. |
 | El mapa de la app de campo se ve gris | La VM no tiene salida a `server.arcgisonline.com` (la descarga la hace el teléfono, no la VM, pero el mapa de la ruta del Excel sí la usa). |
+
+## Actualización automática del visor
+El visor `.exe` se actualiza solo: al abrirse pregunta al servidor qué versión hay; si es más nueva, avisa, la descarga, la verifica y se reemplaza y vuelve a abrir. La URL y la clave de cada persona (`%APPDATA%\VisorRutas`) no se tocan.
+
+**Preparar la VM (una sola vez, antes de `docker compose up`, con el usuario de la VM y sin `sudo`):**
+```bash
+mkdir -p ~/fiber_budget/actualizaciones
+docker compose --profile db up -d        # ahora monta esa carpeta (docker-compose.yml)
+```
+Si Docker ya había creado la carpeta con `root`, se arregla con `sudo chown $USER ~/fiber_budget/actualizaciones`.
+
+**Publicar una versión nueva (en la PC de desarrollo, cada vez que cambie el visor):**
+```powershell
+herramientas\publicar_visor.bat          # arma el paquete (como build_visor.bat) y lo sube a la VM; pide la contraseña de la VM una vez
+```
+Con `--sin-empaquetar` sube el `VisorRutas.zip` que ya existe. El destino (`jparamo@10.0.40.154`, puerto `5730`, carpeta `~/fiber_budget/actualizaciones`) se cambia con `--destino`, `--puerto` y `--carpeta`.
+Lo que sube: `VisorRutas.zip` y `version.json` (versión, tamaño y SHA-256). El servicio solo ofrece la versión cuando el paquete llegó completo; no hace falta reiniciar nada en la VM.
+
+**Qué ve cada persona:** al abrir el visor sale «Hay una versión nueva del visor… Se va a actualizar ahora», pulsa Aceptar, espera unos segundos y el visor se abre solo con la versión nueva.
+
+**Límites:**
+- Cada persona necesita recibir **una vez** el `VisorRutas.zip` o el instalador de la primera versión que trae esta función (las anteriores no saben actualizarse). Desde esa en adelante, solas.
+- Se actualiza si la carpeta del programa se puede escribir (la del instalador o la del `.zip` en la carpeta del usuario). Si no, el visor avisa que pida el instalador.
+- Si una actualización falla en una PC, ese visor se abre como estaba y no la reintenta en un día.
+- Registro: `%LOCALAPPDATA%\VisorRutas\visor.log`. Aviso de fallo: `%LOCALAPPDATA%\VisorRutas\actualizacion_fallida.json`.
+- Con el servidor apagado o sin conexión el visor abre normal; no se actualiza hasta la próxima vez.

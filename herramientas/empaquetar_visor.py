@@ -8,9 +8,11 @@ remoto_main) con visor_rutas\\web (HTML, CSS, JS y lib\\ de Leaflet). Excluye el
 db, routing, config...), FastAPI, psycopg y todo lo que lee bases o .env, y al final comprueba que
 no quedó dentro ningún .env, base de datos, plantilla, regla de negocio ni salida.
 """
+import json
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -115,12 +117,20 @@ def verificar(carpeta: Path) -> None:
                    "redes/proyectos.js", "redes/editor_mapa.js", "redes/editor_mufa.js", "redes/trazado.js", "redes/diagrama.js",
                    "redes/problemas.js", "redes/pendientes.js", "redes/respaldos.js", "lugares/mis_lugares.js", "lugares/dibujar_red.js", "lugares/kmz_cambios.js", "lugares/importar_kmz.js", "lugares/masivas.js",
                    "mapa/editar_ruta.js", "mapa/editar_fusion.js", "mapa/medicion_total.js", "mapa/barra_herramientas.js", "lib/geoman/leaflet-geoman.js",
-                   "lib/geoman/leaflet-geoman.css", "lib/quill/quill.js", "lib/quill/quill.snow.css", "lib/konva/konva.min.js"):
+                   "tema.css", "tickets.js", "lib/geoman/leaflet-geoman.css", "lib/quill/quill.js", "lib/quill/quill.snow.css", "lib/konva/konva.min.js"):
         if not (carpeta / "_internal" / "visor_rutas" / "web" / pagina).is_file():
             problemas.append(f"falta visor_rutas/web/{pagina}")
     if problemas:
         raise SystemExit("El paquete contiene cosas que no debe (o le falta algo):\n  " + "\n  ".join(problemas))
     print("Verificación: sin .env, bases, plantillas, reglas ni código del servicio.")
+
+
+def escribir_version(carpeta: Path) -> str:
+    """version.json next to the .exe: the viewer compares it with the one the server offers to update itself (visor_rutas/actualizador.py)."""
+    version = time.strftime("%Y.%m.%d.%H%M")
+    (carpeta / "version.json").write_text(json.dumps({"version": version, "creado": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=2), encoding="utf-8")
+    print(f"Versión del paquete: {version}")
+    return version
 
 
 def comprimir(carpeta: Path) -> None:
@@ -160,6 +170,7 @@ def main() -> None:
     ejecutar_pyinstaller()
     carpeta = DIST / NOMBRE
     verificar(carpeta)
+    escribir_version(carpeta)
     comprimir(carpeta)
     instalador()
     print(f"Listo: {carpeta / (NOMBRE + '.exe')}  y  {ZIP}")

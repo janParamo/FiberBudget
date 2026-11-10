@@ -36,4 +36,5 @@ herramientas/cloudflared/*.json
 
 # Docker: carpetas de datos de la VM (si se prueba en esta PC)
 volumenes/
+actualizaciones/
 .env.docker

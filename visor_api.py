@@ -472,6 +472,30 @@ def historial_del_ticket(kayako_id: int = PathParam(ge=1, le=2_000_000_000), per
         return _resultado_ok(_para_remoto(api_local().ticket_historial(kayako_id)), estado)
 
 
+def _carpeta_actualizaciones() -> Path:
+    """Where the published viewer is (VisorRutas.zip + version.json): the folder `actualizaciones` of the project (a mounted folder in the container)."""
+    return Path(os.getenv("VISOR_ACTUALIZACIONES_DIR") or Path(__file__).resolve().parent / "actualizaciones")
+
+
+@router.get("/actualizacion")
+def actualizacion_vigente(persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The newest version of the viewer (VisorRutas.exe) the server offers, so the viewer can update itself when it opens (visor_rutas/actualizador.py)."""
+    from visor_rutas import actualizador
+    publicada = actualizador.leer_publicada(_carpeta_actualizaciones())
+    return {"ok": True, "disponible": publicada is not None, **(publicada or {})}
+
+
+@router.get("/actualizacion/paquete")
+def actualizacion_paquete(persona: str = Depends(persona_visor)) -> FileResponse:
+    """The package (VisorRutas.zip) of the version that /visor/actualizacion offers."""
+    from visor_rutas import actualizador
+    carpeta = _carpeta_actualizaciones()
+    if actualizador.leer_publicada(carpeta) is None:
+        raise HTTPException(404, "No hay una actualización publicada")
+    with _registro(persona, "actualizacion"):
+        return FileResponse(carpeta / actualizador.ARCHIVO_PAQUETE, media_type="application/zip", filename=actualizador.ARCHIVO_PAQUETE)
+
+
 class PdfPedido(BaseModel):
     archivos: list[str] = Field(default_factory=list, max_length=600)
     carpetas: list[str] = Field(default_factory=list, max_length=100)

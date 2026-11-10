@@ -20,7 +20,7 @@ from logging.handlers import RotatingFileHandler
 TITULO = "Visor de rutas"
 WEBVIEW2_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 _WEBVIEW2_GUID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
-_MB_ICONERROR, _MB_ICONWARNING, _MB_YESNO, _IDYES = 0x10, 0x30, 0x04, 6
+_MB_ICONERROR, _MB_ICONWARNING, _MB_YESNO, _IDYES, _MB_ICONINFO = 0x10, 0x30, 0x04, 6, 0x40
 
 log = logging.getLogger("visor_rutas")
 
@@ -111,6 +111,25 @@ def _preparar_log() -> str:
     return str(archivo)
 
 
+def _actualizar_si_hay() -> bool:
+    """A newer version of the viewer on the server: tell the person, download it and let the helper replace the program (visor_rutas/actualizador.py).
+    True when the viewer must close now. Any problem is only logged: the viewer opens as it is."""
+    try:
+        from visor_rutas import actualizador, config_visor
+        from visor_rutas.remoto import ProveedorRemoto
+        config = config_visor.leer()
+        if not config.remoto_completo or actualizador.carpeta_programa() is None:
+            return False
+        import tempfile
+        from pathlib import Path
+        trabajo = Path(tempfile.gettempdir()) / "VisorRutas" / "actualizacion"
+        return actualizador.actualizar_al_abrir(ProveedorRemoto(config.url, config.clave), lambda texto: _mensaje(texto, _MB_ICONINFO), trabajo,
+                                                config_visor.carpeta_local() / "actualizacion_fallida.json")
+    except Exception:                                               # noqa: BLE001 - never stops the viewer from opening
+        log.exception("The update check failed")
+        return False
+
+
 def main() -> None:
     archivo_log = _preparar_log()
     log.info("Remote viewer started")
@@ -119,6 +138,8 @@ def main() -> None:
         log.warning("WebView2 Runtime not found")
         _ofrecer_webview2("No se encontró Microsoft Edge WebView2 en esta computadora.")
         return
+    if _actualizar_si_hay():
+        return                                                      # the helper replaces the program and opens it again
     try:
         from visor_rutas.ventana_web import abrir
         abrir(forzar_remoto=True)

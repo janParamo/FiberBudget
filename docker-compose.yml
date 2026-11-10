@@ -29,6 +29,9 @@ services:
       - ${DIR_OUTPUT:-./volumenes/output}:/app/output
       - ${DIR_LOGS:-./volumenes/logs}:/app/logs
       - ${DIR_RESPALDOS:-./volumenes/respaldos}:/respaldos
+      # El visor .exe nuevo (VisorRutas.zip + version.json): lo sube herramientas\publicar_visor.bat con scp y los visores se actualizan solos al abrirse.
+      # Crear antes, con el usuario de la VM (no con sudo):  mkdir -p actualizaciones
+      - ./actualizaciones:/app/actualizaciones:ro
     # Solo escucha en la propia VM (127.0.0.1): hacia afuera se sale por ngrok (lo abre el servicio) o por el proxy HTTPS de abajo.
     ports:
       - "127.0.0.1:${PUERTO:-8000}:8000"
