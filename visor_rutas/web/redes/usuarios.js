@@ -7,6 +7,9 @@
   const CAMPOS = ["nombre", "correo", "rol", "persona_visor", "usuario_windows"];
   let lista = [];
   let puedeAdministrar = false;
+  let esSuper = false;                  // the super administrator is the only one who creates, changes or deactivates administrators
+  const ADMINISTRADORES = ["administrador", "super_administrador"];
+  const puedeSobre = (u) => puedeAdministrar && (esSuper || !ADMINISTRADORES.includes(u.rol));
   let editando = null;              // user being edited (null = new)
   let conectado = false;
 
@@ -19,10 +22,11 @@
     if (!r.ok) { estado(r.error, "error"); $("us-filas").innerHTML = ""; return; }
     lista = r.usuarios;
     puedeAdministrar = !!r.puede_administrar;
+    esSuper = !!r.es_super;
     $("us-nuevo").hidden = !puedeAdministrar;
     const yo = Redes.estado && Redes.estado.usuario;
     $("us-yo").textContent = yo ? `Usted: ${yo.nombre} (${Redes.ROLES[yo.rol] || yo.rol})` +
-      (puedeAdministrar ? "" : " · solo un administrador puede cambiar usuarios") : "";
+      (puedeAdministrar ? (esSuper ? "" : " · los administradores los gestiona el super administrador") : " · solo un administrador puede cambiar usuarios") : "";
     estado(`${lista.length} usuario${lista.length === 1 ? "" : "s"}`);
     pintar();
   }
@@ -33,7 +37,7 @@
       <td><span class="rol rol-${esc(u.rol)}">${esc(Redes.ROLES[u.rol] || u.rol)}</span></td>
       <td>${esc(u.correo || "")}</td><td>${esc(u.persona_visor || "")}</td><td>${esc(u.usuario_windows || "")}</td>
       <td>${u.activo ? "Activo" : `Desactivado <span class="nota">${esc(Redes.fecha(u.borrado_en))}</span>`}</td>
-      <td class="acciones">${puedeAdministrar ? `
+      <td class="acciones">${puedeSobre(u) ? `
         <button type="button" class="btn-icono" data-us-editar="${u.id}" title="Editar datos"><svg><use href="#i-lapiz"/></svg></button>
         <button type="button" class="btn-icono" data-us-historial="${u.id}" title="Historial de cambios"><svg><use href="#i-reloj"/></svg></button>
         <button type="button" class="btn btn-chico" data-us-estado="${u.id}">${u.activo ? "Desactivar" : "Reactivar"}</button>` : ""}</td>
@@ -44,6 +48,7 @@
     editando = usuario || null;
     $("us-modal-titulo").textContent = usuario ? `Editar usuario: ${usuario.nombre}` : "Nuevo usuario";
     CAMPOS.forEach((k) => { $("us-" + k).value = (usuario && usuario[k]) || (k === "rol" ? "lector" : ""); });
+    [...$("us-rol").options].forEach((o) => { o.disabled = !esSuper && ADMINISTRADORES.includes(o.value); });          // an administrator cannot make administrators
     Redes.marcarErrores("us-", CAMPOS, null);
     Redes.estadoEn($("us-form-estado"), "");
     $("modal-usuario").hidden = false;

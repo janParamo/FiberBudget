@@ -59,7 +59,7 @@ def carpeta_fotos() -> Path:
 
 
 def exigir_campo(actor: dict[str, Any]) -> None:
-    if actor.get("borrado_en") is not None or actor.get("rol") not in ("tecnico", "editor", "administrador"):
+    if actor.get("borrado_en") is not None or actor.get("rol") not in ("tecnico", "editor", *usuarios.ROLES_ADMIN):
         raise SinPermiso("Su usuario no tiene el rol de técnico de campo: pida a un administrador que se lo asigne")
 
 

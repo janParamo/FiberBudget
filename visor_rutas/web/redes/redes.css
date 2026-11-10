@@ -14,7 +14,10 @@
 .vm-tabla .btn-icono svg { width: 16px; height: 16px; fill: currentColor; vertical-align: middle; }
 .vm-ayuda { max-width: 900px; font-size: 12px; color: var(--texto-suave); line-height: 1.5; }
 .rol { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.rol-super_administrador { background: #4c1d95; color: #fff; }
 .rol-administrador { background: #fde8e8; color: #9b1c1c; }
+.rol-guest { background: #e6f4ea; color: #1e6b3a; }
+.rol-prueba { background: #fff4cc; color: #6b4a00; }
 .rol-editor { background: #e1effe; color: #1e429f; }
 .rol-lector { background: #edf0f4; color: #4b5563; }
 .vista-modulo .vp-fila { display: flex; gap: 10px; }

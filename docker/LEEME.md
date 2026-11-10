@@ -151,3 +151,30 @@ Lo que sube: `VisorRutas.zip` y `version.json` (versión, tamaño y SHA-256). El
 - Si una actualización falla en una PC, ese visor se abre como estaba y no la reintenta en un día.
 - Registro: `%LOCALAPPDATA%\VisorRutas\visor.log`. Aviso de fallo: `%LOCALAPPDATA%\VisorRutas\actualizacion_fallida.json`.
 - Con el servidor apagado o sin conexión el visor abre normal; no se actualiza hasta la próxima vez.
+
+## Roles y claves de los usuarios
+Dos cosas distintas: la **clave** (quién puede entrar) y el **rol** (qué puede hacer). Las dos viven en la VM: las claves en su `.env` (`VISOR_API_KEYS=nombre:clave,…`, se lee en cada petición) y los roles en la base (vista **Usuarios**). El nombre de la clave es la persona del visor y debe coincidir con la persona del usuario.
+
+| Rol | Qué puede hacer |
+|---|---|
+| `super_administrador` | Todo, y es el único que crea, cambia de rol o desactiva a los administradores. Nadie más lo modifica. Siempre debe quedar uno activo. |
+| `administrador` | Todo, incluida la gestión de usuarios (lector, editor, técnico, guest, prueba), pero no toca a los administradores. |
+| `editor` / `lector` / `tecnico` | Como antes (proyectos asignados, solo ver, app de campo). |
+| `guest` | El mapa, generar rutas y presupuestos y editar la ruta que genera el generador. Sin Tickets, Redes, Campo, Planificación, Usuarios, Mis lugares ni cambios del KMZ. |
+| `prueba` | Solo lectura en todo, más calcular rutas y presupuestos: para probar los endpoints sin riesgo. |
+
+Mientras no haya ningún super administrador (instalación nueva) los administradores conservan todo el poder, para que nadie quede fuera.
+
+**Dejar los usuarios con la estructura vigente** (jan super administrador, marlon y javier administradores, guest, prueba) en la VM:
+```bash
+cd ~/fiber_budget
+docker compose --profile db exec app python herramientas/configurar_usuarios.py --desactivar-otros      # simula: muestra qué cambiaría
+docker compose --profile db exec app python herramientas/configurar_usuarios.py --aplicar --desactivar-otros
+```
+`--desactivar-otros` desactiva (borrado lógico, reversible desde Usuarios) a los usuarios que no están en la lista. Sin `--aplicar` no cambia nada.
+
+**Agregar o quitar a alguien:** poner su clave en `VISOR_API_KEYS` del `.env` de la VM (`nano ~/fiber_budget/.env`; no hace falta reiniciar), que entre una vez con esa clave (queda como lector) y que un administrador le asigne el rol en Usuarios. Para quitarle el acceso se borra su clave del `.env`.
+
+**Cambiar una clave:** se reemplaza en el `.env` de la VM y se le entrega la nueva a la persona (Configuración del visor). La anterior deja de servir en el acto.
+
+El servidor aplica estos límites en cada petición (un guest que llame a un endpoint que no le toca recibe 403); la pantalla además oculta lo que no le corresponde. El rol se consulta cada 30 segundos, así que un cambio de rol llega a la persona en menos de un minuto.

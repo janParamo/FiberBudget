@@ -247,7 +247,7 @@ def referencias(con: Any, actor: dict[str, Any], *, proyecto_id: int) -> dict[st
     cables = [dict(f) for f in con.execute(
         "SELECT id, nombre, hilos FROM redes.cables WHERE proyecto_id = %s AND borrado_en IS NULL ORDER BY nombre", (int(proyecto_id),)).fetchall()]
     gente = [dict(f) for f in con.execute(
-        "SELECT id, nombre, rol FROM redes.usuarios WHERE borrado_en IS NULL AND (rol = 'administrador' OR id IN "
+        "SELECT id, nombre, rol FROM redes.usuarios WHERE borrado_en IS NULL AND (rol IN ('administrador', 'super_administrador') OR id IN "
         "(SELECT usuario_id FROM redes.proyecto_usuarios WHERE proyecto_id = %s)) ORDER BY lower(nombre)", (int(proyecto_id),)).fetchall()]
     return {"elementos": elementos, "cables": cables, "usuarios": gente,
             "puede_editar": proyectos.puede_editar(con, actor, int(proyecto_id))}

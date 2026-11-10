@@ -176,6 +176,15 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
 # Methods that call Google: in remote mode they count for the person's hourly limit.
 # What the role «tecnico» (the crews) may call here: who it is. Everything else of the network module is closed to it; the field app has its own endpoints.
 PERMITIDOS_TECNICO = {"estado"}
+# guest: the map, the routes and the budgets and nothing else: of the network module only who it is, the search box and what the map shows of the KMZ (read only).
+PERMITIDOS_GUEST = {"estado", "buscar_elementos", "mufa_existente", "estilos_kmz", "cambios_kmz", "capa_importados_kmz"}
+# prueba: read only in everything (it tests the endpoints without risk): these are the methods that only read.
+SOLO_LECTURA = {"estado", "usuarios", "historial_usuario", "proyectos", "proyecto", "historial_proyecto", "usuarios_asignables", "geocodificar", "red_proyecto", "mufa", "mufa_existente",
+                "red_de_mufas", "buscar_elementos", "tablero_migracion", "correcciones_migracion", "exportar_correcciones", "trazar_hilo", "diagramas", "problemas", "problema",
+                "foto_problema", "historial_problema", "referencias_proyecto", "pendientes", "historial_pendiente", "respaldos", "lugares", "lugar", "adjunto_lugar", "compartidos_lugares",
+                "exportar_lugares_kmz", "cambios_kmz", "importaciones_kmz", "importacion_kmz", "mapa_importacion_kmz", "capa_importados_kmz", "estilos_kmz", "estado_actualizar_red",
+                "visio_estado", "visio_progreso", "comparar_red_presupuesto", "splitters_de_diagrama", "campo_puntos", "campo_jornadas", "campo_ubicaciones", "campo_foto", "campo_trazos",
+                "lienzo_zonas", "lienzo", "mufas_kmz_zona", "resumen_ruta_presupuesto"}
 CON_LIMITE = {"geocodificar"}
 
 
@@ -219,6 +228,18 @@ class ServicioRedes:
                     self._con = None
                 raise
 
+    def rol_de(self, *, persona_visor: str | None = None, usuario_windows: str | None = None) -> str:
+        """The role of the person (identifying them, which creates them as «lector» the first time): visor_api limits the roles «guest» and «prueba» with it on every
+        endpoint. The errors are raised (RedesNoDisponible when the module is not configured, SinPermiso when the user is deactivated)."""
+        with self._lock:
+            con = self._conexion()
+            try:
+                return str(usuarios.identificar(con, persona_visor=persona_visor, usuario_windows=usuario_windows).get("rol") or "")
+            except psycopg.Error:
+                if self._con is not None and (self._con.closed or self._con.broken):
+                    self._con = None
+                raise
+
     def llamar(self, metodo: str, args: dict[str, Any] | None = None, *, persona_visor: str | None = None,
                usuario_windows: str | None = None) -> dict[str, Any]:
         funcion = METODOS.get(str(metodo or ""))
@@ -232,6 +253,10 @@ class ServicioRedes:
                 actor = usuarios.identificar(con, persona_visor=persona_visor, usuario_windows=usuario_windows)
                 if actor.get("rol") == "tecnico" and metodo not in PERMITIDOS_TECNICO:       # a crew only uses the field app (/visor/campo/*): nothing of the network module
                     return {"ok": False, "error": "Su rol (técnico de campo) solo usa la app de campo: ve los postes y mufas existentes, no la red ni los proyectos"}
+                if actor.get("rol") == "guest" and metodo not in PERMITIDOS_GUEST:
+                    return {"ok": False, "error": "Su rol (guest) usa el mapa, las rutas y los presupuestos: no tiene acceso a esto"}
+                if actor.get("rol") == "prueba" and metodo not in SOLO_LECTURA:
+                    return {"ok": False, "error": "Su rol (prueba) es de solo lectura: no puede guardar ni cambiar nada"}
                 try:
                     resultado = funcion(con, actor, **(args or {}))
                 except TypeError as exc:

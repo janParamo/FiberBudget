@@ -5,8 +5,9 @@ Identificación al abrir el visor (nadie escribe su nombre):
     administrador activo, queda como administrador; si ya hay, como lector.
   - modo remoto (VisorRutas.exe): la persona de su X-Visor-Key (VISOR_API_KEYS). Si no está en la
     tabla se crea como lector; un administrador le asigna el rol.
-Roles: administrador (todo, incluidos usuarios), editor (edita los proyectos donde está
-asignado), lector (solo ve los proyectos donde está asignado), tecnico (app de campo: solo crea y edita sus propios puntos pendientes).
+Roles: super_administrador (todo, y es el único que gestiona a los administradores), administrador (todo, incluidos los usuarios que no son administradores),
+editor (edita los proyectos donde está asignado), lector (solo ve los proyectos donde está asignado), tecnico (app de campo: solo crea y edita sus propios puntos pendientes),
+guest (mapa, rutas y presupuestos: nada más) y prueba (solo lectura en todo, para probar los endpoints).
 Desactivar un usuario es borrado lógico (borrado_en): se puede reactivar.
 """
 import re
@@ -15,7 +16,8 @@ from typing import Any
 from visor_rutas.redes import repositorio
 from visor_rutas.redes.db import DatosInvalidos, NoEncontrado, SinPermiso
 
-ROLES = ("administrador", "editor", "lector", "tecnico")
+ROLES = ("super_administrador", "administrador", "editor", "lector", "tecnico", "guest", "prueba")
+ROLES_ADMIN = ("super_administrador", "administrador")
 _CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _IDENTIFICADOR = re.compile(r"^[\w.@-]{1,64}$")
 PUBLICOS = ("id", "nombre", "correo", "rol", "persona_visor", "usuario_windows", "version",
@@ -29,11 +31,16 @@ def publico(fila: dict[str, Any]) -> dict[str, Any]:
 
 
 def es_admin(actor: dict[str, Any]) -> bool:
-    return actor.get("rol") == "administrador" and actor.get("borrado_en") is None
+    """Administrator or super administrator: everything, including the users."""
+    return actor.get("rol") in ROLES_ADMIN and actor.get("borrado_en") is None
+
+
+def es_super(actor: dict[str, Any]) -> bool:
+    return actor.get("rol") == "super_administrador" and actor.get("borrado_en") is None
 
 
 def puede_editar(actor: dict[str, Any]) -> bool:
-    return actor.get("rol") in ("administrador", "editor") and actor.get("borrado_en") is None
+    return actor.get("rol") in (*ROLES_ADMIN, "editor") and actor.get("borrado_en") is None
 
 
 def exigir_admin(actor: dict[str, Any]) -> None:
@@ -78,7 +85,7 @@ def identificar(con: Any, *, persona_visor: str | None = None, usuario_windows: 
 def listar(con: Any, actor: dict[str, Any], *, incluir_inactivos: bool = True) -> dict[str, Any]:
     filas = con.execute("SELECT * FROM redes.usuarios" + ("" if incluir_inactivos else " WHERE borrado_en IS NULL")
                         + " ORDER BY borrado_en IS NOT NULL, lower(nombre)").fetchall()
-    return {"usuarios": [publico(f) for f in filas], "puede_administrar": es_admin(actor)}
+    return {"usuarios": [publico(f) for f in filas], "puede_administrar": es_admin(actor), "es_super": es_super(actor)}
 
 
 def _limpio(valor: Any) -> str | None:
@@ -99,7 +106,7 @@ def _validar(datos: dict[str, Any]) -> dict[str, Any]:
     if valores["correo"] and not _CORREO.match(valores["correo"]):
         errores["correo"] = "Correo no válido"
     if valores["rol"] not in ROLES:
-        errores["rol"] = "Elija administrador, editor o lector"
+        errores["rol"] = "Elija un rol de la lista"
     for campo in ("persona_visor", "usuario_windows"):
         if valores[campo] and not _IDENTIFICADOR.match(valores[campo]):
             errores[campo] = "Solo letras, números, punto, guion y @ (sin espacios)"
@@ -122,8 +129,31 @@ def _duplicados(con: Any, valores: dict[str, Any], id_: int | None) -> None:
 
 
 def _admins_activos(con: Any, excepto: int | None = None) -> int:
-    return con.execute("SELECT count(*) AS n FROM redes.usuarios WHERE rol = 'administrador' AND borrado_en IS NULL "
+    """Active administrators and super administrators (apart from `excepto`)."""
+    return con.execute("SELECT count(*) AS n FROM redes.usuarios WHERE rol IN ('administrador', 'super_administrador') AND borrado_en IS NULL "
                        "AND id IS DISTINCT FROM %s", (excepto,)).fetchone()["n"]
+
+
+def _supers_activos(con: Any, excepto: int | None = None) -> int:
+    return con.execute("SELECT count(*) AS n FROM redes.usuarios WHERE rol = 'super_administrador' AND borrado_en IS NULL "
+                       "AND id IS DISTINCT FROM %s", (excepto,)).fetchone()["n"]
+
+
+def _exigir_gestion(con: Any, actor: dict[str, Any], rol_actual: str | None, rol_nuevo: str | None) -> None:
+    """Only the super administrator creates, changes or deactivates administrators (and the super administrator). While there is no active super administrator
+    (a fresh installation) the administrators keep that power, so nobody is left locked out."""
+    if es_super(actor) or not _supers_activos(con):
+        return
+    if rol_actual in ROLES_ADMIN or rol_nuevo in ROLES_ADMIN:
+        raise SinPermiso("Solo el super administrador gestiona a los administradores")
+
+
+def _proteger_ultimos(con: Any, actual: dict[str, Any], rol_nuevo: str | None) -> None:
+    """There must always be one active administrator, and one super administrator once there is one."""
+    if actual["rol"] in ROLES_ADMIN and rol_nuevo not in ROLES_ADMIN and not _admins_activos(con, actual["id"]):
+        raise DatosInvalidos({"rol": "Debe quedar al menos un administrador activo"})
+    if actual["rol"] == "super_administrador" and rol_nuevo != "super_administrador" and not _supers_activos(con, actual["id"]):
+        raise DatosInvalidos({"rol": "Debe quedar al menos un super administrador activo"})
 
 
 def guardar(con: Any, actor: dict[str, Any], *, datos: dict[str, Any]) -> dict[str, Any]:
@@ -135,12 +165,13 @@ def guardar(con: Any, actor: dict[str, Any], *, datos: dict[str, Any]) -> dict[s
     with con.transaction():
         _duplicados(con, valores, int(id_) if id_ else None)
         if not id_:
+            _exigir_gestion(con, actor, None, valores["rol"])
             fila = repositorio.insertar(con, "usuarios", valores, actor["id"])
             repositorio.registrar(con, actor["id"], "usuario", fila["id"], "crear", repositorio.diferencias(None, fila))
         else:
             actual = repositorio.obtener(con, "usuarios", int(id_), bloquear=True)
-            if actual["rol"] == "administrador" and valores["rol"] != "administrador" and not _admins_activos(con, actual["id"]):
-                raise DatosInvalidos({"rol": "Debe quedar al menos un administrador activo"})
+            _exigir_gestion(con, actor, actual["rol"], valores["rol"])
+            _proteger_ultimos(con, actual, valores["rol"])
             antes, fila = repositorio.actualizar(con, "usuarios", int(id_), int(datos.get("version") or 0), valores, actor["id"])
             repositorio.registrar(con, actor["id"], "usuario", fila["id"], "editar", repositorio.diferencias(antes, fila))
     return {"usuario": publico(fila)}
@@ -151,11 +182,14 @@ def cambiar_estado(con: Any, actor: dict[str, Any], *, id: int, version: int, ac
     exigir_admin(actor)
     with con.transaction():
         actual = repositorio.obtener(con, "usuarios", int(id), bloquear=True)
+        _exigir_gestion(con, actor, actual["rol"], actual["rol"])
         if not activo:
             if actual["id"] == actor["id"]:
                 raise DatosInvalidos({"usuario": "No puede desactivarse a sí mismo"})
-            if actual["rol"] == "administrador" and not _admins_activos(con, actual["id"]):
+            if actual["rol"] in ROLES_ADMIN and not _admins_activos(con, actual["id"]):
                 raise DatosInvalidos({"usuario": "Debe quedar al menos un administrador activo"})
+            if actual["rol"] == "super_administrador" and not _supers_activos(con, actual["id"]):
+                raise DatosInvalidos({"usuario": "Debe quedar al menos un super administrador activo"})
         valor = None if activo else con.execute("SELECT now() AS n").fetchone()["n"]
         if (actual["borrado_en"] is None) == bool(activo):
             return {"usuario": publico(actual)}                     # already in that state

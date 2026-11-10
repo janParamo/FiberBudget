@@ -126,17 +126,87 @@ class Limitador:
 limitador = Limitador()
 
 
-def persona_visor(x_visor_key: str | None = Header(default=None)) -> str:
-    """The person owning the X-Visor-Key (401 otherwise); 404 when the remote viewer is disabled."""
+def persona_visor(request: Request, x_visor_key: str | None = Header(default=None)) -> str:
+    """The person owning the X-Visor-Key (401 otherwise); 404 when the remote viewer is disabled. A deactivated user, and the roles «guest» and «prueba» outside what they
+    may use, are refused (403): see `rol_de_persona` and `permitido`."""
     claves = claves_visor()
     if not claves:
         raise HTTPException(status_code=404, detail="Not Found")
     if x_visor_key:
         for clave, nombre in claves.items():
             if secrets.compare_digest(x_visor_key.encode("utf-8"), clave.encode("utf-8")):
+                _revisar_rol(nombre, request.method, request.url.path)
                 return nombre
     log.warning("Visor API: rejected request (bad or missing X-Visor-Key)")
     raise HTTPException(status_code=401, detail="X-Visor-Key no válida o ausente")
+
+
+# --------------------------------------------------------------------------- roles limited on every endpoint: guest and prueba
+_VISOR = "/visor"
+# guest: the map, the routes and the budgets and nothing else (the methods of the network module have their own list: redes.api.PERMITIDOS_GUEST)
+_GUEST = (
+    ("GET", r"/(info|mufas|mufas_cerca|mufa/\d+|red/[\w-]+|kmz/(arbol|indice|capa/[^/]+|archivo/.+)|diagramas/buscar|diagrama/[0-9a-fA-F]+/(buscar|\d+)"
+            r"|presupuestos(/[^/]+)?|archivo/[^/]+|pdf/carpetas|pdf/[^/]+|masivas/[^/]+|actualizacion(/paquete)?)"),
+    ("POST", r"/(ruta|ruta_editada|estimacion|medicion|presupuesto|subidas(/[^/]+(/\d+|/fin))?|masivas/(leer|iniciar)|masivas/[^/]+/(cancelar|pdf|descargar)|pdf/convertir|pdf/[^/]+/descargar|redes/[a-z_]+)"),
+)
+# prueba: everything that only reads, and calculating routes and budgets; nothing that writes (the writing methods of the network module are refused by redes.api.SOLO_LECTURA)
+_PRUEBA = (
+    ("GET", r"/.+"),
+    ("POST", r"/(ruta|ruta_editada|estimacion|medicion|presupuesto|subidas(/[^/]+(/\d+|/fin))?|masivas/(leer|iniciar)|masivas/[^/]+/(cancelar|pdf|descargar)|pdf/convertir|pdf/[^/]+/descargar|fusion/redactar|redes/[a-z_]+)"),
+)
+_REGLAS_ROL = {"guest": _GUEST, "prueba": _PRUEBA}
+_NOMBRE_ROL = {"guest": "guest", "prueba": "prueba (solo lectura)"}
+TTL_ROL_S = 30
+_roles: dict[str, tuple[float, str | None]] = {}
+_roles_lock = threading.Lock()
+
+
+def permitido(rol: str | None, metodo: str, ruta: str) -> bool:
+    """True when the role may call that endpoint (`ruta` as it arrives, «/visor/…»). Only guest and prueba are limited here; the other roles are decided by the
+    network module and by each function."""
+    reglas = _REGLAS_ROL.get(rol or "")
+    if reglas is None:
+        return True
+    sub = ruta[len(_VISOR):] if ruta.startswith(_VISOR) else ruta
+    return any(metodo.upper() == m and re.fullmatch(patron, sub) for m, patron in reglas)
+
+
+def rol_de_persona(persona: str) -> str | None:
+    """The role of the person in the network module (cached for 30 s). None when the module is not configured (nothing is limited then). A deactivated user is refused (403);
+    when the database cannot be asked and there is no earlier answer, 503."""
+    ahora = time.monotonic()
+    with _roles_lock:
+        visto = _roles.get(persona)
+    if visto and ahora - visto[0] < TTL_ROL_S:
+        return visto[1]
+    from visor_rutas.redes.db import ErrorRedes, RedesNoDisponible, SinPermiso
+    try:
+        rol: str | None = servicio_redes().rol_de(persona_visor=persona)
+    except RedesNoDisponible:
+        rol = None
+    except SinPermiso as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except (ErrorRedes, Exception) as exc:                       # noqa: BLE001 - the database does not answer
+        if visto:
+            return visto[1]                                       # the last answer is better than refusing everybody
+        log.warning("Visor API: the role of %s could not be read (%s: %s)", persona, type(exc).__name__, str(exc)[:120])
+        raise HTTPException(status_code=503, detail="No se pudo comprobar su rol: intente de nuevo en un momento") from None
+    with _roles_lock:
+        _roles[persona] = (ahora, rol)
+    return rol
+
+
+def olvidar_roles() -> None:
+    """The roles changed (or tests): the next request asks again."""
+    with _roles_lock:
+        _roles.clear()
+
+
+def _revisar_rol(persona: str, metodo: str, ruta: str) -> None:
+    rol = rol_de_persona(persona)
+    if not permitido(rol, metodo, ruta):
+        log.warning("Visor API: %s (%s) refused on %s %s", persona, rol, metodo, ruta)
+        raise HTTPException(status_code=403, detail=f"Su rol ({_NOMBRE_ROL.get(rol or '', rol)}) no permite esto")
 
 
 def _dueno(clave: str | None, claves: dict[str, str]) -> str | None:
@@ -213,6 +283,7 @@ def servicio_redes() -> Any:
 def reiniciar() -> None:
     """Fresh Api and limits (tests; also harmless at runtime)."""
     global _api_local, _servicio_redes
+    olvidar_roles()
     with _api_lock:
         _api_local = None
         if _servicio_redes is not None:
@@ -705,6 +776,8 @@ def redes(metodo: str = PathParam(pattern=r"^[a-z_]{1,40}$"), pedido: RedesPedid
         limitador.registrar(persona, limite_por_hora())
     with _registro(persona, f"redes.{metodo}") as estado:
         respuesta = servicio_redes().llamar(metodo, (pedido.args if pedido else {}), persona_visor=persona)
+        if metodo in ("guardar_usuario", "estado_usuario"):
+            olvidar_roles()                                      # a role changed: everybody's next request asks again
         return _resultado_ok(respuesta, estado)
 
 

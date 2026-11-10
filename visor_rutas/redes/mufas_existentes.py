@@ -35,7 +35,7 @@ def buscar(con: Any, actor: dict[str, Any], *, nombre: str | None = None, lat: f
     base = ("SELECT e.id, e.nombre, e.proyecto_id, p.nombre AS proyecto, e.ref_visio ->> 'nombre_visio' AS nombre_visio, "
             "e.ref_visio ->> 'nodo_id' AS nodo_visio, {dist} AS d FROM redes.elementos e JOIN redes.proyectos p ON p.id = e.proyecto_id "
             f"WHERE e.borrado_en IS NULL AND p.borrado_en IS NULL AND e.tipo = ANY(%(tipos)s) AND {visibles} ")
-    args = {"admin": bool(actor.get("rol") == "administrador"), "u": actor.get("id"), "tipos": list(TIPOS_MUFA),
+    args = {"admin": bool(usuarios.es_admin(actor)), "u": actor.get("id"), "tipos": list(TIPOS_MUFA),
             "lat": lat, "lon": lon}
     hay_punto = lat is not None and lon is not None
     dist = ("ST_Distance(e.ubicacion::geography, ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography)" if hay_punto else "NULL::float8")
@@ -115,7 +115,7 @@ def buscar_elementos(con: Any, actor: dict[str, Any], *, texto: str, limite: int
     plano = "upper(translate(coalesce({}, ''), 'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun'))"
     nombre, codigo = plano.format("e.nombre"), plano.format("e.codigo")
     visibles = "(p.es_red_base OR %(admin)s OR EXISTS (SELECT 1 FROM redes.proyecto_usuarios pu WHERE pu.proyecto_id = p.id AND pu.usuario_id = %(u)s))"
-    args: dict[str, Any] = {"admin": bool(actor.get("rol") == "administrador"), "u": actor.get("id"),
+    args: dict[str, Any] = {"admin": bool(usuarios.es_admin(actor)), "u": actor.get("id"),
                             "limite": max(1, min(int(limite or 10), 30)), "primero": palabras[0] + "%"}
     condiciones = []
     for i, palabra in enumerate(palabras):

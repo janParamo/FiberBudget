@@ -855,7 +855,7 @@
       if (guardadas) ml.abiertas = new Set(guardadas.map((v) => (/^\d+$/.test(v) ? Number(v) : v)));
     } catch (e) { /* defaults */ }
     window.Redes.cuandoListo(async () => {
-      if (!window.Redes.disponible || !(await cargar())) return;
+      if (!window.Redes.disponible || window.Redes.rol === "guest" || !(await cargar())) return;        // a guest has no Mis lugares
       // the pin of a searched coordinate can be saved here (its button stays disabled while the module is not available)
       if (window.Pin) window.Pin.guardarEnMisLugares = (lat, lon) => nuevo("marca", null, { lat, lon, nombre: "Coordenada buscada" });
     });

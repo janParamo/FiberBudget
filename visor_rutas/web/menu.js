@@ -41,6 +41,18 @@
     items().forEach((b) => b.classList.toggle("activo", b.dataset.vista === vista));
   }
 
+  /** What each limited role does not have in the menu (the server refuses it too): a guest has the map and the budgets, nothing else. */
+  const SIN_ACCESO = { guest: ["proyectos", "campo", "tickets", "planificacion", "problemas", "pendientes", "migracion", "usuarios", "backup"] };
+
+  function aplicarRol(rol) {
+    document.body.dataset.rol = rol || "";
+    document.body.classList.toggle("es-guest", rol === "guest");
+    (SIN_ACCESO[rol] || []).forEach((vista) => {
+      const b = document.querySelector(`#menu-lateral .menu-item[data-vista="${vista}"]`);
+      if (b) deshabilitar(b, `su rol (${rol}) no tiene acceso a esto`);
+    });
+  }
+
   /** Module options available or not (the network database answered, or the reason it did not). */
   function moduloRedes(disponible, motivo) {
     items().filter((b) => b.dataset.redes).forEach((b) => (disponible ? habilitar(b) : deshabilitar(b, motivo)));
@@ -80,5 +92,5 @@
     aplicarAncho();
   }
 
-  window.Menu = { iniciar, marcarActivo, moduloRedes, usuario, get contraido() { return contraido; } };
+  window.Menu = { iniciar, marcarActivo, moduloRedes, aplicarRol, usuario, get contraido() { return contraido; } };
 })();

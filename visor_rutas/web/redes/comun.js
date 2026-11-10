@@ -10,7 +10,7 @@
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const ROLES = { administrador: "Administrador", editor: "Editor", lector: "Lector", tecnico: "Técnico de campo" };
+  const ROLES = { super_administrador: "Super administrador", administrador: "Administrador", editor: "Editor", lector: "Lector", tecnico: "Técnico de campo", guest: "Guest", prueba: "Prueba (solo lectura)" };
   const ACCIONES = { crear: "Creó", editar: "Editó", eliminar: "Eliminó / desactivó", restaurar: "Restauró / reactivó",
                      duplicar: "Duplicó", identificar: "Primer ingreso" };
 
@@ -86,10 +86,12 @@
       if (r.ok) {
         this.estado = r;
         const u = r.usuario;
+        this.rol = u.rol;                                       // «guest» has no network module: the parts that load its data skip it
         if (window.Menu) {
           Menu.moduloRedes(true);
           Menu.usuario(`<b>${esc(u.nombre)}</b> · ${esc(ROLES[u.rol] || u.rol)}`,
                        `Usuario del módulo de redes: ${u.nombre} (${ROLES[u.rol] || u.rol})`);
+          Menu.aplicarRol(u.rol);
         }
       } else if (window.Menu) {
         Menu.moduloRedes(false, r.error || "Base de redes no disponible");
