@@ -116,6 +116,8 @@ Los datos viven fuera del contenedor: `volumenes/` (presupuestos, fotos de campo
 | Síntoma | Qué mirar |
 |---|---|
 | `docker compose up` dice que falta `.env` o crea una carpeta llamada `.env` | Copiar `docker/env.ejemplo` a `.env` **antes** del primer arranque; si se creó una carpeta, borrarla y crear el archivo. |
+| `db` reinicia y su log dice `in 18+, these Docker images are configured to store database data...` | El volumen debe montarse en `/var/lib/postgresql` (no en `.../data`), como está en `docker-compose.yml`. Si quedó un volumen viejo vacío: `docker compose down` y `docker volume rm presupuestos_pgdata`. |
+| `app` reinicia y el log dice `endpoint ... is already online` (ERR_NGROK_334) | La dirección de ngrok sigue encendida en otro lado (la PC de desarrollo): apagar `start_service.bat` allá, o dejar vacíos `NGROK_AUTHTOKEN` y `NGROK_DOMAIN` en la VM. |
 | `app` queda `unhealthy` o reinicia | `docker compose logs app`. Lo más común: contraseña o `DB_HOST` mal puestos (con el perfil `db` es `db`), o `db` todavía arrancando. |
 | `Permission denied` al escribir en `output` / `datos` / `respaldos` | `sudo chown -R 1000:1000 volumenes` (o poner `APP_UID` y `APP_GID` en el `.env`). |
 | El PDF o el Excel salen sin totales | `docker compose exec app soffice --headless --version`: LibreOffice debe responder. |

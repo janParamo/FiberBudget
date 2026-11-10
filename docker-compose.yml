@@ -51,7 +51,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en el .env}
       TZ: America/Managua
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18+ guarda sus datos en un subdirectorio de /var/lib/postgresql (montar ahi, no en .../data)
+      - pgdata:/var/lib/postgresql
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     # Sin puertos publicados: solo el servicio la alcanza. Para entrar desde la VM, descomente:
     # ports: ["127.0.0.1:5432:5432"]
