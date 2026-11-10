@@ -258,3 +258,31 @@ def test_applying_on_a_database_that_does_not_have_the_last_migration_yet_applie
         assert nombre.startswith(PREFIJO)
         admin_pg.execute(f'DROP DATABASE IF EXISTS "{nombre}" WITH (FORCE)')
         admin_pg.close()
+
+
+def test_the_folders_of_mis_lugares_pass_to_another_user_with_everything_in_them(con_redes):
+    """Someone who changes user does not lose what they traced: the folders (with their routes) change owner."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "herramientas"))
+    import transferir_lugares
+    from visor_rutas.redes import lugares, lugares_presupuesto
+    con = con_redes
+    viejo = _crear(con, "jparamo", "administrador", persona="jparamo_pc")
+    nuevo = _crear(con, "jan", "super_administrador")
+    lugares_presupuesto.guardar_ruta(con, viejo, nombre="C1_Cliente", puntos=[(12.1, -86.25), (12.101, -86.25), (12.101, -86.249)])
+    lugares_presupuesto.guardar_ruta(con, nuevo, nombre="C2_Otro", puntos=[(12.2, -86.25), (12.201, -86.25)])
+    assert transferir_lugares.resolver(con, "jparamo_pc")["id"] == viejo["id"] and transferir_lugares.resolver(con, "JAN")["id"] == nuevo["id"]
+    with pytest.raises(SystemExit):
+        transferir_lugares.resolver(con, "nadie")
+    antes_viejo, antes_nuevo = transferir_lugares.contar(con, viejo["id"]), transferir_lugares.contar(con, nuevo["id"])
+    assert antes_viejo[0] >= 1 and antes_viejo[1] >= 1
+    movidas = transferir_lugares.transferir(con, viejo, nuevo)
+    assert movidas == antes_viejo
+    assert transferir_lugares.contar(con, viejo["id"]) == (0, 0)                                              # nothing is left with the old user
+    assert transferir_lugares.contar(con, nuevo["id"]) == (antes_nuevo[0] + antes_viejo[0], antes_nuevo[1] + antes_viejo[1])      # what the new one had stays, and the old one's comes
+    nombres = {e["nombre"] for e in lugares.arbol(con, nuevo)["elementos"]}
+    assert {"C1_Cliente", "C2_Otro"} <= nombres and not lugares.arbol(con, viejo)["elementos"]                 # jan now sees it in his tree
+    assert con.execute("SELECT count(*) AS n FROM redes.historial WHERE entidad = 'lugar_carpeta' AND accion = 'editar'").fetchone()["n"] >= 1
+    with pytest.raises(SystemExit):
+        transferir_lugares.transferir(con, nuevo, nuevo)
