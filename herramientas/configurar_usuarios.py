@@ -100,8 +100,13 @@ def main():
     ap.add_argument("--aplicar", action="store_true", help="escribe los cambios (sin esto solo muestra el plan)")
     ap.add_argument("--desactivar-otros", action="store_true", help="desactiva a los usuarios que no están en la lista (borrado lógico)")
     args = ap.parse_args()
-    from visor_rutas.redes import db
+    from visor_rutas.redes import db, migrar
     con = db.conectar()
+    if args.aplicar:
+        pendientes = migrar.aplicar(con)                          # the roles need the last migration (the service applies it with its first request; this does not wait for it)
+        if pendientes:
+            print(f"Migraciones aplicadas: {pendientes}
+")
     plan = construir_plan(con, desactivar_otros=args.desactivar_otros)
     for accion, persona, d in plan:
         if accion == "crear":
