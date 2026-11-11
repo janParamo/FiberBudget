@@ -16,7 +16,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # LibreOffice (solo Calc; sin interfaz grafica) + fuentes compatibles con Arial / Calibri / Cambria (el Excel de la empresa y los PDF se ven igual)
 # + cliente de PostgreSQL de la MISMA version que el servidor (pg_dump no acepta un servidor mas nuevo que el)
-RUN apt-get update \
+# apt por HTTPS y con reintentos: por HTTP plano algo de la red de la empresa cortaba la descarga de algunos paquetes (403 Forbidden) y la construccion fallaba.
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "60";\nAcquire::https::Timeout "60";\n' > /etc/apt/apt.conf.d/80-reintentos \
+ && { sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null || true; } \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates curl tini tzdata \
         libreoffice-core libreoffice-calc \
