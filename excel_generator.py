@@ -481,8 +481,44 @@ def _enable_full_calc_on_load(workbook_xml: bytes) -> bytes:
     return text.encode("utf-8")
 
 
+# The money cells of the totals shrink their text to fit instead of showing ### when the font of the machine that makes the PDF is wider than the template's (Century Gothic is
+# not installed in the Docker image of the server): the cell keeps its size and the number is always seen.
+SHRINK_TO_FIT_CELLS = ("I33", "I53", "I54", "I56", "I57")
+
+
+def _with_shrink_to_fit(styles_xml: str, indexes: list[int]) -> tuple[str, dict[int, int]]:
+    """styles.xml (text, so its namespace prefixes stay as they are) with a copy of each cell format `indexes` that has shrinkToFit on; {old index: new index}."""
+    match = re.search(r"<cellXfs\b[^>]*>(.*?)</cellXfs>", styles_xml, re.S)
+    if match is None:
+        return styles_xml, {}
+    formats = re.findall(r"<xf\b[^>]*?/>|<xf\b[^>]*?>.*?</xf>", match.group(1), re.S)
+    nuevos: list[str] = []
+    mapa: dict[int, int] = {}
+    for index in sorted(set(indexes)):
+        if index >= len(formats):
+            continue
+        xf = formats[index]
+        if "shrinkToFit" not in xf:
+            if re.search(r"<alignment\b", xf):
+                xf = re.sub(r"<alignment\b", '<alignment shrinkToFit="1"', xf, count=1)
+            elif xf.endswith("/>"):
+                xf = xf[:-2] + "><alignment shrinkToFit=\"1\"/></xf>"
+            else:
+                xf = xf.replace(">", "><alignment shrinkToFit=\"1\"/>", 1)
+            if 'applyAlignment="' not in xf.split(">", 1)[0]:
+                xf = xf.replace("<xf", '<xf applyAlignment="1"', 1)
+        mapa[index] = len(formats) + len(nuevos)
+        nuevos.append(xf)
+    if not nuevos:
+        return styles_xml, {}
+    total = len(formats) + len(nuevos)
+    cuerpo = re.sub(r'(<cellXfs\b[^>]*?)\bcount="\d+"', lambda m: f'{m.group(1)}count="{total}"', match.group(0), count=1)
+    cuerpo = cuerpo[:-len("</cellXfs>")] + "".join(nuevos) + "</cellXfs>"
+    return styles_xml[:match.start()] + cuerpo + styles_xml[match.end():], mapa
+
+
 def _write_cells_preserving_package(template_path: Path, output_path: Path,
-                                    assignments: dict[str, dict[str, Any]]) -> None:
+                                    assignments: dict[str, dict[str, Any]], shrink: dict[str, tuple[str, ...]] | None = None) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     # The temporary file goes next to the final one: in Docker /tmp and the output folder (a mounted volume) are different disks and a file cannot be renamed across them
     # ([Errno 18] Invalid cross-device link).
@@ -490,12 +526,33 @@ def _write_cells_preserving_package(template_path: Path, output_path: Path,
         temp_path = Path(tmp.name)
     try:
         with zipfile.ZipFile(template_path, "r") as source, zipfile.ZipFile(temp_path, "w") as target:
+            styles_xml, cell_styles = None, {}                     # {sheet: {cell: its new format}} for the cells that shrink to fit
+            if shrink and "xl/styles.xml" in source.namelist():
+                try:
+                    antiguos: dict[str, dict[str, int]] = {}
+                    for hoja, celdas in shrink.items():
+                        raiz = ElementTree.fromstring(source.read(hoja))
+                        for coordenada in celdas:
+                            celda = raiz.find(f".//main:c[@r='{coordenada}']", NS)
+                            if celda is not None and celda.attrib.get("s", "").isdigit():
+                                antiguos.setdefault(hoja, {})[coordenada] = int(celda.attrib["s"])
+                    styles_xml, mapa = _with_shrink_to_fit(source.read("xl/styles.xml").decode("utf-8"),
+                                                           [s for celdas in antiguos.values() for s in celdas.values()])
+                    cell_styles = {hoja: {c: mapa[s] for c, s in celdas.items() if s in mapa} for hoja, celdas in antiguos.items()}
+                except (ElementTree.ParseError, KeyError, UnicodeDecodeError):
+                    styles_xml, cell_styles = None, {}              # the shrink is a nicety: the budget comes out without it
             for name in source.namelist():
                 content = source.read(name)
-                if name in assignments:
+                if name == "xl/styles.xml" and styles_xml is not None and cell_styles:
+                    content = styles_xml.encode("utf-8")
+                if name in assignments or cell_styles.get(name):
                     root = ElementTree.fromstring(content)
-                    for coordinate, value in assignments[name].items():
+                    for coordinate, value in assignments.get(name, {}).items():
                         _set_xml_cell(root, coordinate, value)
+                    for coordinate, estilo in cell_styles.get(name, {}).items():
+                        celda = root.find(f".//main:c[@r='{coordinate}']", NS)
+                        if celda is not None:
+                            celda.attrib["s"] = str(estilo)
                     content = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
                 if name == "xl/workbook.xml":
                     content = _enable_full_calc_on_load(content)
@@ -726,7 +783,7 @@ def generar_excel(data: dict[str, Any], rules: dict[str, Any], template_path: Pa
     # The budget_id suffix keeps names unique and lets the download route find the file.
     name = f"{_safe_file_stem(data.get('client_name'))}_{safe_id}.xlsx"
     out = output_dir / name
-    _write_cells_preserving_package(template_path, out, package_assignments)
+    _write_cells_preserving_package(template_path, out, package_assignments, {paths["Presupuesto"]: SHRINK_TO_FIT_CELLS} if "Presupuesto" in paths else None)
     if map_anchor is not None:
         _insert_picture(out, paths[route_sheet_name], map_anchor, Path(data["route_map_png"]))
     log.info("Excel generated from preserved template package: %s", out)
