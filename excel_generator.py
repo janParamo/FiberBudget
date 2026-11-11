@@ -483,7 +483,10 @@ def _enable_full_calc_on_load(workbook_xml: bytes) -> bytes:
 
 def _write_cells_preserving_package(template_path: Path, output_path: Path,
                                     assignments: dict[str, dict[str, Any]]) -> None:
-    with zipfile.ZipFile(template_path, "r") as source, NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # The temporary file goes next to the final one: in Docker /tmp and the output folder (a mounted volume) are different disks and a file cannot be renamed across them
+    # ([Errno 18] Invalid cross-device link).
+    with NamedTemporaryFile(suffix=".xlsx", delete=False, dir=output_path.parent) as tmp:
         temp_path = Path(tmp.name)
     try:
         with zipfile.ZipFile(template_path, "r") as source, zipfile.ZipFile(temp_path, "w") as target:
@@ -497,7 +500,6 @@ def _write_cells_preserving_package(template_path: Path, output_path: Path,
                 if name == "xl/workbook.xml":
                     content = _enable_full_calc_on_load(content)
                 target.writestr(name, content)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path.replace(output_path)
     finally:
         if temp_path.exists():

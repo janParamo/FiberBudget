@@ -62,3 +62,30 @@ def test_missing_configured_soffice_falls_back_to_autodetection(tmp_path, monkey
     found.write_bytes(b"")
     monkeypatch.setattr(recalc, "_COMMON_SOFFICE_PATHS", (str(found),))
     assert recalc.find_soffice(missing) == str(found)   # a stale LIBREOFFICE_PATH still works
+
+
+def test_the_budget_excel_is_written_next_to_its_final_place_so_it_works_when_tmp_is_another_disk(tmp_path, monkeypatch):
+    """In Docker /tmp and the output folder (a mounted volume) are different disks: renaming a file across them fails with [Errno 18] Invalid cross-device link.
+    The temporary file must be created next to the final one."""
+    import errno
+    from pathlib import Path
+
+    from excel_generator import _write_cells_preserving_package
+
+    template = tmp_path / "template.xlsx"
+    wb = Workbook()
+    wb.active.title = "Presupuesto"
+    wb.active["A1"] = 0
+    wb.save(template)
+    salida = tmp_path / "volumen" / "visor" / "budget.xlsx"                          # a folder that does not exist yet, like output/visor on a new server
+    original = Path.replace
+
+    def replace_entre_discos(origen, destino):
+        if Path(origen).parent != Path(destino).parent:                                  # a different folder stands for a different disk
+            raise OSError(errno.EXDEV, "Invalid cross-device link", str(origen), None, str(destino))
+        return original(origen, destino)
+
+    monkeypatch.setattr(Path, "replace", replace_entre_discos)
+    _write_cells_preserving_package(template, salida, {"xl/worksheets/sheet1.xml": {"A1": 245}})
+    assert load_workbook(salida)["Presupuesto"]["A1"].value == 245
+    assert [p.name for p in salida.parent.iterdir()] == ["budget.xlsx"]                      # and no temporary file is left behind
