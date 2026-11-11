@@ -7,13 +7,13 @@ Autorizar que la máquina virtual del servicio de presupuestos (Fiber Budget) se
 
 | | |
 |---|---|
-| **Origen (a autorizar)** | VM del servicio, IP **10.0.40.154** (Ubuntu 24.04, el servicio corre en un contenedor Docker) |
+| **Origen (a autorizar)** | VM del servicio (Ubuntu 24.04, el servicio corre en un contenedor Docker). IP interna **10.0.40.154**; hacia Internet sale con la IP pública **[COMPLETAR: IP pública de salida de la VM]**, que es la que verá el servidor de Kayako |
 | **Destino** | `soporte.ideay.com`, puerto **3306** (MySQL/MariaDB) |
 | **Base** | `kayako_fusion` |
 | **Usuario** | el usuario de solo lectura que ya existe para este programa (hoy autorizado solo desde la PC de desarrollo) |
-| **Qué cambia** | que ese usuario también pueda entrar desde `10.0.40.154` (permiso `'usuario'@'10.0.40.154'` y regla de firewall hacia el 3306) |
+| **Qué cambia** | que ese usuario también pueda entrar desde `10.0.40.154` (permiso `'usuario'@'<IP que vea el servidor>'` y regla de firewall hacia el 3306) |
 
-Hoy la conexión desde la VM falla (`OperationalError`) porque ese origen no está autorizado. Desde la PC de desarrollo funciona, como se muestra abajo.
+Hoy la conexión desde la VM falla con `(2003, "Can't connect to MySQL server on 'soporte.ideay.com' (timed out)")`: la conexión no llega (no es un problema de usuario ni de contraseña, que se validan después de conectar). `soporte.ideay.com` resuelve a `186.1.31.11`; desde la PC de desarrollo funciona. Desde la PC de desarrollo funciona, como se muestra abajo.
 
 ## 2. Para qué se usa
 El programa muestra a los usuarios internos los tickets de tres departamentos de Kayako: **Fibra Optica** (pedidos de presupuesto), **Incidencias Masivas** e **Instalaciones**, para consultarlos junto con la red de fibra. No escribe en Kayako de ninguna manera.
