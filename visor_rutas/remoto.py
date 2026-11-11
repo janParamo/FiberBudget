@@ -29,6 +29,9 @@ TIMEOUT_CONSULTA_S = 20           # route, layers, search
 TIMEOUT_PRESUPUESTO_S = 180       # budgets: Google, map tiles and LibreOffice on the server
 SIN_CONEXION = ("No se pudo conectar con el servidor de presupuestos. Verifique que el servicio "
                 "esté encendido en la PC del servidor y que la URL sea correcta.")
+# The methods of the network module that only read (what the viewer asks when it opens): repeating them after a dropped connection changes nothing.
+LECTURAS_REDES = frozenset({"estado", "lugares", "lugar", "cambios_kmz", "estilos_kmz", "capa_importados_kmz", "buscar_elementos", "mufa_existente", "proyectos", "proyecto",
+                            "usuarios", "mufa", "red_proyecto", "diagramas", "problemas", "pendientes", "campo_puntos", "campo_ubicaciones", "campo_jornadas", "lienzo_zonas", "lienzo"})
 PREFIJO_ARCHIVO = "remoto:"       # resultado["archivo"] in remote mode: "remoto:<id>"
 RE_ID = re.compile(r"^[^\\/:*?\"<>|\x00-\x1f]{1,200}$")
 # Base map used until /visor/info answers (same values as mapa_ruta.py on the server).
@@ -68,28 +71,30 @@ class ProveedorRemoto:
 
     # ----------------------------------------------------------------------- HTTP
 
-    def _pedir(self, metodo: str, ruta: str, *, timeout: float = TIMEOUT_CONSULTA_S, **kwargs: Any) -> Any:
-        """Response 2xx, or ErrorRemoto with a message for the user. One retry when the
-        connection fails (and on a GET timeout); a POST that timed out is not repeated."""
+    def _pedir(self, metodo: str, ruta: str, *, timeout: float = TIMEOUT_CONSULTA_S, intentos: int | None = None, **kwargs: Any) -> Any:
+        """Response 2xx, or ErrorRemoto with a message for the user. The connection through the tunnel sometimes drops: a GET is tried up to 3 times, a POST twice (a write
+        is not repeated more than that), and a call that only reads can ask for 3 (`intentos`). A GET that timed out is repeated; a POST that timed out is not."""
         if not self.url:
             raise ErrorRemoto("Falta configurar el servidor (☰ → Configuración)")
+        intentos = intentos or (3 if metodo == "GET" else 2)
         headers = {"X-Visor-Key": self._clave, "ngrok-skip-browser-warning": "1", "User-Agent": AGENTE}
-        for intento in (1, 2):
+        for intento in range(1, intentos + 1):
+            ultimo = intento == intentos
             try:
                 respuesta = self._sesion.request(metodo, f"{self.url}{ruta}", headers=headers,
                                                  timeout=timeout, **kwargs)
             except requests.Timeout:
-                if metodo == "GET" and intento == 1:
+                if metodo == "GET" and not ultimo:
                     continue
                 raise ErrorRemoto("El servidor de presupuestos tardó demasiado en responder") from None
             except requests.RequestException as exc:
-                if intento == 1:
-                    time.sleep(1)
+                if not ultimo:
+                    time.sleep(intento)
                     continue
                 log.warning("Remote viewer: %s %s failed (%s)", metodo, ruta, type(exc).__name__)
                 raise ErrorRemoto(SIN_CONEXION) from None
-            if respuesta.status_code in (502, 503, 504) and intento == 1:
-                time.sleep(1)
+            if respuesta.status_code in (502, 503, 504) and not ultimo:
+                time.sleep(intento)
                 continue
             return self._revisar(respuesta)
         raise ErrorRemoto(SIN_CONEXION)
@@ -338,7 +343,7 @@ class ProveedorRemoto:
             return {"ok": False, "error": f"Operación desconocida: {metodo}"}
         return self._seguro(lambda: self._json("POST", f"/visor/redes/{metodo}",
                                                json={"args": args if isinstance(args, dict) else {}},
-                                               timeout=TIMEOUT_PRESUPUESTO_S))
+                                               timeout=TIMEOUT_PRESUPUESTO_S, intentos=3 if metodo in LECTURAS_REDES else None))
 
     # ----------------------------------------------------------------------- app de campo en tiempo real
 

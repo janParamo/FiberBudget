@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import ngrok
+from compresion_json import GzipJson
 import psycopg
 import requests
 from fastapi import Depends, FastAPI, Header, HTTPException, Path as PathParam, Query, Request
@@ -136,6 +137,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Fiber budget service", lifespan=lifespan)
+app.add_middleware(GzipJson)                                       # the big JSON answers (Mis lugares, a KMZ folder) go compressed: they were cut off in the tunnel
 
 # Desktop route viewer on other computers (/visor/*, own X-Visor-Key; 404 when VISOR_API_KEYS is
 # empty). It does not touch the endpoints below.
