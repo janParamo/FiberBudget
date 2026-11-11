@@ -145,3 +145,42 @@ def test_a_gateway_error_of_the_tunnel_is_also_retried(sin_esperas):
             return R()
 
     assert _proveedor(Pasarela())._json("GET", "/visor/info")["ok"] and Pasarela.llamadas == 3
+
+
+# --------------------------------------------------------------------------- the connections: few at a time, kept and reused
+
+def test_the_viewer_keeps_its_connections_and_sends_only_a_few_calls_at_a_time(sin_esperas):
+    """When it opens it asks for dozens of things at once; every one used to open its own connection and the tunnel cut the bursts (SSLError in the log)."""
+    import threading
+    import time as tiempo
+
+    proveedor = ProveedorRemoto("https://servidor.example", "clave")
+    adaptador = proveedor._sesion.get_adapter("https://servidor.example/visor/info")
+    assert adaptador._pool_maxsize == remoto.CONEXIONES_GUARDADAS and adaptador._pool_connections == 2           # kept open and reused, not thrown away at 10
+
+    class Cuenta:
+        """A session that counts how many calls are inside at the same time."""
+        dentro = maximo = 0
+        lock = threading.Lock()
+
+        def request(self, metodo, url, **kw):
+            with Cuenta.lock:
+                Cuenta.dentro += 1
+                Cuenta.maximo = max(Cuenta.maximo, Cuenta.dentro)
+            tiempo.sleep(0.05)
+            with Cuenta.lock:
+                Cuenta.dentro -= 1
+
+            class R:
+                status_code = 200
+                headers: dict = {}
+
+                def json(_):
+                    return {"ok": True}
+            return R()
+
+    p = _proveedor(Cuenta())
+    hilos = [threading.Thread(target=lambda: p._json("GET", "/visor/info")) for _ in range(30)]
+    [h.start() for h in hilos]
+    [h.join() for h in hilos]
+    assert 1 <= Cuenta.maximo <= remoto.MAX_SIMULTANEAS, Cuenta.maximo                                              # 30 at once ask, never more than a few go

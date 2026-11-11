@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import quote, urlparse
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from visor_rutas import excel_html
 
@@ -30,6 +31,10 @@ TIMEOUT_PRESUPUESTO_S = 180       # budgets: Google, map tiles and LibreOffice o
 SIN_CONEXION = ("No se pudo conectar con el servidor de presupuestos. Verifique que el servicio "
                 "esté encendido en la PC del servidor y que la URL sea correcta.")
 # The methods of the network module that only read (what the viewer asks when it opens): repeating them after a dropped connection changes nothing.
+# When it opens the viewer asks for dozens of things at once (every folder of the KMZ, Mis lugares, the field data...). Each one used to open its own connection (the pool kept 10 and
+# threw the rest away), and the tunnel of ngrok cuts the bursts of new connections (SSLError): only MAX_SIMULTANEAS go at a time and the connections are kept and reused.
+MAX_SIMULTANEAS = 5
+CONEXIONES_GUARDADAS = 8
 LECTURAS_REDES = frozenset({"estado", "lugares", "lugar", "cambios_kmz", "estilos_kmz", "capa_importados_kmz", "buscar_elementos", "mufa_existente", "proyectos", "proyecto",
                             "usuarios", "mufa", "red_proyecto", "diagramas", "problemas", "pendientes", "campo_puntos", "campo_ubicaciones", "campo_jornadas", "lienzo_zonas", "lienzo"})
 PREFIJO_ARCHIVO = "remoto:"       # resultado["archivo"] in remote mode: "remoto:<id>"
@@ -55,7 +60,13 @@ class ProveedorRemoto:
                  carpeta_kmz: Path | None = None):
         self.url = (url or "").strip().rstrip("/")
         self._clave = clave or ""
-        self._sesion = sesion or requests.Session()
+        if sesion is None:
+            sesion = requests.Session()
+            adaptador = HTTPAdapter(pool_connections=2, pool_maxsize=CONEXIONES_GUARDADAS)       # connections kept open and reused, not a new one for every call
+            sesion.mount("https://", adaptador)
+            sesion.mount("http://", adaptador)
+        self._sesion = sesion
+        self._cupos = threading.BoundedSemaphore(MAX_SIMULTANEAS)
         self.carpeta = carpeta or Path(tempfile.gettempdir()) / "VisorRutas"
         # Network KMZ ("Lugares" panel): %APPDATA%\VisorRutas\kmz_cache\<md5 of the server's KMZ>
         if carpeta_kmz is None:
@@ -81,8 +92,9 @@ class ProveedorRemoto:
         for intento in range(1, intentos + 1):
             ultimo = intento == intentos
             try:
-                respuesta = self._sesion.request(metodo, f"{self.url}{ruta}", headers=headers,
-                                                 timeout=timeout, **kwargs)
+                with self._cupos:                                        # a few at a time: the rest wait their turn
+                    respuesta = self._sesion.request(metodo, f"{self.url}{ruta}", headers=headers,
+                                                     timeout=timeout, **kwargs)
             except requests.Timeout:
                 if metodo == "GET" and not ultimo:
                     continue
@@ -91,7 +103,7 @@ class ProveedorRemoto:
                 if not ultimo:
                     time.sleep(intento)
                     continue
-                log.warning("Remote viewer: %s %s failed (%s)", metodo, ruta, type(exc).__name__)
+                log.warning("Remote viewer: %s %s failed (%s: %s)", metodo, ruta, type(exc).__name__, str(exc)[:160])
                 raise ErrorRemoto(SIN_CONEXION) from None
             if respuesta.status_code in (502, 503, 504) and not ultimo:
                 time.sleep(intento)
