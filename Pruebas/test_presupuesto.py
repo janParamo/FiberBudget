@@ -280,3 +280,24 @@ def test_the_new_poles_of_the_map_are_the_counted_ones_placed_along_the_route():
     reglas["poles"]["extra_poles_per_corner"] = 1
     assert (12.1300, -86.2490) in new_pole_points(esquina, largo2, reglas, [])
     assert new_pole_points([], 100, reglas, []) == [] and new_pole_points(ruta, 0, reglas, []) == []
+
+
+def test_new_poles_are_always_placed_every_50_m_from_the_last_pole():
+    """Every new pole is exactly spacing_m (50 m) after the pole before it (origin, existing pole or the previous new one); no span is longer than 50 m
+    except the ones the rules accept without new poles (<=60 m, <=100 m between existing poles)."""
+    import itertools
+    from presupuesto import new_pole_positions_by_gaps
+    import random
+    random.seed(7)
+    casos = [(d, sorted(random.sample(range(0, d + 1), k))) for d in (40, 61, 130, 500, 1234) for k in (0, 1, 3, 6)]
+    for distancia, existentes in itertools.chain(casos, [(500, [0, 101]), (500, [120, 300])]):
+        nuevos = new_pole_positions_by_gaps(distancia, 50, existentes, 60, 100)
+        previos = sorted({0.0, *map(float, existentes)})
+        for i, p in enumerate(nuevos):
+            antes = max([q for q in previos + nuevos[:i] if q < p])
+            assert abs(p - antes - 50) < 1e-6, (distancia, existentes, p, antes)        # exactly 50 m from the pole before it
+        todos = sorted({0.0, float(distancia), *nuevos, *map(float, existentes)})
+        for a, b in zip(todos, todos[1:]):
+            largo = b - a
+            if largo > 50 + 1e-6:                                                         # only the spans accepted by the rules stay longer than 50 m
+                assert largo <= 100 + 1e-6 and (largo <= 60 + 1e-6 or (a in existentes and b in existentes)), (distancia, existentes, a, b)
