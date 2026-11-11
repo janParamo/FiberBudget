@@ -276,7 +276,7 @@
 
   function debeVerse(id) {
     const c = carpeta(id);
-    return s.marcadas.has(id) && !(c.postes && mapa.getZoom() < ZOOM_POSTES);
+    return s.marcadas.has(id) && !(c.postes && (mapa.getZoom() < ZOOM_POSTES || (window.Postes && window.Postes.ocultos)));          // the poles button hides them without touching the box
   }
 
   async function aplicar(id) {
@@ -787,7 +787,7 @@
   function actualizarAvisoPostes() {
     if (!controlPostes) return;
     const hay = [...s.marcadas].some((id) => carpeta(id) && carpeta(id).postes);
-    controlPostes.getContainer().hidden = !(hay && mapa.getZoom() < ZOOM_POSTES);
+    controlPostes.getContainer().hidden = !(hay && mapa.getZoom() < ZOOM_POSTES && !(window.Postes && window.Postes.ocultos));
   }
 
   function conectar() {
@@ -936,6 +936,10 @@
       if (e.target.closest("#lg-foto-grande")) $("lg-foto-grande").hidden = true;
     });
     mapa.on("zoomend", () => {
+      Object.keys(s.carpetas).forEach((id) => { if (carpeta(id).postes && s.marcadas.has(id)) aplicar(id); });
+      actualizarAvisoPostes();
+    });
+    if (window.Postes) window.Postes.alCambiar(() => {            // the poles button: the network poles go off the map or come back as the boxes say
       Object.keys(s.carpetas).forEach((id) => { if (carpeta(id).postes && s.marcadas.has(id)) aplicar(id); });
       actualizarAvisoPostes();
     });

@@ -219,3 +219,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 
 /* guest: el mapa, las rutas y los presupuestos; sin herramientas de dibujo ni edición */
 body.es-guest .barra-herramientas { display: none; }
+
+/* el botón de postes: rojo mientras los postes están ocultos (para que se note que falta algo en el mapa) */
+.bh-boton.apagado { background: var(--error-suave); color: var(--error); box-shadow: inset 0 0 0 1.5px var(--error); }

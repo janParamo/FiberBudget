@@ -320,6 +320,19 @@
     programarEstimacion();
   }
 
+  /** The poles button hides the poles of the route (existing and new) and puts them back as they were (the box of each one in the Lugares panel still commands its own). */
+  const postesRecordados = new Set();
+  function aplicarPostes() {
+    const ocultos = !!(window.Postes && window.Postes.ocultos);
+    ["postesExistentes", "postesNuevos"].forEach((nombre) => {
+      const capa = capas[nombre];
+      if (!capa) return;
+      if (ocultos) { if (mapa.hasLayer(capa)) { postesRecordados.add(nombre); mapa.removeLayer(capa); } }
+      else if (postesRecordados.has(nombre)) { postesRecordados.delete(nombre); if (!mapa.hasLayer(capa)) mapa.addLayer(capa); }
+    });
+    if (window.CapasVisor) window.CapasVisor.refrescar();
+  }
+
   function desmarcarPostes() {
     if (!datos || !postesMarcados.size) return;
     postesMarcados.clear();
@@ -2504,6 +2517,10 @@
     try {
       cfg = await api.configuracion();
       crearMapa();
+      if (window.Postes) {                  // poles shown or hidden (the button of the toolbar): read before anything is drawn
+        window.Postes.alCambiar(aplicarPostes);
+        await window.Postes.iniciar(api);
+      }
       conectarEventos();
       renderPanel();
       if (window.Menu) {               // side menu (menu.js) and the network module's user (redes/comun.js)
@@ -2539,6 +2556,7 @@
             if (id === "medir") $("medir").click();
             else if (id === "importar") { if (window.ImportarKmz) window.ImportarKmz.abrir(); }
             else if (id === "masivas") { if (window.Masivas) window.Masivas.abrir(); }
+            else if (id === "postes") { window.Postes.alternar(); mensaje(window.Postes.ocultos ? "Postes ocultos: vuelva a pulsar el botón para mostrarlos" : "Postes visibles", "ok"); }
             else if (window.MisLugares) window.MisLugares.nuevo(id);
           } });
         }
@@ -2587,7 +2605,7 @@
     buscarMufasVisio: async (texto) => { try { return await api.buscar_mufa(String(texto || "").trim()); } catch (e) { return { ok: false, error: String(e) }; } },
     verVisioAlLado: (quien) => verVisioAlLado(quien), abrirVentana: (tipo, parametros) => abrirVentana(tipo, parametros),
     cerrarVentana: () => cerrarVentana(), get aparte() { return VENTANA ? VENTANA.tipo : null; }, marcarBuscada: (lat, lon, nombre, tipo) => marcarBuscada(lat, lon, nombre, tipo),
-    mensaje: (texto, tipo) => mensaje(texto, tipo), modoCaptura: (activar) => modoCaptura(activar),
+    mensaje: (texto, tipo) => mensaje(texto, tipo), modoCaptura: (activar) => modoCaptura(activar), get _capas() { return capas; },
     abrirDiagrama: (orden) => abrirDiagrama(orden), mostrarPestana: (nombre) => mostrarPestana(nombre),
   };
 

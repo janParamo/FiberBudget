@@ -4,6 +4,7 @@
  *
  * Marca, polígono y ruta crean un lugar en una carpeta de "Mis lugares" (lugares/mis_lugares.js). Medir es el mismo botón de la
  * barra inferior. Lo que todavía no está queda deshabilitado, con un tooltip que dice en qué fase llega.
+ * El último botón (postes) no dibuja nada: oculta o muestra todos los postes del mapa (mapa/postes.js); se pone rojo mientras están ocultos.
  *   BarraHerramientas.iniciar({accion(id)})    BarraHerramientas.marcarActivo(id | null)
  */
 (function () {
@@ -11,6 +12,8 @@
 
   const $ = (id) => document.getElementById(id);
   const svg = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const POSTE = '<path d="M12 3v18M7 7h10M8 11h8"/>';
+  const POSTE_OCULTO = '<path d="M12 3v18M7 7h10M8 11h8" opacity=".45"/><path d="M4 4l16 16" stroke-width="2.4"/>';
   const BOTONES = [
     { id: "marca", titulo: "Marca de posición: clic en el mapa donde va", icono: svg('<path d="M12 21s-6-5.6-6-10a6 6 0 0 1 12 0c0 4.4-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>') },
     { id: "poligono", titulo: "Polígono: clic para cada punto, doble clic para terminar", icono: svg('<path d="M5 8 12 4l7 5-2 10H7z"/>') },
@@ -26,6 +29,8 @@
     null,
     { id: "importar", titulo: "Importar KMZ a la red: nueva ruta o actualización (para una carpeta de Mis lugares: clic derecho en la carpeta)", icono: svg('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>') },
     { id: "masivas", titulo: "Coordenadas masivas: un presupuesto por cada coordenada de un Excel, CSV, Word o texto", icono: svg('<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10h16M10 10v9"/>') },
+    null,
+    { id: "postes", titulo: "Postes: ocultar los postes del mapa (los de la ruta, los de la red del KMZ y los de Mis lugares) para ver mejor la ruta", icono: svg(POSTE) },
   ];
   let ctx = null;
 
@@ -41,9 +46,20 @@
       ctx.accion(b.dataset.bh);
     });
     L.DomEvent.disableClickPropagation($("barra-herramientas"));
+    if (window.Postes) { window.Postes.alCambiar(marcarPostes); marcarPostes(window.Postes.ocultos); }
     // Medir is the bottom bar's button: this one shows when it is on
     const medir = $("medir");
     if (medir) new MutationObserver(() => marcarActivo(medir.classList.contains("activo") ? "medir" : (activo === "medir" ? null : activo))).observe(medir, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  /** The poles button: red with a slash while the poles are hidden. */
+  function marcarPostes(ocultos) {
+    const b = document.querySelector('#barra-herramientas [data-bh="postes"]');
+    if (!b) return;
+    b.classList.toggle("apagado", !!ocultos);
+    b.setAttribute("aria-pressed", ocultos ? "true" : "false");
+    b.innerHTML = svg(ocultos ? POSTE_OCULTO : POSTE);
+    b.title = ocultos ? "Postes ocultos: clic para mostrarlos" : "Postes: ocultar los postes del mapa (los de la ruta, los de la red del KMZ y los de Mis lugares) para ver mejor la ruta";
   }
 
   let activo = null;

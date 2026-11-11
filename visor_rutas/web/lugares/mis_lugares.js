@@ -128,7 +128,7 @@
       if (!ml.capas.has(e.id)) ml.capas.set(e.id, { capa: crearCapa(e), clave: clave(e) });
       const it = ml.capas.get(e.id);
       const trabajando = ml.trabajo && ml.trabajo.id === e.id;
-      const debe = visible(e) && !trabajando;
+      const debe = visible(e) && !trabajando && !(e.tipo === "poste" && window.Postes && window.Postes.ocultos);          // the poles button hides the poles (the tree keeps its boxes)
       if (debe && !ml.grupo.hasLayer(it.capa)) ml.grupo.addLayer(it.capa);
       else if (!debe && ml.grupo.hasLayer(it.capa)) ml.grupo.removeLayer(it.capa);
     });
@@ -854,6 +854,7 @@
       const guardadas = (p && p.preferencias && p.preferencias.mis_lugares_abiertas) || null;
       if (guardadas) ml.abiertas = new Set(guardadas.map((v) => (/^\d+$/.test(v) ? Number(v) : v)));
     } catch (e) { /* defaults */ }
+    if (window.Postes) window.Postes.alCambiar(() => sincronizarMapa());
     window.Redes.cuandoListo(async () => {
       if (!window.Redes.disponible || window.Redes.rol === "guest" || !(await cargar())) return;        // a guest has no Mis lugares
       // the pin of a searched coordinate can be saved here (its button stays disabled while the module is not available)
