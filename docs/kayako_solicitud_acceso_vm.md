@@ -3,7 +3,7 @@
 Fecha: 2026-11-10
 
 ## 1. Qué se pide
-Autorizar que la máquina virtual del servicio de presupuestos (Fiber Budget) se conecte a la base de datos de Kayako **en modo solo lectura**, con el **mismo usuario de solo lectura** que ya usa hoy la PC de desarrollo.
+Permitir que la máquina virtual del servicio de presupuestos (Fiber Budget) se conecte a la base de datos de Kayako **en modo solo lectura**, con el **mismo usuario de solo lectura** que ya usa hoy la PC de desarrollo.
 
 | | |
 |---|---|
@@ -11,9 +11,11 @@ Autorizar que la máquina virtual del servicio de presupuestos (Fiber Budget) se
 | **Destino** | `soporte.ideay.com`, puerto **3306** (MySQL/MariaDB) |
 | **Base** | `kayako_fusion` |
 | **Usuario** | el usuario de solo lectura que ya existe para este programa (hoy autorizado solo desde la PC de desarrollo) |
-| **Qué cambia** | que ese usuario también pueda entrar desde `10.0.40.154` (permiso `'usuario'@'<IP que vea el servidor>'` y regla de firewall hacia el 3306) |
+| **Qué cambia** | (1) en el firewall de nuestra red: permitir la salida TCP **10.0.40.154 → 186.1.31.11:3306** (hoy el puerto 3306 desde la VM no responde, mientras que el 443 sí); (2) en Kayako: nada, si el usuario de solo lectura ya entra desde la IP pública **186.1.12.2** (la misma con la que sale la PC de desarrollo, que hoy sí conecta). Si el permiso del usuario está limitado a otras direcciones, agregar 186.1.12.2 |
 
 Hoy la conexión desde la VM falla con `(2003, "Can't connect to MySQL server on 'soporte.ideay.com' (timed out)")`: la conexión no llega (no es un problema de usuario ni de contraseña, que se validan después de conectar). `soporte.ideay.com` resuelve a `186.1.31.11`; desde la PC de desarrollo funciona. Desde la PC de desarrollo funciona, como se muestra abajo.
+
+**Dato clave:** la PC de desarrollo y la VM salen a Internet con la **misma IP pública (186.1.12.2)** y la PC sí conecta; por eso el bloqueo está en la salida de la red hacia el 3306 de la VM, no en el usuario de Kayako.
 
 ## 2. Para qué se usa
 El programa muestra a los usuarios internos los tickets de tres departamentos de Kayako: **Fibra Optica** (pedidos de presupuesto), **Incidencias Masivas** e **Instalaciones**, para consultarlos junto con la red de fibra. No escribe en Kayako de ninguna manera.
