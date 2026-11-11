@@ -8,6 +8,7 @@ las hojas de un Excel descargado) y la ventana.
 Solo depende de requests, openpyxl (vía excel_html) y la biblioteca estándar: entra en el .exe.
 """
 import base64
+import hashlib
 import logging
 import json
 import re
@@ -453,8 +454,56 @@ class ProveedorRemoto:
             identificador = identificador[len(PREFIJO_ARCHIVO):]
         if not RE_ID.match(identificador) or identificador in (".", ".."):
             return {"ok": False, "error": "Archivo no válido"}
+        try:
+            self.sincronizar_excel(identificador)           # the Excel edited here goes up first: then the server's version changes and the page refreshes what it shows
+        except ErrorRemoto as exc:
+            log.warning("Remote viewer: the edited Excel %s could not go up (%s)", identificador, exc)
         return self._seguro(lambda: self._json("GET", f"/visor/presupuestos/{quote(identificador)}",
                                                timeout=TIMEOUT_PRESUPUESTO_S))
+
+    # ----------------------------------------------------------------------- Excel editado en este equipo
+
+    @staticmethod
+    def _huella(datos: bytes) -> str:
+        return hashlib.sha256(datos).hexdigest()
+
+    def _marca(self, identificador: str) -> Path:
+        """Next to the downloaded Excel: the fingerprint of the version that the server has (written when it is downloaded or uploaded)."""
+        return self.carpeta / "descargas" / f"{identificador}.xlsx.sync"
+
+    def sincronizar_excel(self, archivo: str) -> bool:
+        """The Excel that is opened from the viewer is a copy downloaded to this computer; the PDF is made on the server from its own. When the copy was edited and saved
+        (its fingerprint is not the one of what the server has) it goes up and replaces the server's, and the PDFs made from the old one are dropped. True when something
+        was uploaded; False when there was nothing to apply. ErrorRemoto when it cannot be read or uploaded (the person is told: not silently a PDF without their changes)."""
+        identificador = str(archivo or "")
+        if identificador.startswith(PREFIJO_ARCHIVO):
+            identificador = identificador[len(PREFIJO_ARCHIVO):]
+        if not RE_ID.match(identificador) or identificador in (".", ".."):
+            return False
+        local = self.carpeta / "descargas" / f"{identificador}.xlsx"
+        marca = self._marca(identificador)
+        if not local.is_file():                                         # never downloaded here: nothing of theirs to apply
+            return False
+        if not marca.is_file():                                         # a copy downloaded before the viewer kept this note: what the server has now is the reference
+            try:
+                marca.write_text(self._huella(self._pedir("GET", f"/visor/archivo/{quote(identificador)}.xlsx", timeout=TIMEOUT_PRESUPUESTO_S).content), encoding="utf-8")
+            except ErrorRemoto:
+                return False                                            # the server cannot be asked now: the next time
+        try:
+            datos = local.read_bytes()
+        except OSError:
+            raise ErrorRemoto("No se pudo leer el Excel para aplicar sus cambios: cierre el Excel (guardando) e intente de nuevo") from None
+        huella = self._huella(datos)
+        if marca.read_text(encoding="utf-8").strip() == huella:
+            return False
+        try:
+            self._pedir("PUT", f"/visor/presupuestos/{quote(identificador)}/excel", timeout=TIMEOUT_PRESUPUESTO_S, intentos=3, data=datos)
+        except ErrorRemoto as exc:
+            raise ErrorRemoto(f"No se pudieron aplicar los cambios del Excel en el servidor: {exc}") from None
+        marca.write_text(huella, encoding="utf-8")
+        (self.carpeta / "descargas" / f"{identificador}.pdf").unlink(missing_ok=True)       # made from the old Excel
+        log.info("Remote viewer: the edited Excel %s went up to the server", identificador)
+        return True
 
     # ----------------------------------------------------------------------- archivos
 
@@ -466,6 +515,11 @@ class ProveedorRemoto:
         if extension not in ("xlsx", "pdf") or not RE_ID.match(identificador) or identificador in (".", ".."):
             raise ErrorRemoto("Archivo no válido")
         destino = self.carpeta / "descargas" / f"{identificador}.{extension}"
+        if extension == "pdf":
+            self.sincronizar_excel(identificador)                       # the PDF is made on the server from ITS Excel: it must be the one the person edited
+            xlsx_local = destino.with_suffix(".xlsx")
+            if destino.is_file() and xlsx_local.is_file() and xlsx_local.stat().st_mtime > destino.stat().st_mtime:
+                destino.unlink(missing_ok=True)                         # a PDF older than the edited Excel is not the one that is wanted
         if destino.is_file() and destino.stat().st_size > 0:
             return destino
         respuesta = self._pedir("GET", f"/visor/archivo/{quote(identificador)}.{extension}", timeout=TIMEOUT_PRESUPUESTO_S)
@@ -473,6 +527,8 @@ class ProveedorRemoto:
         temporal = destino.with_suffix(destino.suffix + ".tmp")
         temporal.write_bytes(respuesta.content)
         temporal.replace(destino)
+        if extension == "xlsx":
+            self._marca(identificador).write_text(self._huella(respuesta.content), encoding="utf-8")     # what the server has: an edit of this copy is told apart from it
         return destino
 
     def hoja_excel(self, archivo: str, hoja: str, calculado: bool = True) -> dict[str, Any]:

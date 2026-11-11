@@ -146,6 +146,52 @@ def limpiar_archivos_viejos(carpeta: Path | None = None) -> int:
     return borrados
 
 
+MAX_EXCEL_BYTES = 25 * 1024 * 1024
+
+
+def reemplazar_excel(xlsx: Path, contenido: bytes) -> str:
+    """The Excel of a budget of output/visor replaced by the one the person edited (remote mode: the Excel they open is a copy downloaded to their computer, and the PDF is made
+    here, from this file). Checks that it is a real Excel with the two sheets of a budget, writes it next to the old one (same disk: a rename), drops the PDF made from the old
+    one (in the folder and in the database) and keeps the new Excel in the database too. Returns its new version. ValueError (a sentence for the person) when it is not valid."""
+    import io
+    import zipfile
+    from tempfile import NamedTemporaryFile
+
+    from openpyxl import load_workbook
+    if not contenido or len(contenido) > MAX_EXCEL_BYTES:
+        raise ValueError("El Excel está vacío o es demasiado grande")
+    try:
+        with zipfile.ZipFile(io.BytesIO(contenido)) as z:
+            if z.testzip() is not None or "xl/workbook.xml" not in z.namelist() or "[Content_Types].xml" not in z.namelist():
+                raise ValueError("No es un Excel válido")
+        libro = load_workbook(io.BytesIO(contenido), read_only=True)
+        hojas = set(libro.sheetnames)
+        libro.close()
+    except ValueError:
+        raise
+    except Exception:                                                                       # noqa: BLE001 - zip / xml / openpyxl errors: all mean the same to the person
+        raise ValueError("No es un Excel válido") from None
+    if not set(HOJAS) <= hojas:
+        raise ValueError("Este Excel no es de un presupuesto: le faltan las hojas «Presupuesto» y «Ruta proyectada»")
+    carpeta = carpeta_visor().resolve()
+    xlsx = Path(xlsx).resolve()
+    if carpeta not in xlsx.parents or xlsx.suffix.lower() != ".xlsx":
+        raise ValueError("El archivo no es de output/visor")
+    with NamedTemporaryFile(suffix=".xlsx", delete=False, dir=xlsx.parent) as tmp:        # next to the final one: /tmp and the output folder can be different disks in Docker
+        tmp.write(contenido)
+        temporal = Path(tmp.name)
+    try:
+        temporal.replace(xlsx)
+    finally:
+        temporal.unlink(missing_ok=True)
+    pdf = xlsx.with_suffix(".pdf")                                                           # made from the old Excel: it is made again from the new one
+    pdf.unlink(missing_ok=True)
+    clave = xlsx.relative_to(carpeta).as_posix()
+    almacen_archivos.borrar("visor", pdf.relative_to(carpeta).as_posix())
+    almacen_archivos.guardar_archivo("visor", clave, xlsx)
+    return version_archivo(xlsx)
+
+
 def version_archivo(xlsx: Path) -> str:
     """Changes whenever the Excel is saved again (by the user in Excel / LibreOffice): the page compares it to know it must read the file again."""
     estado = Path(xlsx).stat()

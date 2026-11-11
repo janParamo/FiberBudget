@@ -148,6 +148,7 @@ _GUEST = (
     ("GET", r"/(info|mufas|mufas_cerca|mufa/\d+|red/[\w-]+|kmz/(arbol|indice|capa/[^/]+|archivo/.+)|diagramas/buscar|diagrama/[0-9a-fA-F]+/(buscar|\d+)"
             r"|presupuestos(/[^/]+)?|archivo/[^/]+|pdf/carpetas|pdf/[^/]+|masivas/[^/]+|actualizacion(/paquete)?)"),
     ("POST", r"/(ruta|ruta_editada|estimacion|medicion|presupuesto|subidas(/[^/]+(/\d+|/fin))?|masivas/(leer|iniciar)|masivas/[^/]+/(cancelar|pdf|descargar)|pdf/convertir|pdf/[^/]+/descargar|redes/[a-z_]+)"),
+    ("PUT", r"/presupuestos/[^/]+/excel"),
 )
 # prueba: everything that only reads, and calculating routes and budgets; nothing that writes (the writing methods of the network module are refused by redes.api.SOLO_LECTURA)
 _PRUEBA = (
@@ -618,6 +619,39 @@ def presupuesto_guardado(id_: str = PathParam(max_length=200), persona: str = De
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     with _registro(persona, "presupuestos.abrir"):
         return _para_remoto(api_local().abrir_presupuesto_guardado(str(presupuesto_visor.carpeta_visor() / f"{id_}.xlsx")))
+
+
+@router.put("/presupuestos/{id_}/excel")
+async def presupuesto_excel_editado(request: Request, id_: str = PathParam(max_length=200), persona: str = Depends(persona_visor)) -> dict[str, Any]:
+    """The Excel of a budget as the person edited it in their computer (the body of the request): it replaces the one of the server, so the sheets and the PDF (made here)
+    come out with the changes. Only an Excel that already exists in output/visor and is a real budget Excel."""
+    from starlette.concurrency import run_in_threadpool
+
+    from visor_rutas import presupuesto_visor
+    if RE_ARCHIVO.match(f"{id_}.xlsx") is None or id_ in (".", ".."):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    try:
+        declarado = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        declarado = 0
+    if declarado > presupuesto_visor.MAX_EXCEL_BYTES:
+        raise HTTPException(status_code=413, detail="El Excel es demasiado grande")
+    cuerpo = await request.body()
+    with _registro(persona, "presupuestos.excel"):
+        try:
+            xlsx = presupuesto_visor.archivo_del_visor(presupuesto_visor.carpeta_visor() / f"{id_}.xlsx", (".xlsx",))
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        api = api_local()
+
+        def reemplazar() -> str:
+            with api._lock_presupuesto:                                  # not while its PDF is being made
+                return presupuesto_visor.reemplazar_excel(xlsx, cuerpo)
+        try:
+            version = await run_in_threadpool(reemplazar)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"ok": True, "version": version}
 
 
 @router.get("/archivo/{nombre}")
