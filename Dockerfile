@@ -3,7 +3,8 @@
 #
 # Trae: Python 3.13, LibreOffice (recalcula el Excel y exporta el PDF) con sus fuentes, y el cliente de PostgreSQL 18 (pg_dump de los respaldos).
 # NO trae: el .env, las bases de datos, el KMZ, los Visio, ni el visor de escritorio (VisorRutas.exe se genera aparte en Windows).
-FROM python:3.13-slim-bookworm
+# Debian «trixie» (no «bookworm»): trae LibreOffice 25.2. La plantilla usa XLOOKUP, que LibreOffice entiende desde la 24.8; con la 7.4 de bookworm el PDF salia con #NAME? y sin precios.
+FROM python:3.13-slim-trixie
 
 ARG PG_CLIENT_VERSION=18
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -22,7 +23,7 @@ RUN apt-get update \
         fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core \
  && install -d /usr/share/postgresql-common/pgdg \
  && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
- && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+ && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
  && apt-get update \
  && apt-get install -y --no-install-recommends "postgresql-client-${PG_CLIENT_VERSION}" \
  && rm -rf /var/lib/apt/lists/*
@@ -42,10 +43,11 @@ COPY --chown=app:app . .
 
 USER app
 
-# Prueba de humo al construir: el servicio y el visor remoto se importan en Linux (con variables de relleno) y LibreOffice arranca.
+# Prueba de humo al construir: el servicio y el visor remoto se importan en Linux (con variables de relleno), LibreOffice arranca y calcula XLOOKUP (herramientas/comprobar_libreoffice.py).
 # Si esto falla, la imagen no sirve: no se publica una imagen rota.
 RUN DB_HOST=x DB_PORT=5432 DB_NAME=x DB_USER=x DB_PASSWORD=x GOOGLE_API_KEY=x SERVICE_API_KEY=x python -c "import main, visor_api; print('imports ok')" \
- && soffice --headless --version
+ && soffice --headless --version \
+ && python herramientas/comprobar_libreoffice.py
 
 # Dentro del contenedor escucha en todas las interfaces; quien lo publica (docker-compose.yml) lo deja solo en la VM o detras del proxy HTTPS.
 ENV API_HOST=0.0.0.0 \
