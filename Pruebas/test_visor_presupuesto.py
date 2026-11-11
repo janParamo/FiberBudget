@@ -102,6 +102,21 @@ def test_visor_uses_the_api_generation_same_quantities_and_own_folder(entorno, m
     assert llamadas["mapas"][0].parent == salida / "mapas"                # the API's, as before
 
 
+def test_a_budget_made_again_from_an_edited_route_goes_over_its_own_file(entorno):
+    main, pv, salida, _ = entorno
+    primero = pv.generar(pv.construir_solicitud(_campos()), ahora=datetime(2026, 10, 7, 15, 30, 5))
+    ruta = Path(primero["excel_path"])
+    pdf = ruta.with_suffix(".pdf")
+    pdf.write_bytes(b"%PDF viejo")
+    antes = _archivos(salida)
+    otra = pv.generar(pv.construir_solicitud(_campos()), reemplazar=ruta.stem)                  # the same budget with the route edited: no other file
+    assert Path(otra["excel_path"]) == ruta and _archivos(salida) - antes == set()
+    assert not pdf.exists()                                                                      # the PDF of the old Excel goes: it is made again from this one
+    assert Path(pv.generar(pv.construir_solicitud(_campos()))["excel_path"]).name == "T-100_Cliente_Uno_2.xlsx"      # without `reemplazar` it is a new budget as always
+    for raro in ("../fuera", "a/b", "..", ".oculto", "a" + chr(92) + "b"):
+        assert pv._destino_a_reemplazar(salida / "visor", raro) is None                         # only a plain file name of output/visor
+
+
 def test_form_validation_is_ticketrequest(entorno):
     _, pv, _, _ = entorno
     solicitud = pv.construir_solicitud(_campos(ticket_id="", contact_name="", technology="metro",

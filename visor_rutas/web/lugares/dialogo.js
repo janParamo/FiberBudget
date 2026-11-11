@@ -236,9 +236,12 @@
     if (r.postes_existentes !== undefined) filas.push(["Postes existentes en la ruta", r.postes_existentes], ["Postes nuevos que pide el presupuesto", r.postes_nuevos_necesarios]);
     if (r.postes_guardados) filas.push(["Postes nuevos guardados que se usan", `${r.postes_guardados_usados} de ${r.postes_guardados}`]);
     const borrar = r.postes_a_borrar || [];
+    const previa = document.getElementById("ml-d-rehacer");
+    const rehacer = r.puede_rehacer ? `<label class="ml-d-rehacer"><input type="checkbox" id="ml-d-rehacer"${previa && previa.checked ? " checked" : ""}> Al guardar, rehacer este mismo presupuesto con esta ruta `
+      + `(se actualizan su Excel, su PDF y la captura del mapa, y los postes nuevos vuelven a ponerse cada 50 m; no se crea otro presupuesto). Tarda de 10 a 40 s.</label>` : "";
     return `<h4 class="ml-d-sub">Presupuesto de esta ruta</h4><dl class="ml-d-dl">${filas.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
       + (borrar.length ? `<p class="ml-d-aviso">Al guardar se borrarán ${borrar.length} poste(s) nuevo(s) que la ruta ya no usa: ${esc(borrar.map((p) => p.nombre).join(", "))}.</p>` : "")
-      + (r.avisos && r.avisos.length ? `<p class="ml-d-nota">${esc(r.avisos.join(" · "))}</p>` : "");
+      + (r.avisos && r.avisos.length ? `<p class="ml-d-nota">${esc(r.avisos.join(" · "))}</p>` : "") + rehacer;
   }
 
   function ponerResumen(r) {

@@ -24,6 +24,7 @@ def _todo(con, actor, carpeta):
     """{tipo: [(nombre, geometry, propiedades)]} of what a folder of the tree holds."""
     arbol = lugares.arbol(con, actor)
     ids = {c["id"] for c in arbol["carpetas"] if c["nombre"] == carpeta}
+    ids |= {c["id"] for c in arbol["carpetas"] if c.get("padre_id") in ids and c["nombre"] == "Postes nuevos"}          # the new poles have their own folder inside it
     salida: dict[str, list] = {}
     for e in arbol["elementos"]:
         if e["carpeta_id"] in ids:
@@ -247,3 +248,35 @@ def test_an_icon_chosen_by_hand_on_the_client_or_a_pole_is_kept_and_the_type_ico
     sin_marca = {k: v for k, v in lugar["estilo"]["icono"].items() if k != "personalizado"}
     vuelto = lugares.guardar_lugar(con, actor, id=poste[3], version=lugar["version"], propiedades={"subtipo": "madera"}, estilo={"icono": sin_marca})["lugar"]
     assert vuelto["estilo"]["icono"]["id"] == "circulo" and vuelto["estilo"]["icono"]["color"] == "#8b5a2b"
+
+
+def test_the_new_poles_go_in_their_own_folder_inside_the_budget_folder(jan):
+    con, actor = jan
+    _con_todo(con, actor)
+    arbol = lugares.arbol(con, actor)
+    cliente = next(c for c in arbol["carpetas"] if c["nombre"] == "C23839_Constructores Unidos")
+    postes = [c for c in arbol["carpetas"] if c.get("padre_id") == cliente["id"]]
+    assert [c["nombre"] for c in postes] == ["Postes nuevos"]
+    en_cliente = sorted(e["tipo"] for e in arbol["elementos"] if e["carpeta_id"] == cliente["id"])
+    assert en_cliente == ["cable", "cliente", "ruta"]                                          # route, drop and client point stay in the client's folder
+    assert sorted(e["tipo"] for e in arbol["elementos"] if e["carpeta_id"] == postes[0]["id"]) == ["poste"] * 3
+    _con_todo(con, actor)                                                                        # generated again: the same folder, not another one
+    assert [c["nombre"] for c in lugares.arbol(con, actor)["carpetas"] if c["nombre"] == "Postes nuevos"] == ["Postes nuevos"]
+
+
+def test_the_budget_made_again_from_an_edited_route_refreshes_its_folder_and_poles_instead_of_going_beside_it(jan):
+    con, actor = jan
+    solicitud = {"ticket_id": "T-1", "client_name": "Constructores Unidos"}   # + the name of its Excel: the route can make it again over the same file
+    r = _con_todo(con, actor, propiedades={"solicitud": solicitud, "presupuesto": "T-1_Constructores_Unidos"})
+    ruta = _todo(con, actor, "C23839_Constructores Unidos")["ruta"][0]
+    nueva = [(lat + 0.0001, lon) for lat, lon in RUTA]                                          # the route edited by hand in Mis lugares
+    lugares.guardar_lugar(con, actor, id=ruta[3], version=lugares.obtener(con, actor, id=ruta[3])["lugar"]["version"],
+                          geom={"type": "LineString", "coordinates": [[lon, lat] for lat, lon in nueva]})
+    resumen = lugares_presupuesto.resumen_ruta(con, actor, id=ruta[3])["resumen"]
+    assert resumen["puede_rehacer"] is True                                                     # the form data was kept: the dialog offers «volver a generar»
+    otra = lugares_presupuesto.guardar_ruta(con, actor, nombre="C23839_Constructores Unidos", puntos=nueva, cliente=CLIENTE, postes_nuevos=POSTES[:2],
+                                            propiedades={"solicitud": solicitud, "presupuesto": "T-1_Constructores_Unidos"})                # the budget made again with that very route
+    assert otra["accion"] == "actualizada" and otra["carpeta_id"] == r["carpeta_id"] and otra["postes_nuevos"] == 2
+    assert [n for n, *_ in _rutas(con, actor)] == ["C23839_Constructores Unidos"]               # no «(2)» folder
+    todo = _todo(con, actor, "C23839_Constructores Unidos")
+    assert len(todo["poste"]) == 2

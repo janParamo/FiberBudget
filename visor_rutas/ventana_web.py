@@ -821,7 +821,7 @@ class Api:
             respuesta = presupuesto_visor.generar(solicitud, ruta or self._rutas, postes_existentes_m=marcados,
                                                   postes_extra=presupuesto_visor.postes_a_mano(campos_form.get("postes_a_mano")),
                                                   mufas_tocadas=presupuesto_visor.mufas_tocadas(campos_form.get("mufas_tocadas")),
-                                                  dueno_lugares=dueno)
+                                                  dueno_lugares=dueno, reemplazar=str(campos_form.get("reemplazar_presupuesto") or "") or None)
             return {"resultado": presupuesto_visor.resultado_para_visor(respuesta)}
         return self._presupuesto(accion)
 

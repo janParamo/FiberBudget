@@ -581,7 +581,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
                              get_route: Any = None,
                              new_poles_marked_existing_m: list[float] | None = None,
                              new_poles_extra: int = 0, mufa_count_override: int | None = None,
-                             dueno_lugares: dict[str, str] | None = None) -> dict[str, Any]:
+                             dueno_lugares: dict[str, str] | None = None, presupuesto_archivo: str | None = None) -> dict[str, Any]:
     """The whole budget for one request: connection point, route, quantities, map, Excel, recalc.
 
     POST /presupuesto calls it with the defaults (settings.output_dir, routing.get_route). The
@@ -804,7 +804,8 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     map_png = _route_map(req, seg, route, busqueda, desde_visio, existing_pole_records, rules, output_dir, nuevos_en_mapa)
     en_lugares = _ruta_a_lugares(req, seg, route, dueno_lugares, {                         # the same line, in Mis lugares of whoever made the budget, with its new poles, the client point and the drop
         "postes_nuevos": nuevos_en_mapa,
-        "propiedades": {"metraje_final_m": final_distance_m, "reserva_m": reserve_m, "postes_existentes": existing_poles, "postes_nuevos_n": quantities[new_pole_label]}})
+        "propiedades": {"metraje_final_m": final_distance_m, "reserva_m": reserve_m, "postes_existentes": existing_poles, "postes_nuevos_n": quantities[new_pole_label],
+                       **({"presupuesto": presupuesto_archivo} if presupuesto_archivo else {})}})      # the Excel of this budget: the route can make it again over the same file
     google_maps_url = (f"https://www.google.com/maps/dir/?api=1&origin={seg.lat:.6f},{seg.lon:.6f}"
                        f"&destination={req.latitude:.6f},{req.longitude:.6f}&travelmode=walking")
 

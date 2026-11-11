@@ -1885,6 +1885,29 @@
     mostrarResultado(r.resultado);
   }
 
+  /** The route of a budget edited in Mis lugares: the budget is made again from it (same form data, the edited route instead of Google's): new Excel, PDF and map picture,
+   *  and the new poles every 50 m again in its folder. */
+  async function rehacerPresupuestoDeRuta(solicitud, puntos) {
+    if (pres.generando || !api) { mensaje("Ya se está generando un presupuesto: espere a que termine", "error"); return; }
+    pres.generando = true;
+    mensaje("Generando el presupuesto de nuevo con la ruta editada… (mapa, postes y LibreOffice: 10–40 s)", "cargando");
+    let r;
+    try {
+      r = await api.generar_presupuesto({ ...solicitud, ruta_editada: puntos });
+    } catch (e) {
+      r = { ok: false, error: "Error al comunicarse con Python: " + e };
+    } finally {
+      pres.generando = false;
+    }
+    if (!r.ok) { mensaje(r.error || "No se pudo generar el presupuesto", "error"); return; }
+    const lg = r.resultado.en_lugares;
+    mensaje(`Presupuesto generado de nuevo: ${r.resultado.nombre}` + (lg && !lg.ok ? ` · la ruta NO se guardó en Mis lugares (${lg.error})` : ""), lg && !lg.ok ? "error" : "ok");
+    if (window.MisLugares && window.MisLugares.cargar) window.MisLugares.cargar();
+    hist.cargado = false;
+    mostrarVista("presupuesto");
+    mostrarResultado(r.resultado);
+  }
+
   // --- historial: presupuestos guardados por el visor (output/visor; en remoto, los del servidor)
   const hist = { lista: [], cargado: false, seleccionado: null };
 
@@ -2548,7 +2571,7 @@
           window.CampoVisor.iniciar({ mapa, api, mensaje, mostrarVista });
         }
         if (window.MisLugares) {       // "Mis lugares": folders and places of the user (lugares/mis_lugares.js)
-          window.MisLugares.iniciar({ mapa, api, mensaje, copiar, midiendo: () => med.activo, agregarPunto: (ll) => agregarPunto(imantar(ll)) })
+          window.MisLugares.iniciar({ mapa, api, mensaje, copiar, rehacerPresupuesto: rehacerPresupuestoDeRuta, midiendo: () => med.activo, agregarPunto: (ll) => agregarPunto(imantar(ll)) })
             .catch((e) => console.error("MisLugares", e));
         }
         if (window.BarraHerramientas) {   // toolbar above the map (mapa/barra_herramientas.js)

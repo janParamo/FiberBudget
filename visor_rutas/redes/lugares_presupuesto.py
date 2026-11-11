@@ -29,6 +29,7 @@ from visor_rutas.redes import lugares, repositorio
 
 log = logging.getLogger(__name__)
 
+CARPETA_POSTES = "Postes nuevos"
 CARPETA = "Presupuestos"
 ESTILO_RUTA = {"linea": {"color": "#ffd400", "grosor": 5, "opacidad": 1}}
 SUBTIPO_POSTE_NUEVO = "ideay_8_120"      # the new poles of a budget are the 8 m ones (new_pole_row_label of the rules)
@@ -112,6 +113,13 @@ def _carpeta(con: Any, actor: dict[str, Any]) -> int:
     return fila["id"] if fila else lugares.guardar_carpeta(con, actor, nombre=CARPETA)["id"]
 
 
+def _carpeta_postes(con: Any, actor: dict[str, Any], carpeta: int) -> int:
+    """The «Postes nuevos» folder inside the budget folder (made when missing): the client's folder holds the route, the drop, the client point and this one."""
+    fila = con.execute("SELECT id FROM redes.lugares_carpetas WHERE padre_id = %s AND usuario_id = %s AND lower(nombre) = lower(%s) AND borrado_en IS NULL ORDER BY id LIMIT 1",
+                       (carpeta, actor["id"], CARPETA_POSTES)).fetchone()
+    return fila["id"] if fila else lugares.guardar_carpeta(con, actor, nombre=CARPETA_POSTES, padre_id=carpeta)["id"]
+
+
 def _borrar(con: Any, actor: dict[str, Any], ids: list[int]) -> None:
     """Logical delete of places that nothing else hangs from (a pole of a budget, its drop, its client point)."""
     for ident in ids:
@@ -127,8 +135,9 @@ def _crear_acompanantes(con: Any, actor: dict[str, Any], carpeta: int, nombre: s
                         postes_nuevos: list[tuple[float, float]]) -> dict[str, Any]:
     """The client point, the drop and the new poles of the budget inside its folder. {"cliente_id", "acometida_id", "acometida_m", "postes_nuevos": [ids]}."""
     hecho: dict[str, Any] = {"cliente_id": None, "acometida_id": None, "acometida_m": 0.0, "postes_nuevos": []}
+    carpeta_postes = _carpeta_postes(con, actor, carpeta) if postes_nuevos else carpeta         # the new poles in their own folder: one box turns them all off
     for n, (lat, lon) in enumerate(postes_nuevos, 1):
-        lugar = lugares.guardar_lugar(con, actor, carpeta_id=carpeta, tipo="poste", nombre=f"Poste nuevo {n}", geom={"type": "Point", "coordinates": [round(lon, 7), round(lat, 7)]},
+        lugar = lugares.guardar_lugar(con, actor, carpeta_id=carpeta_postes, tipo="poste", nombre=f"Poste nuevo {n}", geom={"type": "Point", "coordinates": [round(lon, 7), round(lat, 7)]},
                                       propiedades={"subtipo": SUBTIPO_POSTE_NUEVO})
         hecho["postes_nuevos"].append(lugar["lugar"]["id"])
     if not cliente or cliente.get("lat") is None or cliente.get("lon") is None:
@@ -176,7 +185,7 @@ def guardar_ruta(con: Any, actor: dict[str, Any], *, nombre: str, puntos: list[t
                                "ORDER BY id LIMIT 1", (igual["id"],)).fetchone()
         if igual is not None and ruta is not None:
             guardada = _huella([[round(lon, 7), round(lat, 7)] for lon, lat in json.loads(ruta["g"])["coordinates"]])
-            if guardada == (ruta["propiedades"] or {}).get("huella"):                       # untouched since it was generated: all of it is refreshed
+            if guardada == (ruta["propiedades"] or {}).get("huella") or guardada == huella:   # untouched since it was generated, or the budget was made again from this very route: all of it is refreshed
                 previos = [i for i in [(ruta["propiedades"] or {}).get("acometida_id"), (ruta["propiedades"] or {}).get("cliente_id"), *((ruta["propiedades"] or {}).get("postes_nuevos") or [])] if i]
                 _borrar(con, actor, previos)
                 hecho = _crear_acompanantes(con, actor, igual["id"], nombre, coordenadas, cliente, nuevos)
@@ -290,6 +299,7 @@ def resumen_ruta(con: Any, actor: dict[str, Any], *, id: int, puntos: list[list[
         resumen["avisos"] = ["No se pudo calcular el metraje final ni los postes con las reglas del presupuesto"]
     guardados = _postes_guardados(con, props.get("postes_nuevos") or [])
     usados, sin_uso = _clasificar_postes(guardados, linea)
+    resumen["puede_rehacer"] = bool(props.get("solicitud") and props.get("presupuesto"))        # the budget can be made again over its Excel from this route (its form data and file name were kept)
     resumen["postes_guardados"] = len(guardados)
     resumen["postes_guardados_usados"] = len(usados)
     resumen["postes_a_borrar"] = [{"id": p["id"], "nombre": p["nombre"]} for p in sin_uso]

@@ -430,20 +430,27 @@ def postes_marcados(valor: Any) -> list[float] | None:
 
 def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: str | None = None,
             ahora: datetime | None = None, postes_existentes_m: list[float] | None = None,
-            postes_extra: int = 0, mufas_tocadas: int | None = None, dueno_lugares: dict[str, str] | None = None) -> dict[str, Any]:
+            postes_extra: int = 0, mufas_tocadas: int | None = None, dueno_lugares: dict[str, str] | None = None, reemplazar: str | None = None) -> dict[str, Any]:
     """Genera el presupuesto con main._generar_presupuesto_con en output/visor.
 
     Devuelve la misma respuesta que POST /presupuesto, con excel_path apuntando al archivo
     renombrado <cliente>_<lat>_<lon>_<AAAAMMDD-HHMMSS>.xlsx. No escribe budget_index.json.
     postes_existentes_m: postes nuevos marcados como existentes en el mapa (metros de la ruta);
     se cobran como existentes y no como instalación de poste nuevo.
+    reemplazar: nombre (sin extensión) del presupuesto que se rehace con una ruta editada: el Excel nuevo queda sobre ese mismo archivo (y su PDF se borra para hacerse de nuevo);
+    no se crea otro presupuesto.
     """
     ahora = ahora or datetime.now()
     carpeta = carpeta_visor()
     carpeta.mkdir(parents=True, exist_ok=True)
     limpiar_archivos_viejos(carpeta)
     visio_con = red_fibra_pg.connect_or_none()
-    opcionales: dict[str, Any] = {"dueno_lugares": dueno_lugares} if dueno_lugares else {}      # who gets the route in Mis lugares
+    destino = _destino_a_reemplazar(carpeta, reemplazar) if reemplazar else None
+    if destino is None:                                                       # a new budget: its file name is known now, to keep it with the route in Mis lugares
+        destino = carpeta / (_nombre_archivo(nombre_base, solicitud.latitude, solicitud.longitude, ahora) if nombre_base
+                             else nombre_presupuesto(solicitud.ticket_id, solicitud.client_name, carpeta))
+        reemplazar = None
+    opcionales: dict[str, Any] = {"dueno_lugares": dueno_lugares, "presupuesto_archivo": destino.stem} if dueno_lugares else {}      # who gets the route in Mis lugares
     if postes_existentes_m:
         opcionales["new_poles_marked_existing_m"] = postes_existentes_m
     if postes_extra:
@@ -459,17 +466,28 @@ def generar(solicitud: main.TicketRequest, get_route: Any = None, nombre_base: s
         if visio_con is not None:
             visio_con.close()
     generado = Path(respuesta["excel_path"])
-    if nombre_base:                                                            # approximate / measurement: <name>_<lat>_<lon>_<date>.xlsx
-        destino = carpeta / _nombre_archivo(nombre_base, solicitud.latitude, solicitud.longitude, ahora)
-        if destino.exists():
-            destino.unlink()
-    else:                                                                       # a budget of the form: <ticket>_<client>.xlsx (never over another one: _2, _3...)
+    if reemplazar:                                                             # the budget made again: over its own file; the PDF of the old one goes (it is made again from this one)
+        pdf = destino.with_suffix(".pdf")
+        pdf.unlink(missing_ok=True)
+        almacen_archivos.borrar("visor", pdf.name)
+    elif nombre_base:                                                          # approximate / measurement: <name>_<lat>_<lon>_<date>.xlsx
+        destino.unlink(missing_ok=True)
+    elif destino.exists():                                                     # a budget of the form: <ticket>_<client>.xlsx (never over another one: _2, _3...)
         destino = carpeta / nombre_presupuesto(solicitud.ticket_id, solicitud.client_name, carpeta)
     generado.replace(destino)
     respuesta["excel_path"] = str(destino)
     almacen_archivos.guardar_archivo("visor", destino.name, destino)
     log.info("Visor: budget %s saved as %s", respuesta["budget_id"], destino.name)
     return respuesta
+
+
+def _destino_a_reemplazar(carpeta: Path, nombre: str) -> Path | None:
+    """The Excel of output/visor named `nombre` (no extension, no folders) that a budget made again goes over; None when the name is not a plain file name."""
+    nombre = str(nombre or "").strip()
+    if not nombre or nombre.startswith(".") or "/" in nombre or "\\" in nombre or Path(nombre).name != nombre:
+        return None
+    destino = (carpeta / f"{nombre}.xlsx").resolve()
+    return destino if destino.parent == carpeta.resolve() else None
 
 
 def supuestos_estimacion(metraje_final_m: float, rules: dict[str, Any]) -> dict[str, Any]:

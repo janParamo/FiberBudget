@@ -402,8 +402,13 @@ class ProveedorRemoto:
         return self._seguro(accion)
 
     def generar_presupuesto(self, campos: dict[str, Any]) -> dict[str, Any]:
-        return self._seguro(lambda: self._json("POST", "/visor/presupuesto", json={"campos": dict(campos or {})},
-                                               timeout=TIMEOUT_PRESUPUESTO_S))
+        r = self._seguro(lambda: self._json("POST", "/visor/presupuesto", json={"campos": dict(campos or {})},
+                                            timeout=TIMEOUT_PRESUPUESTO_S))
+        rehecho = str((campos or {}).get("reemplazar_presupuesto") or "")
+        if r.get("ok") and rehecho and RE_ID.match(rehecho) and rehecho not in (".", ".."):          # made again over the same file: the copies downloaded here are of the old one
+            for sufijo in (".xlsx", ".pdf", ".xlsx.sync"):
+                (self.carpeta / "descargas" / f"{rehecho}{sufijo}").unlink(missing_ok=True)
+        return r
 
     def estimar_presupuesto(self, lat: float, lon: float, metraje_final_m: float | None = None,
                             postes_existentes_m: list[float] | None = None, ruta: list[list[float]] | None = None,

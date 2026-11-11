@@ -371,6 +371,7 @@
           geom = tipo === "poligono" ? { type: "Polygon", coordinates: [pts] } : { type: "LineString", coordinates: pts };
           if (pts.length < (tipo === "poligono" ? 3 : 2)) return { ok: false, error: "Faltan puntos" };
         }
+        const rehacer = esPresupuesto && !!(document.getElementById("ml-d-rehacer") || {}).checked && !!(e.propiedades || {}).solicitud && !!(e.propiedades || {}).presupuesto;       // «volver a generar el presupuesto» of the summary
         const base = { nombre: d.nombre, geom, descripcion_html: d.descripcion_html, imagenes: d.imagenes, estilo: d.estilo, vista: d.vista };
         if (formRed) base.propiedades = { ...formRed.leer(), ...(tipo === "cable" ? t.extremos : {}) };
         const r = e
@@ -390,6 +391,7 @@
         guardarAbiertas();
         window.Lugares.refrescar();
         aviso(`${TITULO[tipo]} guardada en ${rutaCarpeta(r.lugar.carpeta_id)}`, "ok");
+        if (rehacer && ml.ctx.rehacerPresupuesto) ml.ctx.rehacerPresupuesto({ ...e.propiedades.solicitud, reemplazar_presupuesto: e.propiedades.presupuesto }, geom.coordinates.map((p) => [p[1], p[0]]));      // the route is already saved: the budget comes out of it
         return { ok: true };
       },
     });
