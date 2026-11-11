@@ -7,7 +7,7 @@ Autorizar que la máquina virtual del servicio de presupuestos (Fiber Budget) se
 
 | | |
 |---|---|
-| **Origen (a autorizar)** | VM del servicio (Ubuntu 24.04, el servicio corre en un contenedor Docker). IP interna **10.0.40.154**; hacia Internet sale con la IP pública **[COMPLETAR: IP pública de salida de la VM]**, que es la que verá el servidor de Kayako |
+| **Origen (a autorizar)** | VM del servicio (Ubuntu 24.04, el servicio corre en un contenedor Docker). IP interna **10.0.40.154**; hacia Internet sale con la IP pública **186.1.12.2**, que es la que verá el servidor de Kayako |
 | **Destino** | `soporte.ideay.com`, puerto **3306** (MySQL/MariaDB) |
 | **Base** | `kayako_fusion` |
 | **Usuario** | el usuario de solo lectura que ya existe para este programa (hoy autorizado solo desde la PC de desarrollo) |
