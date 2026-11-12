@@ -231,9 +231,16 @@ def persona_de_campo(x_visor_key: str | None = Header(default=None)) -> str:
     raise HTTPException(status_code=401, detail="X-Visor-Key no válida o ausente")
 
 
-def persona_limitada(persona: str = Depends(persona_visor)) -> str:
-    """persona_visor plus the hourly limit (endpoints that can call Google Directions)."""
+def contar_consulta(persona: str) -> None:
+    """Counts one query (Google) of the person for the hourly limit. The super administrator has no limit (and is not counted)."""
+    if rol_de_persona(persona) == "super_administrador":
+        return
     limitador.registrar(persona, limite_por_hora())
+
+
+def persona_limitada(persona: str = Depends(persona_visor)) -> str:
+    """persona_visor plus the hourly limit (endpoints that can call Google Directions); the super administrator is not limited."""
+    contar_consulta(persona)
     return persona
 
 
@@ -436,7 +443,7 @@ def masivas_iniciar(pedido: MasivasIniciarPedido, persona: str = Depends(persona
     """Starts a batch on the server. Every point can ask Google for a route, so each valid point counts for the hourly limit of the person."""
     validos = sum(1 for p in pedido.puntos if p.get("incluir") and p.get("estado") == "ok")
     for _ in range(validos):
-        limitador.registrar(persona, limite_por_hora())
+        contar_consulta(persona)
     with _registro(persona, "masivas.iniciar") as estado:
         return _resultado_ok(_para_remoto(api_local().masivas_iniciar(pedido.nombre, pedido.puntos, pedido.comentario)), estado)
 
@@ -807,7 +814,7 @@ def redes(metodo: str = PathParam(pattern=r"^[a-z_]{1,40}$"), pedido: RedesPedid
     except the methods that call Google (CON_LIMITE: the address search)."""
     from visor_rutas.redes.api import CON_LIMITE
     if metodo in CON_LIMITE:                     # address search calls Google
-        limitador.registrar(persona, limite_por_hora())
+        contar_consulta(persona)
     with _registro(persona, f"redes.{metodo}") as estado:
         respuesta = servicio_redes().llamar(metodo, (pedido.args if pedido else {}), persona_visor=persona)
         if metodo in ("guardar_usuario", "estado_usuario"):

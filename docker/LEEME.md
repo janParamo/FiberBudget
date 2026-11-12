@@ -178,4 +178,4 @@ docker compose --profile db exec app python herramientas/configurar_usuarios.py 
 
 **Cambiar una clave:** se reemplaza en el `.env` de la VM y se le entrega la nueva a la persona (Configuración del visor). La anterior deja de servir en el acto.
 
-El servidor aplica estos límites en cada petición (un guest que llame a un endpoint que no le toca recibe 403); la pantalla además oculta lo que no le corresponde. El rol se consulta cada 30 segundos, así que un cambio de rol llega a la persona en menos de un minuto.
+El servidor aplica estos límites en cada petición (un guest que llame a un endpoint que no le toca recibe 403); la pantalla además oculta lo que no le corresponde. El rol se consulta cada 30 segundos, así que un cambio de rol llega a la persona en menos de un minuto. El límite de consultas por hora (`VISOR_RATE_LIMIT_PER_HOUR`, 60 por defecto: rutas con Google, presupuestos, coordenadas masivas, búsqueda de direcciones) no se aplica al `super_administrador` (Jan): sus consultas ni se cuentan. Los demás roles siguen con el límite.

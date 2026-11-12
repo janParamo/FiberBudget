@@ -152,6 +152,21 @@ def test_the_service_refuses_what_the_role_does_not_allow_and_a_deactivated_user
     assert cliente.get("/visor/info", headers=JAN).status_code == 200
 
 
+def test_the_super_administrator_has_no_hourly_limit_and_the_others_keep_it(entorno, monkeypatch):
+    _, _, cliente, _, _ = entorno
+    monkeypatch.setenv("VISOR_RATE_LIMIT_PER_HOUR", "2")
+    roles = {"jan": "super_administrador"}
+    monkeypatch.setattr(visor_api, "rol_de_persona", lambda persona: roles.get(persona))
+    visor_api.limitador.reiniciar()
+    cuerpo = {"texto": "12.1364, -86.2514"}
+    assert [cliente.post("/visor/ruta", json=cuerpo, headers=JAN).status_code for _ in range(6)] == [200] * 6      # far past the limit of 2
+    assert visor_api.limitador._consultas.get("jan") is None                                                   # not even counted
+    roles["jan"] = "administrador"
+    codigos = [cliente.post("/visor/ruta", json=cuerpo, headers=JAN).status_code for _ in range(3)]
+    assert codigos == [200, 200, 429]                                                                          # any other role is limited as before
+    visor_api.limitador.reiniciar()
+
+
 def test_the_role_is_asked_to_the_database_cached_and_forgotten_when_a_role_changes(monkeypatch):
     llamadas = []
 
