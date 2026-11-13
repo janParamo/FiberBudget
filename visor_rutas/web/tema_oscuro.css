@@ -107,7 +107,6 @@ body.tema-oscuro .er-vertice.pegado { background: #135131; }
 body.tema-oscuro .er-met-total { color: #7393e5; }
 body.tema-oscuro .er-nota-cuerpo.ql-editor { background: rgba(63, 59, 15, 0.96); }
 body.tema-oscuro .er-quill { background: #161b24; }
-body.tema-oscuro .mu-red-vista { background: #15202a; }
 body.tema-oscuro .mg-barra { background: #202833; }
 body.tema-oscuro #mg-filas tr.mg-p1 td:first-child, body.tema-oscuro #mg-filas tr.mg-p2 td:first-child, body.tema-oscuro #mg-filas tr.mg-p3 td:first-child { color: #e67575; }
 body.tema-oscuro .rm-nodo:focus circle, body.tema-oscuro .rm-nodo:hover circle { stroke: #337ced; }
@@ -115,7 +114,6 @@ body.tema-oscuro .rm-barra { background: #161b24; }
 body.tema-oscuro .mu-migas a { color: #337ced; }
 body.tema-oscuro .mu-nombre input { background: #19232d; }
 body.tema-oscuro .mu-barra { background: #19232d; }
-body.tema-oscuro .mu-lienzo { background: #15202a; }
 body.tema-oscuro .mu-resumen { background: #161b24; color: #cfd4df; }
 body.tema-oscuro .mu-vecinas { background: #19232d; color: #cfd4df; }
 body.tema-oscuro .mu-vecinas .mu-vecina { border: 1px solid #1b3569; background: #161b24; color: #7393e5; }
@@ -179,7 +177,6 @@ body.tema-oscuro .lz-menu-op:hover, body.tema-oscuro .lz-menu-op.actual { backgr
 body.tema-oscuro .dg-campo select option { background: #161b24; color: #cfd4df; }
 body.tema-oscuro .lz-item:hover { border-color: #1c3d77; }
 body.tema-oscuro .lz-sin { color: #f2a265; }
-body.tema-oscuro .lz-lienzo { background-color: #161b24; background-image: linear-gradient(#1e2733 1px, transparent 1px), linear-gradient(90deg, #1e2733 1px, transparent 1px); }
 body.tema-oscuro #mu-sangria.activo { background: #421010; color: #f26e6e; }
 body.tema-oscuro .fh-sangria { color: #f26e6e; }
 body.tema-oscuro .fh-sangre td:first-child b, body.tema-oscuro .fh-sangre .fh-flecha { color: #e74242; }

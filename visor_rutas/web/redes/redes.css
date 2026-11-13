@@ -262,7 +262,7 @@ body.visio-al-lado #modal-diagrama { left: 50%; z-index: 3350; padding-left: 6px
 .mu-grupo + .mu-grupo { padding-left: 14px; border-left: 1px solid var(--borde); }
 .mu-barra select { height: 28px; font: inherit; font-size: 12px; }
 .mu-estado-lbl { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--texto-suave); }
-.mu-lienzo { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #fbfcfd; }
+.mu-lienzo { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #fff; }      /* paper: white in both themes (its grid is drawn by each editor) */
 .mu-konva { position: absolute; inset: 0; }
 .mu-konva[hidden] { display: none; }
 /* mufa summary: model, fibres spliced / free, trays, migration state (migración Visio, fase 4) */
@@ -480,7 +480,37 @@ textarea#pb-descripcion, textarea#pe-descripcion { width: 100%; resize: vertical
 .lz-tipo { grid-column: 2; font-size: 11px; color: var(--texto-suave); }
 .lz-sin { color: #b45309; }
 .lz-vacio { padding: 10px; color: var(--texto-suave); font-style: italic; }
-.lz-lienzo { background-color: #fff; background-image: linear-gradient(#eef1f5 1px, transparent 1px), linear-gradient(90deg, #eef1f5 1px, transparent 1px); background-size: 24px 24px; }
+/* The canvas: white squared paper in both themes. --lz-c (cell), --lz-x / --lz-y (offset) follow the pan and the zoom (lienzo.js); every 5th line is stronger. */
+.lz-lienzo { --lz-c: 24px; --lz-x: 0px; --lz-y: 0px; background-color: #fff;
+  background-image: linear-gradient(#d3dae5 1px, transparent 1px), linear-gradient(90deg, #d3dae5 1px, transparent 1px), linear-gradient(#edf0f5 1px, transparent 1px), linear-gradient(90deg, #edf0f5 1px, transparent 1px);
+  background-size: calc(var(--lz-c) * 5) calc(var(--lz-c) * 5), calc(var(--lz-c) * 5) calc(var(--lz-c) * 5), var(--lz-c) var(--lz-c), var(--lz-c) var(--lz-c);
+  background-position: var(--lz-x) var(--lz-y); }
+.mu-lienzo > .dg-vacio { color: #586174; }
+/* what floats over the canvas (the same in both themes: it is over white paper) */
+.lz-flota { position: absolute; z-index: 3; display: flex; align-items: center; background: rgba(255, 255, 255, .94); border: 1px solid #d9dfe9; border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(16, 24, 40, .12), 0 1px 3px rgba(16, 24, 40, .08); color: #1a2130; font-size: 12px; backdrop-filter: blur(6px); }
+.lz-flota[hidden] { display: none; }
+.lz-info { top: 12px; left: 12px; max-width: calc(100% - 24px); padding: 6px 12px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #586174; }
+.lz-info b { color: #1a2130; }
+.lz-info:empty { display: none; }
+.lz-pista { left: 12px; bottom: 12px; gap: 4px; padding: 5px 10px; color: #6b7487; font-size: 11px; pointer-events: none; }
+.lz-pista kbd { padding: 0 5px; border: 1px solid #cfd6e2; border-bottom-width: 2px; border-radius: 4px; background: #f5f7fa; color: #3b4455; font: inherit; font-size: 10px; box-shadow: none; }
+.lz-zoom { right: 12px; bottom: 12px; padding: 3px; gap: 2px; }
+.lz-zb { height: 28px; min-width: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: #2a3345; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.lz-zb:hover { background: #e9eef8; color: #1f58d8; }
+.lz-zoom-valor { min-width: 54px; font-size: 12px; font-variant-numeric: tabular-nums; color: #586174; }
+.lz-zoom-ajustar { margin-left: 3px; padding: 0 10px; border-left: 1px solid #e1e6ee; border-radius: 0 7px 7px 0; font-size: 12px; }
+.lz-leyenda { right: 12px; top: 12px; flex-direction: column; align-items: stretch; gap: 3px; padding: 8px 12px; max-width: 200px; }
+.lz-leyenda h4 { margin: 0 0 2px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #8892a3; }
+.lz-leyenda h4 + div ~ h4 { margin-top: 6px; }
+.lz-ley { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.lz-ley i { flex: none; width: 12px; height: 12px; border-radius: 3px; }
+.lz-ley i.cable { height: 4px; width: 18px; border-radius: 2px; }
+.lz-ley span { margin-left: auto; padding-left: 10px; color: #8892a3; font-variant-numeric: tabular-nums; }
+.lz-tip { position: absolute; z-index: 4; left: 0; top: 0; max-width: 320px; padding: 6px 10px; border-radius: 8px; background: #1a2130; color: #fff; font-size: 12px; line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, .28); pointer-events: none; }
+.lz-tip[hidden] { display: none; }
+.lz-tip small { display: block; color: #b6bfd0; font-size: 11px; }
 #mu-sangria.activo { background: #fde4e4; border-color: #e11d1d; color: #a30f0f; font-weight: 700; }
 .fh-sangria { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; font-size: 11px; color: #a30f0f; white-space: nowrap; }
 .fh-sangre td:first-child b, .fh-sangre .fh-flecha { color: #e11d1d; }

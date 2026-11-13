@@ -342,6 +342,7 @@ body.tema-oscuro {
   .hoja-excel, .diagrama-lienzo, .dg-lienzo { --fondo: #ffffff; --fondo-suave: #f5f6f9; --borde: #e0e4eb; --borde-fuerte: #c9cfda; --texto: #1a2130; --texto-suave: #586174; --texto-tenue: #8892a3;
                 color: #1a2130; color-scheme: light; }
   .hoja-excel { background: #fff; }
+  .mu-lienzo, .mu-red-vista { color-scheme: light; }
   /* editor de texto (Quill): sus íconos y bordes */
   .ql-toolbar.ql-snow, .ql-container.ql-snow { border-color: var(--borde-fuerte); }
   .ql-snow .ql-stroke { stroke: var(--texto-suave); }

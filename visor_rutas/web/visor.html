@@ -416,16 +416,11 @@
           <button id="lz-abrir-a" type="button" class="btn btn-chico" hidden title="Abre el editor de mufa del origen para conectar sus hilos">Abrir origen</button>
           <button id="lz-abrir-b" type="button" class="btn btn-chico" hidden title="Abre el editor de mufa del destino para conectar sus hilos">Abrir destino</button>
         </div>
-        <span id="lz-info" class="nota"></span>
+        <div class="mu-grupo">
         <label class="dg-check lz-coord" title="Al arrastrar una mufa a la lista, la caja se pone donde está en el mapa (sin mapa de fondo)"><input id="lz-por-coord" type="checkbox" checked> Colocar por coordenadas</label>
         <label class="lz-zona-caja" title="Compacta: solo la dirección del mapa (arriba, abajo, izquierda, derecha), las cajas pegadas. Real: con la distancia del mapa">Distribución <select id="lz-distribucion" aria-label="Distribución"><option value="compacta">Compacta (solo la dirección)</option><option value="real">Real (a escala)</option></select></label>
         <label class="lz-zona-caja" title="Solo en la distribución real: píxeles del esquema por cada metro del mapa">Escala <select id="lz-escala" aria-label="Escala"></select></label>
         <button id="lz-geo" type="button" class="btn btn-chico" data-lz-edita title="Volver a acomodar todas las cajas según las coordenadas reales de sus mufas">Acomodar por coordenadas</button>
-        <span class="nota lz-ayuda" title="Como en Visio">Rueda: mover · Ctrl + rueda: zoom</span>
-        <div class="mu-grupo">
-          <button id="lz-alejar" type="button" class="btn-icono" title="Alejar">−</button>
-          <button id="lz-acercar" type="button" class="btn-icono" title="Acercar">＋</button>
-          <button id="lz-ajustar" type="button" class="btn btn-chico" title="Ver todo el esquema">Ajustar</button>
         </div>
       </div>
       <div class="lz-cuerpo">
@@ -436,7 +431,17 @@
           <ul id="lz-lista" class="lz-lista"></ul>
         </aside>
         <div id="lz-lienzo" class="mu-lienzo lz-lienzo"><div id="lz-konva" class="mu-konva"></div>
-          <p id="lz-vacio" class="dg-vacio">Arrastre aquí las mufas y los nodos de la lista (o haga doble clic en ellos) para armar el esquema de la zona.</p></div>
+          <p id="lz-vacio" class="dg-vacio">Arrastre aquí las mufas y los nodos de la lista (o haga doble clic en ellos) para armar el esquema de la zona.</p>
+          <div id="lz-info" class="lz-flota lz-info" role="status"></div>
+          <div id="lz-leyenda" class="lz-flota lz-leyenda" hidden aria-label="Colores del esquema"></div>
+          <div class="lz-flota lz-pista" title="Como en Visio"><kbd>Rueda</kbd> mover · <kbd>Ctrl</kbd> + <kbd>Rueda</kbd> zoom · arrastrar el fondo lo desplaza</div>
+          <div class="lz-flota lz-zoom" role="group" aria-label="Zoom del esquema">
+            <button id="lz-alejar" type="button" class="lz-zb" title="Alejar" aria-label="Alejar">−</button>
+            <button id="lz-zoom" type="button" class="lz-zb lz-zoom-valor" title="Volver al 100 %">100 %</button>
+            <button id="lz-acercar" type="button" class="lz-zb" title="Acercar" aria-label="Acercar">＋</button>
+            <button id="lz-ajustar" type="button" class="lz-zb lz-zoom-ajustar" title="Ver todo el esquema">Ajustar</button>
+          </div>
+          <div id="lz-tip" class="lz-tip" hidden></div></div>
       </div>
     </div>
   </div>

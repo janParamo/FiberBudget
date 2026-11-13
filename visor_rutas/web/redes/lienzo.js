@@ -28,7 +28,7 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = (v) => Redes.esc(v);
-  const ANCHO = 132, ALTO = 44;
+  const ANCHO = 132, ALTO = 44, BORDE_CAJA = "rgba(16, 24, 40, 0.45)";
   const COLOR = { nodo: "#f5a623", odf: "#4a5568", empalme: "#e53935", distribucion: "#d4b000", terminal: "#d500f9", reserva: "#7b8794", mufa: "#e53935" };
   const COLOR_HILOS = { 144: "#e53935", 96: "#fb8c00", 72: "#1e88e5", 48: "#8e24aa", 24: "#43a047", 12: "#00acc1" };
   const HILOS = [12, 24, 48, 72, 96, 144, 2, 4, 6, 8];
@@ -257,12 +257,74 @@
       const lado = e.evt.shiftKey ? (e.evt.deltaY || e.evt.deltaX) : e.evt.deltaX, arriba = e.evt.shiftKey ? 0 : e.evt.deltaY;
       st.stage.position({ x: st.stage.x() - lado, y: st.stage.y() - arriba });
     });
+    st.stage.on("xChange yChange scaleXChange", programarVista);       // the grid and the zoom figure follow whatever moves or zooms the canvas
+    st.stage.on("mousemove", moverTip);
+    st.stage.on("mouseleave dragstart", () => tip(null));
     st.stage.on("click tap", (e) => { if (e.target === st.stage) { seleccionar(null); if (st.modo === "cable") st.origen = null, resaltarOrigen(); } });
     new ResizeObserver(() => { if (caja.clientWidth) st.stage.size({ width: caja.clientWidth, height: caja.clientHeight }); }).observe(caja);
   }
 
+  // ------------------------------------------------------------------ the view: squared paper, zoom figure, legend and the label under the pointer
+  let vistaPendiente = 0;
+  function programarVista() { if (!vistaPendiente) vistaPendiente = requestAnimationFrame(() => { vistaPendiente = 0; vista(); }); }
+
+  /** The squared paper moves and grows with the canvas (24 px cells; too small to tell apart, they become 5 times bigger) and the zoom figure is put. */
+  function vista() {
+    if (!st.stage) return;
+    const k = st.stage.scaleX(), caja = $("lz-lienzo");
+    let celda = 24 * k;
+    while (celda < 9) celda *= 5;
+    caja.style.setProperty("--lz-c", `${celda}px`);
+    caja.style.setProperty("--lz-x", `${st.stage.x()}px`);
+    caja.style.setProperty("--lz-y", `${st.stage.y()}px`);
+    $("lz-zoom").textContent = `${k >= 0.1 ? Math.round(k * 100) : (k * 100).toFixed(1)} %`;
+  }
+
+  /** Zooms by `factor` (or to `fijo`) keeping the centre of the canvas where it is. */
+  function zoom(factor, fijo) {
+    const viejo = st.stage.scaleX(), nuevo = Math.max(ZOOM_MIN, Math.min(3, fijo || viejo * factor));
+    const cx = st.stage.width() / 2, cy = st.stage.height() / 2;
+    const punto = { x: (cx - st.stage.x()) / viejo, y: (cy - st.stage.y()) / viejo };
+    st.stage.scale({ x: nuevo, y: nuevo });
+    st.stage.position({ x: cx - punto.x * nuevo, y: cy - punto.y * nuevo });
+  }
+
+  /** What the colours mean: the kinds of box and the cables (by hilos) that are in the schema, with how many. */
+  function leyenda() {
+    const tipos = new Map(), cables = new Map();
+    st.pos.forEach((p, id) => { const e = st.elementos.get(id); if (!e) return; const t = etiquetaTipo(e); tipos.set(t, { color: colorDe(e), n: ((tipos.get(t) || {}).n || 0) + 1 }); });
+    st.lineas.forEach((l) => { const t = l.c.hilos ? `${l.c.hilos} hilos` : "Sin hilos"; cables.set(t, { color: l.color, n: ((cables.get(t) || {}).n || 0) + 1, orden: l.c.hilos || 0 }); });
+    const fila = (cls) => ([t, v]) => `<div class="lz-ley"><i class="${cls}" style="background:${esc(v.color)}"></i>${esc(t)}<span>${v.n}</span></div>`;
+    $("lz-leyenda").innerHTML = (tipos.size ? `<h4>Cajas</h4>${[...tipos].map(fila("")).join("")}` : "")
+      + (cables.size ? `<h4>Cables</h4>${[...cables].sort((a, b) => b[1].orden - a[1].orden).map(fila("cable")).join("")}` : "");
+    $("lz-leyenda").hidden = !tipos.size;
+  }
+
+  /** The label under the pointer: the name of a box (when the zoom leaves it too small to read) or what a cable is. null hides it. */
+  function tip(html) {
+    const t = $("lz-tip");
+    t.hidden = !html;
+    if (html) { t.innerHTML = html; moverTip(); }
+  }
+  function moverTip() {
+    const t = $("lz-tip"), p = st.stage.getPointerPosition();
+    if (t.hidden || !p) return;
+    const w = t.offsetWidth, h = t.offsetHeight;
+    t.style.transform = `translate(${Math.max(4, Math.min(st.stage.width() - w - 4, p.x + 14))}px, ${p.y + 18 + h > st.stage.height() ? p.y - h - 10 : p.y + 18}px)`;
+  }
+  const tipCaja = (e) => {
+    if (st.stage.scaleX() >= 0.7) return null;                              // big enough: the name is read on the box
+    const n = st.cables.filter((c) => c.origen_id === e.id || c.destino_id === e.id).length;
+    return `<b>${esc(e.nombre)}</b><small>${esc(etiquetaTipo(e))} · ${n} cable(s)</small>`;
+  };
+  const tipCable = (c) => {
+    const o = st.elementos.get(c.origen_id), d = st.elementos.get(c.destino_id);
+    return `<b>${esc(c.nombre)}</b><small>${esc(o ? o.nombre : "?")} → ${esc(d ? d.nombre : "?")} · ${c.hilos || "?"} hilos · ${Math.round(c.longitud_m || 0).toLocaleString("es-NI")} m</small>`;
+  };
+
   function dibujar() {
     if (!st.stage) return;
+    tip(null);
     st.capaLineas.destroyChildren(); st.capaCajas.destroyChildren();
     st.cajas.clear(); st.lineas.clear();
     st.pos.forEach((p, id) => {
@@ -273,19 +335,22 @@
     resaltar();
     st.capaLineas.draw(); st.capaCajas.draw();
     $("lz-vacio").hidden = st.pos.size > 0;
+    leyenda();
+    vista();
   }
 
   function crearCaja(e, p) {
     const g = new Konva.Group({ x: p.x, y: p.y, draggable: puedeEditar() && st.modo !== "cable", name: "caja" });
-    g.add(new Konva.Rect({ width: ANCHO, height: ALTO, cornerRadius: e.tipo === "nodo" ? 22 : 8, fill: colorDe(e), stroke: "#1a1a1a", strokeWidth: 1.5, shadowColor: "#000", shadowBlur: 4, shadowOpacity: 0.25, shadowOffsetY: 2, name: "marco" }));
+    g.add(new Konva.Rect({ width: ANCHO, height: ALTO, cornerRadius: e.tipo === "nodo" ? 22 : 10, fill: colorDe(e), stroke: BORDE_CAJA, strokeWidth: 1, shadowColor: "#101828", shadowBlur: 10, shadowOpacity: 0.22, shadowOffsetY: 3, name: "marco" }));
     if (e.tipo !== "mufa") g.add(new Konva.Text({ x: 0, y: -15, width: ANCHO, text: "⚡ Fuente de la red", fontSize: 10, fontStyle: "bold", fill: "#b45309", align: "center", listening: false }));
     g.add(new Konva.Text({ x: 6, y: 5, width: ANCHO - 12, height: ALTO - 10, text: e.nombre, fontSize: 12, fontStyle: "bold", fill: "#fff", align: "center", verticalAlign: "middle", ellipsis: true, wrap: "word", listening: false }));
     g.on("dragmove", () => { st.pos.set(e.id, { x: g.x(), y: g.y() }); moverLineas(e.id); });
     g.on("dragend", () => { st.pos.set(e.id, { x: Math.round(g.x() * 100) / 100, y: Math.round(g.y() * 100) / 100 }); st.pendientes.add(e.id); st.quitar.delete(e.id); programarGuardado(); });
     g.on("click tap", (ev) => { ev.cancelBubble = true; clicCaja(e); });
     g.on("dblclick dbltap", (ev) => { ev.cancelBubble = true; entrar(e); });
-    g.on("mouseenter", () => { st.stage.container().style.cursor = st.modo === "cable" ? "crosshair" : "pointer"; });
-    g.on("mouseleave", () => { st.stage.container().style.cursor = "default"; });
+    g.on("mouseenter", () => { st.stage.container().style.cursor = st.modo === "cable" ? "crosshair" : "pointer"; tip(tipCaja(e)); });
+    g.on("mouseleave", () => { st.stage.container().style.cursor = "default"; tip(null); });
+    g.on("dragstart", () => tip(null));
     st.capaCajas.add(g);
     st.cajas.set(e.id, g);
   }
@@ -306,8 +371,8 @@
     rotulo.offsetX(rotulo.width() / 2); rotulo.offsetY(rotulo.height() / 2);
     g.add(linea, rotulo);
     g.on("click tap", (ev) => { ev.cancelBubble = true; seleccionar({ tipo: "cable", id: c.id }); });
-    g.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; });
-    g.on("mouseleave", () => { st.stage.container().style.cursor = "default"; });
+    g.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tip(tipCable(c)); });
+    g.on("mouseleave", () => { st.stage.container().style.cursor = "default"; tip(null); });
     st.capaLineas.add(g);
     st.lineas.set(c.id, { g, linea, rotulo, color, c });
   }
@@ -327,7 +392,7 @@
       const marco = g.findOne(".marco");
       const sel = st.seleccion && st.seleccion.tipo === "caja" && st.seleccion.id === id;
       const origen = st.modo === "cable" && st.origen === id;
-      marco.stroke(origen ? "#00c853" : sel ? "#1f6feb" : "#1a1a1a"); marco.strokeWidth(origen || sel ? 4 : 1.5);
+      marco.stroke(origen ? "#00c853" : sel ? "#1f6feb" : BORDE_CAJA); marco.strokeWidth(origen || sel ? 4 : 1);
     });
     st.lineas.forEach((l, id) => {
       const sel = st.seleccion && st.seleccion.tipo === "cable" && st.seleccion.id === id;
@@ -353,7 +418,7 @@
     $("lz-hilos").hidden = !(s && s.tipo === "caja");
     $("lz-hilos-a").hidden = $("lz-hilos-b").hidden = !(s && s.tipo === "cable");
     if (!s) {
-      caja.textContent = st.modo === "cable" ? (st.origen ? "Clic en la caja donde termina el cable" : "Clic en la caja donde empieza el cable") : "Seleccione una caja o un cable. Doble clic en una caja: entrar a su editor de mufa.";
+      caja.textContent = st.modo === "cable" ? (st.origen ? "Clic en la caja donde termina el cable" : "Clic en la caja donde empieza el cable") : "Seleccione una caja o un cable · doble clic en una caja abre su editor de mufa";
       return;
     }
     if (s.tipo === "caja") {
@@ -796,8 +861,9 @@
     $("lz-buscar").addEventListener("input", pintarLista);
     $("lz-ver-colocados").addEventListener("change", pintarLista);
     $("lz-ajustar").addEventListener("click", ajustar);
-    $("lz-acercar").addEventListener("click", () => st.stage.scale({ x: st.stage.scaleX() * 1.2, y: st.stage.scaleY() * 1.2 }));
-    $("lz-alejar").addEventListener("click", () => st.stage.scale({ x: st.stage.scaleX() / 1.2, y: st.stage.scaleY() / 1.2 }));
+    $("lz-acercar").addEventListener("click", () => zoom(1.25));
+    $("lz-alejar").addEventListener("click", () => zoom(1 / 1.25));
+    $("lz-zoom").addEventListener("click", () => zoom(1, 1));
     $("lz-conectar").addEventListener("click", () => modoCable(st.modo !== "cable"));
     $("lz-quitar").addEventListener("click", quitarSeleccion);
     $("lz-renombrar-mufa").addEventListener("click", renombrarCaja);

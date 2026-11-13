@@ -65,6 +65,21 @@ async def _recorrido(zona):
         assert y[ids["n"]] > y[ids["m1"]] > y[ids["m2"]] and len({f["x"] for f in filas}) == 1                   # by real coordinates: north up, same longitude
         assert await p_.evaluar("document.getElementById('lz-cuenta').textContent") == "3 de 3 en el esquema"
         assert await p_.evaluar("document.querySelectorAll('#lz-lista .lz-item').length") == 0                     # what is placed leaves the list
+        # the canvas is white squared paper in the dark theme too; its grid follows the pan and the zoom; legend, zoom figure and the label under the pointer
+        assert await p_.evaluar("document.body.classList.contains('tema-oscuro') && getComputedStyle(document.getElementById('lz-lienzo')).backgroundColor") == "rgb(255, 255, 255)"
+        assert await p_.evaluar("getComputedStyle(document.getElementById('mu-lienzo')).backgroundColor") == "rgb(255, 255, 255)"
+        leyenda = await p_.evaluar("document.getElementById('lz-leyenda').innerText")
+        assert "Nodo" in leyenda and "Mufa (empalme)" in leyenda and "48 hilos" in leyenda and "24 hilos" in leyenda
+        await p_.evaluar("(() => { const s = window.Esquema._st.stage; s.scale({x: 1, y: 1}); s.position({x: 37, y: 53}); return true; })()")
+        await p_.esperar("document.getElementById('lz-zoom').textContent === '100 %' && document.getElementById('lz-lienzo').style.getPropertyValue('--lz-x') === '37px'", 5)
+        assert await p_.evaluar("(() => { const c = document.getElementById('lz-lienzo').style; return [c.getPropertyValue('--lz-c'), c.getPropertyValue('--lz-x'), c.getPropertyValue('--lz-y')]; })()") == ["24px", "37px", "53px"]
+        await p_.evaluar("document.getElementById('lz-alejar').click(); document.getElementById('lz-alejar').click(); document.getElementById('lz-alejar').click(); true")
+        await p_.esperar("document.getElementById('lz-zoom').textContent === '51 %'", 5)
+        await p_.evaluar("window.Esquema._st.cajas.get(%d).fire('mouseenter'); true" % ids["m1"])                 # too small to read: the name shows under the pointer
+        assert "MF Uno" in await p_.evaluar("document.getElementById('lz-tip').hidden ? '' : document.getElementById('lz-tip').innerText")
+        await p_.evaluar("window.Esquema._st.cajas.get(%d).fire('mouseleave'); true" % ids["m1"])
+        assert await p_.evaluar("document.getElementById('lz-tip').hidden") is True
+        await p_.evaluar("document.getElementById('lz-ajustar').click(); true")
         # moving a box saves its new place
         await p_.evaluar("(() => { const g = window.Esquema._st.cajas.get(%d); g.x(900); g.y(300); g.fire('dragend'); return true; })()" % ids["m2"])
         await p_.esperar("document.getElementById('lz-estado').textContent.includes('Guardado')", 10)
