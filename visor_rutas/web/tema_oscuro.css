@@ -49,8 +49,6 @@ body.tema-oscuro .vp-campo.invalido input, body.tema-oscuro .vp-campo.invalido s
 body.tema-oscuro .vp-lista-pendientes { color: #f8e9a6; }
 body.tema-oscuro .vp-hoja { background: #222837; }
 body.tema-oscuro .vp-pdf { background: #222837; }
-body.tema-oscuro .hoja-excel { background: #161b24; }
-body.tema-oscuro table.xl { color: #edeef3; background: #161b24; }
 body.tema-oscuro .pres-lineas td { border-bottom: 1px solid #1f2533; }
 body.tema-oscuro .lg-estado { background: #0e1e3b; color: #8eaee4; }
 body.tema-oscuro .lg-estado.error { background: #3d0e14; }

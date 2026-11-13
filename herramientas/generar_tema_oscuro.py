@@ -29,7 +29,7 @@ PROPIEDADES_TEXTO = ("color", "fill", "stroke")
 # never touched: what is drawn over the map or the diagrams (their colours mean something there) and the pieces that are dark in both themes
 SIN_TOCAR = re.compile(r"\.etiqueta|\.leaflet-|\.icono|\.cluster-|\.tooltip-|\.anillo-|\.kc-pin|\.ms-num|\.campo-marca|\.er-problema|\.menu-lateral|\.menu-item|\.menu-pie|"
                        r"\.menu-plegar|\.menu-insignia|\.menu-separador|\.barra\b|\.barra-|\.bh-|\.paleta|\.medir-ayuda|\.ml-ayuda|\.er-ayuda|\.aviso-captura|\.lg-foto-grande|"
-                       r"\.vista-icono|\.avatar|\.estado-modo|kbd|\.pr-cabecera|\.muestra|\.lg-muestra|\.lg-color|\.sup-punto|\.mu-leyenda|\.dg-bus-mufa")
+                       r"\.hoja-excel|table\.xl|\.vista-icono|\.avatar|\.estado-modo|kbd|\.pr-cabecera|\.muestra|\.lg-muestra|\.lg-color|\.sup-punto|\.mu-leyenda|\.dg-bus-mufa")
 
 
 def _rgba(texto: str) -> tuple[float, float, float, float] | None:

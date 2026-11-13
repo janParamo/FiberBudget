@@ -338,6 +338,9 @@ body.tema-oscuro {
   ::placeholder { color: var(--texto-tenue); }
   .pastilla.ok::before { box-shadow: 0 0 0 3px rgba(74, 222, 128, .18); }
   .rol-super_administrador { background: #6d3fd1; color: #fff; }
+  /* la hoja del presupuesto (vista previa del Excel) es papel: blanca y con sus colores en cualquier tema */
+  .hoja-excel { --fondo: #ffffff; --fondo-suave: #f5f6f9; --borde: #e0e4eb; --borde-fuerte: #c9cfda; --texto: #1a2130; --texto-suave: #586174; --texto-tenue: #8892a3;
+                background: #fff; color: #1a2130; color-scheme: light; }
   /* editor de texto (Quill): sus íconos y bordes */
   .ql-toolbar.ql-snow, .ql-container.ql-snow { border-color: var(--borde-fuerte); }
   .ql-snow .ql-stroke { stroke: var(--texto-suave); }
