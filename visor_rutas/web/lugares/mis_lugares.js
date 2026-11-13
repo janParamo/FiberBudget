@@ -278,7 +278,8 @@
     const t = ml.trabajo;
     if (!t) return;
     ml.ctx.mapa.pm.disableDraw();
-    ml.ctx.mapa.doubleClickZoom.enable();                    // it was off while drawing / editing (see empezarDibujo)
+    if (t.finDibujo) t.finDibujo();
+    ml.ctx.mapa.doubleClickZoom.enable();                    // it was off while editing (see activarEdicion)
     if (t.capa) { if (t.capa.pm) t.capa.pm.disable(); ml.ctx.mapa.removeLayer(t.capa); }
     ml.trabajo = null;
     ayuda("");
@@ -366,7 +367,7 @@
         let geom;
         if (puntual) geom = unidad(punto);
         else {
-          if (!t.capa) return { ok: false, error: tipo === "poligono" ? "Dibuje el polígono en el mapa" : "Dibuje la ruta en el mapa: clic para cada punto y doble clic para terminar" };
+          if (!t.capa) return { ok: false, error: tipo === "poligono" ? "Dibuje el polígono en el mapa" : "Dibuje la ruta en el mapa: clic para cada punto y Enter para terminar" };
           const pts = lineaDe(t.capa).map((p) => [p.lng, p.lat]);
           geom = tipo === "poligono" ? { type: "Polygon", coordinates: [pts] } : { type: "LineString", coordinates: pts };
           if (pts.length < (tipo === "poligono" ? 3 : 2)) return { ok: false, error: "Faltan puntos" };
@@ -420,15 +421,58 @@
   }
 
   function activarEdicion(t, medir) {
+    ml.ctx.mapa.doubleClickZoom.disable();                   // moving the vertices: a double click on one must not zoom
     t.capa.pm.enable({ allowSelfIntersection: true, snappable: false });
     t.capa.on("pm:edit pm:vertexadded pm:vertexremoved pm:markerdrag pm:markerdragend", medir);
   }
 
+  /** Drawing a route or a polygon: a click for each point and ENTER ends it. The double click does not end it: it zooms the map as always
+   *  (the point its first click put goes). Retroceso takes the last point back. */
   function empezarDibujo(t, tipo, medir) {
-    const mapa = ml.ctx.mapa;
-    mapa.doubleClickZoom.disable();                          // the double click that ends the line must not zoom the map
-    ayuda(`${tipo === "ruta" ? "Ruta" : "Polígono"}: clic para cada punto · doble clic (o clic en el primero) para terminar · Esc cancela`);
+    const mapa = ml.ctx.mapa, forma = tipo === "ruta" ? "Line" : "Polygon", minimo = tipo === "ruta" ? 2 : 3;
+    const dibujo = mapa.pm.Draw[forma];
+    if (!dibujo._verticeGeoman) {                            // once: Geoman ends the shape on a click over its last point (the 2nd click of a double click)
+      dibujo._verticeGeoman = dibujo._createVertex;
+      dibujo._createVertex = function (ev) {
+        if (this._soloEnter) {
+          if (ev.originalEvent && ev.originalEvent.detail > 1) return;
+          const ll = this._layer.getLatLngs(), ultimo = ll[ll.length - 1];
+          if (ultimo && this._map.latLngToContainerPoint(ultimo).distanceTo(this._map.latLngToContainerPoint(ev.latlng)) < 4) return;
+        }
+        return this._verticeGeoman(ev);
+      };
+    }
+    dibujo._soloEnter = true;
+    let agregado = 0;
+    const puntos = () => (dibujo._layer ? dibujo._layer.getLatLngs().length : 0);
+    const alVertice = (ev) => {                              // its points let the clicks through (to the map): none ends the shape
+      agregado = Date.now();
+      const el = ev.marker && ev.marker.getElement && ev.marker.getElement();
+      if (el) el.style.pointerEvents = "none";
+    };
+    const alDoble = () => { if (Date.now() - agregado < 700 && puntos() > 1) { agregado = 0; dibujo._removeLastVertex(); } };
+    const alTecla = (ev) => {
+      const campo = ev.target.closest && ev.target.closest("textarea, select, button, [contenteditable], input");
+      if (campo && !(ev.key === "Enter" && campo.matches("input") && puntos() >= minimo)) return;       // (Enter in a field of the window with the shape drawn: ends it too)
+      if (ev.key === "Enter") {
+        ev.preventDefault(); ev.stopPropagation();
+        if (puntos() >= minimo) dibujo._finishShape();
+        else aviso(`Faltan puntos: ${tipo === "ruta" ? "una ruta lleva al menos 2" : "un polígono lleva al menos 3"}`, "error");
+      } else if (ev.key === "Backspace" && puntos() > 1) { ev.preventDefault(); dibujo._removeLastVertex(); }
+    };
+    t.finDibujo = () => {
+      t.finDibujo = null;
+      dibujo._soloEnter = false;
+      mapa.off("dblclick", alDoble).off("pm:drawstart", alInicio);
+      if (dibujo._layer) dibujo._layer.off("pm:vertexadded", alVertice);
+      document.removeEventListener("keydown", alTecla, true);
+    };
+    const alInicio = (ev) => ev.workingLayer.on("pm:vertexadded", alVertice);
+    mapa.on("dblclick", alDoble).on("pm:drawstart", alInicio);
+    document.addEventListener("keydown", alTecla, true);
+    ayuda(`${tipo === "ruta" ? "Ruta" : "Polígono"}: clic para cada punto · Enter termina · doble clic acerca el mapa (no termina) · Retroceso quita el último · Esc cancela`);
     mapa.once("pm:create", (ev) => {
+      if (t.finDibujo) t.finDibujo();
       if (ml.trabajo !== t) { mapa.removeLayer(ev.layer); return; }
       ev.layer.options.pane = tipo === "ruta" ? "mlLineas" : "mlPoligonos";
       t.capa = ev.layer;
@@ -438,8 +482,8 @@
       medir();
     });
     mapa.pm.setGlobalOptions({ snappable: false, allowSelfIntersection: true });
-    mapa.pm.enableDraw(tipo === "ruta" ? "Line" : "Polygon", {
-      finishOn: "dblclick", snappable: false, allowSelfIntersection: true,
+    mapa.pm.enableDraw(forma, {
+      finishOn: null, snappable: false, allowSelfIntersection: true,
       pathOptions: opcionesLinea(t.estilo, { pane: tipo === "ruta" ? "mlLineas" : "mlPoligonos", fill: tipo === "poligono" }),
       templineStyle: { color: t.estilo.linea.color, weight: t.estilo.linea.grosor }, hintlineStyle: { color: t.estilo.linea.color, dashArray: [6, 6] },
     });

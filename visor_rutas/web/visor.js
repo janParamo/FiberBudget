@@ -192,7 +192,9 @@
     mapa.on("contextmenu", alClicDerecho);
     mapa.on("click", alClicMapa);
     mapa.on("mousemove", alMoverMouse);
-    mapa.on("dblclick", () => { if (med.activo) terminarMedicion(); });
+    // While measuring the double click does NOT end the measurement (Enter, right click or «Terminar medida» do): it zooms the map as always.
+    // Its first click put a point a moment ago: that one goes.
+    mapa.on("dblclick", () => { if (med.activo && Date.now() - (med.agregado || 0) < 700) { med.agregado = 0; quitarUltimoPunto(); } });
     mapa.on("movestart zoomstart", ocultarMenu);
   }
 
@@ -1545,7 +1547,6 @@
     $("nueva-medida").hidden = false;
     $("medir-ayuda").style.borderLeftColor = med.color;
     mapa.getContainer().classList.add("midiendo");
-    mapa.doubleClickZoom.disable();
     $("medir-ayuda").hidden = false;
     med.capa = L.layerGroup().addTo(mapa);
     med.linea = L.polyline([], { color: med.color, weight: 4, interactive: false }).addTo(med.capa);
@@ -1561,6 +1562,7 @@
     // The two clicks of a double click land on the same spot: ignore the repeat.
     if (ultimo && mapa.latLngToContainerPoint(ultimo).distanceTo(mapa.latLngToContainerPoint(latlng)) < 4) return;
     med.puntos.push(latlng);
+    med.agregado = Date.now();                   // (a double click takes back the point of its first click: see iniciarMapa)
     med.linea.setLatLngs(med.puntos);
     L.circleMarker(latlng, { radius: 4, color: "#003a40", weight: 2, fillColor: med.color, fillOpacity: 1,
                              interactive: false }).addTo(med.capa);
@@ -1612,7 +1614,6 @@
     $("medir").innerHTML = "&#x1F4CF; Medir";
     $("nueva-medida").hidden = true;
     mapa.getContainer().classList.remove("midiendo");
-    mapa.doubleClickZoom.enable();
     $("medir-ayuda").hidden = true;
   }
 

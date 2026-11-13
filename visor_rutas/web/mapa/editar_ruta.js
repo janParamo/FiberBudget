@@ -7,7 +7,7 @@
  *
  *   «✎ Editar ruta» (tarjeta Ruta): los puntos se arrastran, clic en el punto medio de un tramo agrega uno, clic derecho en un punto lo quita.
  *   «＋ Poste a mano»: clic en el mapa agrega un poste nuevo (clic en uno de los suyos lo quita).
- *   «✎ Ruta a mano» (barra de abajo): clic para cada punto (se pega a postes y mufas), doble clic o Enter terminan; el presupuesto se va
+ *   «✎ Ruta a mano» (barra de abajo): clic para cada punto (se pega a postes y mufas), Enter termina (el doble clic acerca el mapa, no termina); el presupuesto se va
  *   generando mientras se dibuja. «Volver a la de Google» rehace la ruta de la coordenada. «Guardar en Mis lugares» guarda la ruta.
  */
 (function () {
@@ -112,10 +112,9 @@
     const mapa = er.ctx.mapa;
     er.linea = L.polyline([], { color: "#ffe600", weight: 5, interactive: false }).addTo(mapa);
     er.guia = L.polyline([], { color: "#ffe600", weight: 2, dashArray: "6 6", interactive: false }).addTo(mapa);
-    mapa.doubleClickZoom.disable();
     mapa.getContainer().classList.add("midiendo");
     const ayuda = $("medir-ayuda");
-    if (ayuda) { ayuda.hidden = false; ayuda.textContent = "Ruta a mano: clic para cada punto (se pega a postes y mufas) · doble clic o Enter termina · Retroceso quita el último · Esc cancela. El presupuesto se va calculando."; er.ayudaPropia = true; }
+    if (ayuda) { ayuda.hidden = false; ayuda.textContent = "Ruta a mano: clic para cada punto (se pega a postes y mufas) · Enter termina · doble clic acerca el mapa (no termina) · Retroceso quita el último · Esc cancela. El presupuesto se va calculando."; er.ayudaPropia = true; }
     mapa.on("click", alClicMapa).on("mousemove", alMover).on("dblclick", alDoble);
     document.addEventListener("keydown", alTecla, true);
     er.ctx.repintar();
@@ -126,7 +125,15 @@
     const ultimo = er.puntos[er.puntos.length - 1];
     if (ultimo && ultimo.equals(ll)) return;                 // the second click of a double click
     er.puntos.push(ll);
+    er.agregado = Date.now();
     er.linea.setLatLngs(er.puntos);
+    if (er.puntos.length >= 2) programar();
+  }
+
+  function quitarUltimo() {
+    er.puntos.pop();
+    er.linea.setLatLngs(er.puntos);
+    er.guia.setLatLngs([]);
     if (er.puntos.length >= 2) programar();
   }
 
@@ -135,12 +142,13 @@
     else if (er.modo === "poste") agregarPoste(ev.latlng);
   };
   const alMover = (ev) => { if (er.modo === "dibujar" && er.puntos.length) er.guia.setLatLngs([er.puntos[er.puntos.length - 1], er.ctx.imantar(ev.latlng)]); };
-  const alDoble = (ev) => { L.DomEvent.stop(ev); if (er.modo === "dibujar") terminar(); };
+  // The double click does not end the route (Enter does): it zooms the map as always, and the point its first click put a moment ago goes.
+  const alDoble = () => { if (er.modo === "dibujar" && er.puntos.length && Date.now() - (er.agregado || 0) < 700) { er.agregado = 0; quitarUltimo(); } };
   const alTecla = (ev) => {
     if (ev.target.closest && ev.target.closest("input, textarea, select")) return;
     if (ev.key === "Escape") { ev.stopPropagation(); if (er.modo === "dibujar") terminar(); else terminar(); }
     else if (ev.key === "Enter") { ev.preventDefault(); terminar(); }
-    else if (ev.key === "Backspace" && er.modo === "dibujar") { ev.preventDefault(); er.puntos.pop(); er.linea.setLatLngs(er.puntos); er.guia.setLatLngs([]); if (er.puntos.length >= 2) programar(); }
+    else if (ev.key === "Backspace" && er.modo === "dibujar") { ev.preventDefault(); quitarUltimo(); }
   };
 
   // ------------------------------------------------------------------ postes a mano

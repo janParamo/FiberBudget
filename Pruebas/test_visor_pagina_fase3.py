@@ -85,8 +85,9 @@ async def _aceptar(p):
 async def _dibujar(p, puntos, doble=True):
     for x, y in puntos:
         await p.clic(x, y)
-    if doble:
-        await p.clic(*puntos[-1], n=2)
+    if doble:                                              # (the name stays: it ends the shape) Enter ends it; a double click only zooms the map
+        await asyncio.sleep(0.3)
+        await p.evaluar("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); true")
     await asyncio.sleep(0.6)
 
 
@@ -153,16 +154,23 @@ async def _recorrido_dueno(mundo, tmp_path):
         await asyncio.sleep(0.8)
         marca = consulta("SELECT nombre, version, ST_Y(geom) AS lat FROM redes.lugares_elementos")[0]
         assert (marca["nombre"], marca["version"]) == ("Cliente Pérez 2", 2) and marca["lat"] == pytest.approx(12 + 7 / 60 + 22.5 / 3600, abs=1e-6)
-        # ---- ruta: tres clics y doble clic; la pestaña Medidas; luego se mueve un vértice con el ratón
+        # ---- ruta: tres clics y Enter; la pestaña Medidas; luego se mueve un vértice con el ratón
         await p.clic_en('[data-bh="ruta"]')
         await p.esperar("document.getElementById('ml-dialogo') && !document.getElementById('ml-dialogo').hidden", 10)
         zoom_antes = await p.evaluar("window.visor.mapa.getZoom()")
-        await _dibujar(p, [(640, 300), (760, 380), (880, 330)])
+        await _dibujar(p, [(640, 300), (760, 380)], doble=False)
+        await asyncio.sleep(0.6)
+        await p.clic(700, 200, n=2)                                                                  # a double click: zooms the map, leaves no point and does not end the route
+        await p.esperar("window.visor.mapa.getZoom() > %s" % zoom_antes, 5)
+        await asyncio.sleep(0.6)
+        assert await p.evaluar("!window.MisLugares._ml.trabajo.capa && window.visor.mapa.pm.Draw.Line._layer.getLatLngs().length") == 2
+        await p.evaluar("window.visor.mapa.setZoom(%s, {animate: false}); true" % zoom_antes)
+        await asyncio.sleep(0.6)
+        await _dibujar(p, [(880, 330)])
         await p.evaluar("document.querySelector('[data-ml-pest=medidas]').click()")
         texto = await p.evaluar("document.getElementById('ml-d-medidas').innerText")
         assert "Puntos\n3" in texto and "Longitud" in texto
         assert await p.evaluar("window.MisLugares._ml.trabajo.capa.getLatLngs().length") == 3
-        assert await p.evaluar("window.visor.mapa.getZoom()") == zoom_antes                           # finishing with a double click did not zoom
         vertice = await p.evaluar("(() => { const m = document.querySelectorAll('.marker-icon:not(.marker-icon-middle)'); const r = m[m.length - 1].getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
         longitud_antes = await p.evaluar("window.MisLugares._ml.trabajo.capa.getLatLngs().reduce((s, q, i, a) => s + (i ? a[i - 1].distanceTo(q) : 0), 0)")
         await p.mover(*vertice)

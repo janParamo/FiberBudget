@@ -2,7 +2,7 @@
  *
  * Los puntos se colocan con un clic (igual que una marca) y se llenan en la pestaña "Datos de red" de la ventana flotante (dialogo.js).
  * Un cable se dibuja con clics: empieza y termina en un elemento de la red de Mis lugares (el cursor se pega a los elementos cercanos,
- * 18 px, como en el editor de proyectos), los puntos intermedios también se pegan; doble clic o Enter termina, Retroceso quita el
+ * 18 px, como en el editor de proyectos), los puntos intermedios también se pegan; Enter termina (el doble clic acerca el mapa, no termina), Retroceso quita el
  * último punto, Esc cancela. Al terminar se abre la ventana del cable (clase, tipo, hilos…). El servidor (redes/lugares_red.py)
  * valida, pone el ícono según el subtipo, calcula el metraje con las reglas y mueve el extremo de los cables cuando un elemento se mueve.
  *
@@ -152,7 +152,6 @@
     document.removeEventListener("keydown", c.alTecla, true);
     mapa.removeLayer(c.linea).removeLayer(c.guia).removeLayer(c.anillos);
     mapa.getContainer().classList.remove("ml-colocando");
-    mapa.doubleClickZoom.enable();
     dr.cable = null;
     ayuda("");
     if (window.BarraHerramientas) window.BarraHerramientas.marcarActivo(null);
@@ -169,6 +168,7 @@
     const ultimo = c.puntos[c.puntos.length - 1];
     if (ultimo && ultimo.latlng.equals(ll)) return;                       // the second click of a double click
     c.puntos.push({ latlng: ll, elemento: el });
+    c.agregado = Date.now();
     pintarCable();
   }
 
@@ -176,7 +176,6 @@
     if (dr.cable) limpiarCable();
     const mapa = dr.ctx.mapa;
     if (window.MisLugares.elementosRed().length < 2) { dr.ctx.aviso("Un cable une dos elementos de la red: agregue primero las mufas, postes, clientes, nodos u ODF", "error"); return; }
-    mapa.doubleClickZoom.disable();
     mapa.getContainer().classList.add("ml-colocando");
     const c = dr.cable = { carpetaId, puntos: [], linea: L.polyline([], { color: "#1f6feb", weight: 4, interactive: false }).addTo(mapa),
                            guia: L.polyline([], { color: "#1f6feb", weight: 2, dashArray: "6 6", interactive: false }).addTo(mapa), anillos: L.layerGroup().addTo(mapa) };
@@ -186,7 +185,8 @@
       const el = elementoCerca(ev.latlng);
       c.guia.setLatLngs([c.puntos[c.puntos.length - 1].latlng, el ? el.latlng : ev.latlng]);
     };
-    c.alDoble = (ev) => { L.DomEvent.stop(ev); terminarCable(); };
+    // The double click does not end the cable (Enter does): it zooms the map as always, and the point its first click put a moment ago goes.
+    c.alDoble = () => { if (c.puntos.length && Date.now() - (c.agregado || 0) < 700) { c.agregado = 0; c.puntos.pop(); pintarCable(); c.guia.setLatLngs([]); } };
     c.alTecla = (ev) => {
       if (ev.target.closest && ev.target.closest("input, textarea, select")) return;
       if (ev.key === "Escape") { ev.stopPropagation(); limpiarCable(true); }
@@ -195,7 +195,7 @@
     };
     mapa.on("click", c.alClic).on("mousemove", c.alMover).on("dblclick", c.alDoble);
     document.addEventListener("keydown", c.alTecla, true);
-    ayuda("Cable: clic en el elemento de inicio, en el recorrido (se pega a postes y mufas) y doble clic en el elemento final · Retroceso quita el último · Esc cancela");
+    ayuda("Cable: clic en el elemento de inicio, en el recorrido (se pega a postes y mufas) y en el elemento final · Enter termina · doble clic acerca el mapa (no termina) · Retroceso quita el último · Esc cancela");
     if (window.BarraHerramientas) window.BarraHerramientas.marcarActivo("cable");
   }
 

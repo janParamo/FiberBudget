@@ -63,7 +63,7 @@ async def _recorrido(mundo):
         await asyncio.sleep(0.4)
         assert "C seguido de números" in await p.evaluar("document.getElementById('ml-d-estado').textContent")
         await p.evaluar("document.getElementById('ml-d-cancelar').click(); true")
-        # ---- cable: clic en la mufa, en el poste y doble clic en el cliente (el cursor se pega a cada elemento)
+        # ---- cable: clic en la mufa, en el poste y en el cliente, y Enter (el cursor se pega a cada elemento)
         ids = {f["nombre"]: f["id"] for f in consulta("SELECT id, nombre FROM redes.lugares_elementos")}
         pos = {f["nombre"]: f["geom"]["coordinates"] for f in lugares.arbol(con, admin)["elementos"]}
         px = {n: await _pixel(p, c[1], c[0]) for n, c in pos.items()}
@@ -74,7 +74,10 @@ async def _recorrido(mundo):
         assert await p.evaluar("window._dr_puntos === undefined")
         await p.clic(px["MF-100"][0] + 6, px["MF-100"][1] - 5)                                   # near the mufa: glued to it
         await p.clic(px["P-1"][0] - 4, px["P-1"][1] + 4)
-        await p.clic(px["Casa Pérez"][0], px["Casa Pérez"][1], n=2)
+        await p.clic(px["Casa Pérez"][0], px["Casa Pérez"][1])
+        await asyncio.sleep(0.3)
+        assert await p.evaluar("window.DibujarRed.dibujando") is True                               # only Enter ends it
+        await p.evaluar("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); true")
         await _ventana(p)
         assert await p.evaluar("window.DibujarRed.dibujando") is False
         assert await p.evaluar("document.querySelector('.ml-d-pest.activa').dataset.mlPest") == "red"

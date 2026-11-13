@@ -84,7 +84,17 @@ async def _recorrido():
         ultima = await p.evaluar("window.__ediciones[window.__ediciones.length - 1]")
         assert ultima["lat"] is None and len(ultima["pts"]) == 3 and ultima["extra"] == 0
         x, y = await _pixel(p, 12.20, -86.30)
+        # a double click does not end the route: it zooms the map (as always) and leaves no point behind
+        zoom = await p.evaluar("window.visor.mapa.getZoom()")
         await p.clic(x - 20, y + 40, n=2)
+        await p.esperar("window.visor.mapa.getZoom() > %s" % zoom, 5)
+        await asyncio.sleep(0.6)
+        assert await p.evaluar("window.EditarRuta.modo") == "dibujar"
+        # one more point and Enter: that ends it
+        x, y = await _pixel(p, 12.20, -86.30)
+        await p.clic(x - 20, y + 40)
+        await asyncio.sleep(0.8)
+        await p.evaluar("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); true")
         await p.esperar("window.EditarRuta.modo === 'editar'", 10)
         assert await p.evaluar("window.EditarRuta._capa.getLatLngs().length") == 4
         assert "Ruta dibujada a mano" in await p.evaluar("document.getElementById('tarjetas').innerText")

@@ -18,6 +18,7 @@ RESULTADO = {"calculado": True, "archivo": "Medicion_x.xlsx", "nombre": "Medicio
 STUBS = """
 window.__pesadas = 0;
 window.__stubs.medir_ruta = (puntos, conTotal) => {
+  window.__puntosMedidos = puntos.length;
   if (!conTotal) return {ok: true, medicion: %(m)s};
   window.__pesadas++;
   if (window.__fallar) return {ok: false, error: 'LibreOffice no respondio'};
@@ -39,8 +40,15 @@ def test_la_medida_muestra_metraje_final_y_total():
             await asyncio.sleep(0.5)                      # two quick clicks would be a double click
             await p.clic(1000, 380)
             await asyncio.sleep(0.5)
-            await p.evaluar("document.getElementById('medir').click(); true")
+            # a double click does not end the measurement: it zooms the map (as always) and leaves no point behind; Enter ends it
+            zoom = await p.evaluar("window.visor.mapa.getZoom()")
+            await p.clic(900, 300, n=2)
+            await p.esperar("window.visor.mapa.getZoom() > %s" % zoom, 5)
+            await asyncio.sleep(0.6)
+            assert await p.evaluar("window.visor.midiendo") is True and await p.evaluar("document.querySelector('.medidas .medida-calc')") is None
+            await p.evaluar("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); true")
             await p.esperar("document.querySelector('.medidas .medida-calc')", 10)
+            assert await p.evaluar("window.__puntosMedidos") == 2
             # 1) the metraje final arrives at once, the total shows it is being calculated
             tarjeta = await p.evaluar("document.querySelector('.medidas').innerText")
             assert "520.3 m" in tarjeta or "520.2 m" in tarjeta, tarjeta
