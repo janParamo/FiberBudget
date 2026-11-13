@@ -2511,6 +2511,7 @@
     if (iniciado || !window.pywebview || !window.pywebview.api) return;
     iniciado = true;
     api = window.pywebview.api;
+    if (window.Tema) window.Tema.iniciar(api);              // dark or light, as chosen in Configuración (tema.js)
     if (window.EditarRuta) {
       window.EditarRuta.iniciar({
         get mapa() { return mapa; }, api: () => api, datos: () => datos, ICONOS, mensaje, imantar, ocupado: () => med.activo,

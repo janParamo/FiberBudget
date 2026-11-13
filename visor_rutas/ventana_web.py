@@ -56,6 +56,10 @@ except Exception as _exc:          # ImportError in the .exe; RuntimeError when 
 
 TITULO = "Visor de rutas – Fiber Budget"
 HTML = Path(__file__).resolve().parent / "web" / "visor.html"
+# How the window names itself to the web. It does not start with «Mozilla» on purpose: ngrok (free plan) puts a warning page («You are about to visit…») before the
+# site for anything that looks like a browser, and inside the visor (the Planificación view is the app of the server in a frame) its «Visit Site» button does nothing.
+# The rest is what Edge sends, so the libraries of the page keep recognising a Chromium.
+AGENTE_VENTANA = "VisorRutas/1.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"
 ICONO = Path(__file__).resolve().parent / "web" / "fiber_budget.ico"          # herramientas/icono_fiber_budget.py lo genera
 APP_ID = "IDEAY.FiberBudget.Visor"
 
@@ -1376,4 +1380,4 @@ def abrir(forzar_remoto: bool = False) -> None:
                 except Exception:        # noqa: BLE001
                     pass
     ventana.events.closed += cerrar_aparte
-    webview.start(gui="edgechromium", http_server=False, debug=False)
+    webview.start(gui="edgechromium", http_server=False, debug=False, user_agent=AGENTE_VENTANA)

@@ -45,7 +45,10 @@ async def _recorrido():
         assert await p.evaluar("document.querySelector('#tk-lista [data-ticket=\"DTF-377-48662\"] td.prioridad').classList.contains('nivel')") is True
         assert await p.evaluar("document.querySelector('#tk-lista [data-ticket=\"FMO-311-48543\"]').classList.contains('vencido')") is True
         assert await p.evaluar("document.querySelector('#tk-lista [data-ticket=\"FMO-311-48543\"] td.prioridad').classList.contains('alta')") is True
-        assert await p.evaluar("getComputedStyle(document.querySelector('#tk-lista [data-ticket=\"DTF-377-48662\"] td.estado')).backgroundColor") == "rgb(255, 244, 204)"      # the soft yellow of the theme (tema.css: --aviso-fondo)
+        assert await p.evaluar("getComputedStyle(document.querySelector('#tk-lista [data-ticket=\"DTF-377-48662\"] td.estado')).backgroundColor") == "rgba(250, 204, 21, 0.12)"      # the soft yellow of the dark theme, the default one (tema.css: --aviso-fondo)
+        await p.evaluar("window.Tema.elegir('claro'); true")                                           # Configuración > Apariencia: the light theme
+        assert await p.evaluar("getComputedStyle(document.querySelector('#tk-lista [data-ticket=\"DTF-377-48662\"] td.estado')).backgroundColor") == "rgb(255, 244, 204)"      # ...and the one of the light theme
+        await p.evaluar("window.Tema.elegir('oscuro'); true")
         assert await p.evaluar("document.querySelector('#tk-lista [data-ticket=\"DTF-377-48662\"] td.org').textContent") == "Equipos y Sistemas"
         await p.evaluar("document.getElementById('tk-con-hechos').click(); true")
         # what was read from the ticket

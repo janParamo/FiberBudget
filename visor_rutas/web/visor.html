@@ -13,9 +13,10 @@
   <link rel="stylesheet" href="visor.css">
   <link rel="stylesheet" href="redes/redes.css">
   <link rel="stylesheet" href="lugares/mis_lugares.css">
+  <link rel="stylesheet" href="tema_oscuro.css">
   <link rel="stylesheet" href="tema.css">
 </head>
-<body>
+<body class="tema-oscuro">
   <main id="mapa" aria-label="Mapa"></main>
 
   <!-- Panel "Lugares": la red del KMZ como en Google Earth (lugares.js, visor_rutas/kmz_capas.py) -->
@@ -121,10 +122,19 @@
   <div id="modal-config" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="config-titulo">
     <div class="modal-caja config-caja">
       <header class="modal-cabecera">
-        <h2 id="config-titulo">Configuración del visor</h2>
+        <h2 id="config-titulo">Configuración</h2>
         <button id="config-cerrar" type="button" class="btn-icono" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
       </header>
       <div class="config-cuerpo">
+        <fieldset id="config-tema" class="config-tema">
+          <legend>Apariencia</legend>
+          <div class="config-temas" role="radiogroup" aria-label="Apariencia">
+            <button type="button" class="config-tema-opcion" data-tema="oscuro" role="radio" aria-checked="true">
+              <span class="config-tema-muestra oscuro" aria-hidden="true"><i></i><i></i><i></i></span><b>Oscuro</b><span>Tonos negros en todas las ventanas</span></button>
+            <button type="button" class="config-tema-opcion" data-tema="claro" role="radio" aria-checked="false">
+              <span class="config-tema-muestra claro" aria-hidden="true"><i></i><i></i><i></i></span><b>Claro</b><span>Ventanas blancas (el menú sigue oscuro)</span></button>
+          </div>
+        </fieldset>
         <fieldset id="config-modos" class="config-modos">
           <legend>Modo</legend>
           <label><input type="radio" name="config-modo" value="local">
@@ -1333,6 +1343,7 @@
   <script src="mapa/barra_herramientas.js"></script>
   <script src="menu.js"></script>
   <script src="paleta.js"></script>
+  <script src="tema.js"></script>
   <script src="redes/comun.js"></script>
   <script src="redes/usuarios.js"></script>
   <script src="redes/proyectos.js"></script>

@@ -250,73 +250,104 @@ body.es-guest .barra-herramientas { display: none; }
 .ml-d-rehacer { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--primario-suave, rgba(37, 99, 235, .1)); font-size: 12.5px; line-height: 1.35; cursor: pointer; }
 .ml-d-rehacer input { margin-top: 2px; }
 
-/* ---------------------------------------------------------------- lo que flota sobre el mapa, oscuro (como el menú lateral y la barra inferior)
-   Lugares, el panel de resultados, el buscador, la leyenda, los avisos, el zoom, las ventanitas del mapa (popups) y los menús de clic derecho: se les cambian
-   las variables de color, así todo lo que llevan dentro (botones, campos, tarjetas) sale oscuro sin tocar sus reglas. Las ventanas de trabajo (presupuestos,
-   tickets, editores, diálogos) siguen claras: son para leer y escribir mucho. */
-.lugares, .abrir-lugares, .panel, .abrir-panel, .buscador, .leyenda, .estado-red, .mensaje, .menu, .lg-opacidad, .leaflet-popup, .leaflet-bar, .barra .historial {
+/* <tema-oscuro> */
+/* ---------------------------------------------------------------- tema oscuro (body.tema-oscuro; el claro es no tenerla: Configuración > Apariencia, tema.js)
+   Las variables de color cambian para toda la ventana, así lo que las usa sale oscuro sin tocar sus reglas; los colores escritos a mano en las otras hojas
+   los pasa a oscuro tema_oscuro.css (generado: herramientas/generar_tema_oscuro.py). Aquí va lo que necesita mano: los paneles sobre el mapa, el zoom, las
+   ventanitas del mapa, el editor de texto y lo que el generador no puede ver (imágenes de fondo). Las reglas van anidadas: todas valen solo en oscuro. */
+body.tema-oscuro {
   --fondo: #1a2132; --fondo-suave: #232c40; --fondo-hundido: #141a28; --borde: #2c3549; --borde-fuerte: #3b4660;
   --texto: #e8ecf5; --texto-suave: #a9b3c6; --texto-tenue: #7c879c;
-  --primario: #7aa5ff; --primario-hover: #9bbcff; --primario-suave: rgba(107, 155, 245, .18); --primario-borde: rgba(122, 165, 255, .5);
+  --primario: #5b8ef0; --primario-hover: #7aa5ff; --primario-suave: rgba(107, 155, 245, .18); --primario-borde: rgba(122, 165, 255, .5);
   --ok: #4ade80; --ok-suave: rgba(74, 222, 128, .14); --error: #ff9388; --error-suave: rgba(239, 68, 68, .16);
   --aviso-fondo: rgba(250, 204, 21, .12); --aviso-texto: #fcd34d;
   --sombra: 0 1px 2px rgba(5, 8, 15, .4), 0 10px 30px rgba(5, 8, 15, .45); --foco: 0 0 0 3px rgba(122, 165, 255, .35);
   color: var(--texto); color-scheme: dark; scrollbar-color: #3b4660 transparent;
+
+  .lugares, .panel, .buscador, .buscar-resultados, .leyenda, .estado-red, .mensaje, .menu, .lg-opacidad, .barra .historial { border: 1px solid var(--borde); }
+  .lugares { border-width: 0 1px 0 0; box-shadow: 6px 0 24px rgba(5, 8, 15, .3); background: linear-gradient(180deg, #1c2334, #171d2b); }
+  .panel { background: linear-gradient(180deg, #1c2334, #171d2b); }
+  .leyenda, .estado-red { background: rgba(23, 29, 43, .94); }
+  .abrir-lugares, .abrir-panel { color: var(--texto); border: 1px solid var(--borde); }
+  .abrir-lugares { border-left: 0; }
+  /* primary buttons keep the solid blue (the lighter --primario of the dark scope is for texts and marks) */
+  :is(.lugares, .panel, .leaflet-popup, .menu, .buscador) .btn-primario { background: #2563eb; border-color: #2563eb; color: #fff; box-shadow: 0 2px 10px rgba(37, 99, 235, .4); }
+  :is(.lugares, .panel, .leaflet-popup, .menu, .buscador) .btn-primario:hover:not(:disabled) { background: #3b76f6; border-color: #3b76f6; }
+  :is(.lugares, .panel, .leaflet-popup) .btn:not(.btn-primario) { background: rgba(255, 255, 255, .05); }
+  :is(.lugares, .panel, .leaflet-popup) .btn:not(.btn-primario):hover:not(:disabled) { background: rgba(255, 255, 255, .1); border-color: var(--texto-tenue); }
+  :is(.lugares, .panel, .leaflet-popup) .btn.activo { background: var(--primario-suave); border-color: var(--primario-borde); color: var(--primario); }
+  :is(.lugares, .panel, .leaflet-popup, .buscador) :is(input[type="checkbox"], input[type="radio"]) { accent-color: #5b8ef0; }
+  /* Lugares */
+  .lg-estado { color: #b9cdfb; }
+  .lg-fila.vacia, .lg-fila.capa-visor.vacia .lg-nombre { color: #66708a; }
+  .lg-fila:hover, .leyenda-troncales .fila:hover, .lg-fila.accion:hover, .lg-sup:hover { background: rgba(255, 255, 255, .06); }
+  .lg-fila.seccion:hover { background: var(--fondo-hundido); }
+  .lg-nombre mark { background: #facc15; color: #111; }
+  .lg-ir:hover { background: var(--primario-suave); color: var(--primario); }
+  .lg-muestra.punto, .lg-color, .sup-punto { border-color: #cfd6e4; }
+  .lg-tirador:hover, .lg-tirador.activo { background: linear-gradient(to right, transparent 3px, #5b8ef0 3px 6px, transparent 6px); }
+  /* buscador y menús */
+  .buscador input { color: var(--texto); }
+  .buscador input::placeholder, .lugares input::placeholder { color: var(--texto-tenue); }
+  .buscar-resultados li:hover, .buscar-resultados li.marcado, .menu li:hover, .barra .historial li:hover, .barra .historial li.marcado { background: rgba(122, 165, 255, .16); }
+  .menu .menu-titulo:hover, .buscar-resultados .vacio:hover, .barra .historial .vacio:hover { background: none; }
+  .mensaje { background: rgba(23, 29, 43, .96); color: var(--texto); }
+  /* panel de resultados */
+  .tarjeta { background: rgba(255, 255, 255, .035); }
+  .tarjeta.avisos { border-color: rgba(250, 204, 21, .35); }
+  .panel .etiqueta-revision, .panel .insignia.alerta { background: var(--error-suave); }
+  .panel .confianza.media { color: #fbbf24; }
+  .panel .insignia.excel { background: rgba(74, 222, 128, .16); color: #86efac; }
+  .panel .insignia.texto { background: rgba(122, 165, 255, .18); color: #a9c4ff; }
+  .panel .insignia.sin-dato, .panel .insignia.splitter-por_confirmar { background: rgba(255, 255, 255, .08); color: var(--texto-suave); }
+  .panel .insignia.piloto, .panel .insignia.diagnostico, .panel .insignia.splitter-principal { background: rgba(251, 146, 60, .16); color: #fdba74; border-color: rgba(251, 146, 60, .45); }
+  .panel .insignia.splitter-secundario { background: rgba(192, 132, 252, .18); color: #d8b4fe; }
+  .panel .diagnostico, .panel .bloque-piloto { background: rgba(251, 146, 60, .09); }
+  .panel .pres-lineas td { border-bottom-color: var(--borde); }
+  .panel .parada .punto { background: #171d2b; }
+  .panel .dg-bus-fila:hover, .panel .dg-bus-fila.activa { background: rgba(122, 165, 255, .16); }
+  /* zoom y ventanitas del mapa */
+  .leaflet-bar { border: 1px solid var(--borde) !important; box-shadow: var(--sombra); border-radius: var(--radio-md); overflow: hidden; }
+  .leaflet-bar a, .leaflet-bar a:hover { background: var(--fondo); color: var(--texto); border-bottom-color: var(--borde); }
+  .leaflet-bar a:hover { background: var(--fondo-suave); }
+  .leaflet-bar a.leaflet-disabled { background: var(--fondo-hundido); color: var(--texto-tenue); }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--fondo); color: var(--texto); box-shadow: var(--sombra); }
+  .leaflet-popup-content-wrapper { border: 1px solid var(--borde); border-radius: var(--radio-lg); }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--texto-suave); }
+  .leaflet-container a.leaflet-popup-close-button:hover { color: #fff; }
+  .menu li.ml-deshabilitado { color: #66708a; }
+  .mu-menu .menu-titulo-sep { color: #ff9388; }
+  .lg-popup .lg-foto { background: var(--fondo-hundido); }
+
+  /* vistas y ventanas */
+  .vista-presupuesto, .vista-modulo { background: radial-gradient(1200px 500px at 100% -10%, #1d2740 0%, transparent 60%), #121724; }
+  .vp-cabecera { background: rgba(23, 29, 43, .88); box-shadow: 0 1px 0 var(--borde), 0 6px 18px rgba(0, 0, 0, .25); }
+  .modal-caja { border-color: var(--borde); box-shadow: 0 0 0 1px rgba(0, 0, 0, .4), 0 30px 80px rgba(0, 0, 0, .6); }
+  .vm-tabla, .pr-tarjeta, .vp-form, .vp-historial, .vp-resultado, .tk-tabla-caja, .tk-detalle { box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+  .vm-tabla td.vacio::before, .tk-tabla td.vacio::before, .vp-vacio::before, .pr-lista > .vacio::before, .tk-detalle > .vacio::before {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237aa5ff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 13l2.5-7h11L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z'/%3E%3Cpath d='M4 13h4.5a3.5 3.5 0 0 0 7 0H20'/%3E%3C/svg%3E") center / 30px no-repeat,
+                linear-gradient(145deg, #222c44, #1a2236);
+    box-shadow: inset 0 0 0 1px #2f3b57;
+  }
+  .btn:not(.btn-primario) { background: rgba(255, 255, 255, .05); }
+  .btn:not(.btn-primario):hover:not(:disabled) { background: rgba(255, 255, 255, .1); border-color: var(--texto-tenue); }
+  .btn-primario { background: linear-gradient(180deg, #3d7af6, #2563eb); border-color: #1f58d8; color: #fff; }
+  .btn-primario:hover:not(:disabled) { background: linear-gradient(180deg, #4a84f8, #2b6af0); }
+  .btn-icono:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+  :is(input[type="checkbox"], input[type="radio"]) { accent-color: #5b8ef0; }
+  ::placeholder { color: var(--texto-tenue); }
+  .pastilla.ok::before { box-shadow: 0 0 0 3px rgba(74, 222, 128, .18); }
+  .rol-super_administrador { background: #6d3fd1; color: #fff; }
+  /* editor de texto (Quill): sus íconos y bordes */
+  .ql-toolbar.ql-snow, .ql-container.ql-snow { border-color: var(--borde-fuerte); }
+  .ql-snow .ql-stroke { stroke: var(--texto-suave); }
+  .ql-snow .ql-fill { fill: var(--texto-suave); }
+  .ql-snow .ql-picker { color: var(--texto-suave); }
+  .ql-snow .ql-picker-options { background: var(--fondo); border-color: var(--borde-fuerte); }
+  .ql-editor.ql-blank::before { color: var(--texto-tenue); }
+  .ql-snow a { color: var(--primario); }
 }
-.lugares, .panel, .buscador, .buscar-resultados, .leyenda, .estado-red, .mensaje, .menu, .lg-opacidad, .barra .historial { border: 1px solid var(--borde); }
-.lugares { border-width: 0 1px 0 0; box-shadow: 6px 0 24px rgba(5, 8, 15, .3); background: linear-gradient(180deg, #1c2334, #171d2b); }
-.panel { background: linear-gradient(180deg, #1c2334, #171d2b); }
-.leyenda, .estado-red { background: rgba(23, 29, 43, .94); }
-.abrir-lugares, .abrir-panel { color: var(--texto); border: 1px solid var(--borde); }
-.abrir-lugares { border-left: 0; }
-/* primary buttons keep the solid blue (the lighter --primario of the dark scope is for texts and marks) */
-:is(.lugares, .panel, .leaflet-popup, .menu, .buscador) .btn-primario { background: #2563eb; border-color: #2563eb; color: #fff; box-shadow: 0 2px 10px rgba(37, 99, 235, .4); }
-:is(.lugares, .panel, .leaflet-popup, .menu, .buscador) .btn-primario:hover:not(:disabled) { background: #3b76f6; border-color: #3b76f6; }
-:is(.lugares, .panel, .leaflet-popup) .btn:not(.btn-primario) { background: rgba(255, 255, 255, .05); }
-:is(.lugares, .panel, .leaflet-popup) .btn:not(.btn-primario):hover:not(:disabled) { background: rgba(255, 255, 255, .1); border-color: var(--texto-tenue); }
-:is(.lugares, .panel, .leaflet-popup) .btn.activo { background: var(--primario-suave); border-color: var(--primario-borde); color: var(--primario); }
-:is(.lugares, .panel, .leaflet-popup, .buscador) :is(input[type="checkbox"], input[type="radio"]) { accent-color: #5b8ef0; }
-/* Lugares */
-.lg-estado { color: #b9cdfb; }
-.lg-fila.vacia, .lg-fila.capa-visor.vacia .lg-nombre { color: #66708a; }
-.lg-fila:hover, .leyenda-troncales .fila:hover, .lg-fila.accion:hover, .lg-sup:hover { background: rgba(255, 255, 255, .06); }
-.lg-fila.seccion:hover { background: var(--fondo-hundido); }
-.lg-nombre mark { background: #facc15; color: #111; }
-.lg-ir:hover { background: var(--primario-suave); color: var(--primario); }
-.lg-muestra.punto, .lg-color, .sup-punto { border-color: #cfd6e4; }
-.lg-tirador:hover, .lg-tirador.activo { background: linear-gradient(to right, transparent 3px, #5b8ef0 3px 6px, transparent 6px); }
-/* buscador y menús */
-.buscador input { color: var(--texto); }
-.buscador input::placeholder, .lugares input::placeholder { color: var(--texto-tenue); }
-.buscar-resultados li:hover, .buscar-resultados li.marcado, .menu li:hover, .barra .historial li:hover, .barra .historial li.marcado { background: rgba(122, 165, 255, .16); }
-.menu .menu-titulo:hover, .buscar-resultados .vacio:hover, .barra .historial .vacio:hover { background: none; }
-.mensaje { background: rgba(23, 29, 43, .96); color: var(--texto); }
-/* panel de resultados */
-.tarjeta { background: rgba(255, 255, 255, .035); }
-.tarjeta.avisos { border-color: rgba(250, 204, 21, .35); }
-.panel .etiqueta-revision, .panel .insignia.alerta { background: var(--error-suave); }
-.panel .confianza.media { color: #fbbf24; }
-.panel .insignia.excel { background: rgba(74, 222, 128, .16); color: #86efac; }
-.panel .insignia.texto { background: rgba(122, 165, 255, .18); color: #a9c4ff; }
-.panel .insignia.sin-dato, .panel .insignia.splitter-por_confirmar { background: rgba(255, 255, 255, .08); color: var(--texto-suave); }
-.panel .insignia.piloto, .panel .insignia.diagnostico, .panel .insignia.splitter-principal { background: rgba(251, 146, 60, .16); color: #fdba74; border-color: rgba(251, 146, 60, .45); }
-.panel .insignia.splitter-secundario { background: rgba(192, 132, 252, .18); color: #d8b4fe; }
-.panel .diagnostico, .panel .bloque-piloto { background: rgba(251, 146, 60, .09); }
-.panel .pres-lineas td { border-bottom-color: var(--borde); }
-.panel .parada .punto { background: #171d2b; }
-.panel .dg-bus-fila:hover, .panel .dg-bus-fila.activa { background: rgba(122, 165, 255, .16); }
-/* zoom y ventanitas del mapa */
-.leaflet-bar { border: 1px solid var(--borde) !important; box-shadow: var(--sombra); border-radius: var(--radio-md); overflow: hidden; }
-.leaflet-bar a, .leaflet-bar a:hover { background: var(--fondo); color: var(--texto); border-bottom-color: var(--borde); }
-.leaflet-bar a:hover { background: var(--fondo-suave); }
-.leaflet-bar a.leaflet-disabled { background: var(--fondo-hundido); color: var(--texto-tenue); }
-.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--fondo); color: var(--texto); box-shadow: var(--sombra); }
-.leaflet-popup-content-wrapper { border: 1px solid var(--borde); border-radius: var(--radio-lg); }
-.leaflet-container a.leaflet-popup-close-button { color: var(--texto-suave); }
-.leaflet-container a.leaflet-popup-close-button:hover { color: #fff; }
-.menu li.ml-deshabilitado { color: #66708a; }
-.mu-menu .menu-titulo-sep { color: #ff9388; }
-.lg-popup .lg-foto { background: var(--fondo-hundido); }
+/* </tema-oscuro> */
 
 /* ================================================================ vistas de trabajo (Presupuestos, Proyectos, Tickets, Usuarios…) y ventanas
    Claras (se lee y se escribe mucho), con el mismo lenguaje que lo oscuro del mapa: superficies redondeadas, sombras suaves, un solo azul, estados como
@@ -438,3 +469,19 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 6
 .paleta-vacia { padding: 28px 12px; text-align: center; color: #8a95aa; }
 .paleta-pie { display: flex; gap: 18px; padding: 9px 16px; border-top: 1px solid #2c3549; font-size: 11.5px; color: #7c879c; }
 .paleta-pie kbd { margin-right: 3px; }
+
+/* Configuración > Apariencia: dos tarjetas con una miniatura de cada tema */
+.config-tema { margin: 0 0 14px; padding: 10px 12px 12px; border: 1px solid var(--borde); border-radius: var(--radio-md); }
+.config-tema legend { padding: 0 6px; font-size: 12px; color: var(--texto-suave); }
+.config-temas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.config-tema-opcion { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; padding: 10px 12px; text-align: left; cursor: pointer;
+                      border: 1.5px solid var(--borde-fuerte); border-radius: 12px; background: var(--fondo); color: var(--texto); font: inherit; transition: border-color .12s, box-shadow .12s; }
+.config-tema-opcion > span:last-child { grid-column: 2; font-size: 12px; color: var(--texto-suave); }
+.config-tema-opcion:hover { border-color: var(--texto-tenue); }
+.config-tema-opcion[aria-checked="true"] { border-color: #3b76f6; box-shadow: 0 0 0 3px rgba(59, 118, 246, .25); }
+.config-tema-muestra { grid-row: 1 / span 2; width: 58px; height: 42px; display: grid; grid-template-columns: 12px 1fr; grid-template-rows: 1fr 9px; gap: 3px; padding: 4px; border-radius: 8px; border: 1px solid rgba(128, 140, 165, .45); }
+.config-tema-muestra i { border-radius: 3px; }
+.config-tema-muestra i:first-child { grid-row: 1 / span 2; background: #171d2b; }
+.config-tema-muestra i:last-child { background: #171d2b; }
+.config-tema-muestra.oscuro { background: #0e121c; } .config-tema-muestra.oscuro i:nth-child(2) { background: #232c40; }
+.config-tema-muestra.claro { background: #eef1f6; } .config-tema-muestra.claro i:nth-child(2) { background: #fff; box-shadow: 0 0 0 1px #d9dee8; }
