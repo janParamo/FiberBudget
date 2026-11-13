@@ -32,9 +32,9 @@ def test_la_medida_muestra_metraje_final_y_total():
 
     async def recorrido():
         async with pagina_edge(1366, 768) as p:
-            await p.esperar("window.MedicionTotal && window.pywebview", 20)
+            await p.esperar("window.MedicionTotal && window.pywebview && document.querySelector('#barra [data-bh=medir]')", 20)
             await p.evaluar(STUBS % {"m": json.dumps(MEDICION), "r": json.dumps(RESULTADO)})
-            await p.clic_en("#medir")
+            await p.clic_en("#barra [data-bh=medir]")                # the ruler of the tools (bottom bar) starts; «Terminar medida» (#medir) only shows while measuring
             await p.clic(800, 380)
             await asyncio.sleep(0.5)                      # two quick clicks would be a double click
             await p.clic(1000, 380)
@@ -66,9 +66,9 @@ def test_si_falla_el_total_se_puede_reintentar_y_borrar_cancela():
 
     async def recorrido():
         async with pagina_edge(1366, 768) as p:
-            await p.esperar("window.MedicionTotal && window.pywebview", 20)
+            await p.esperar("window.MedicionTotal && window.pywebview && document.querySelector('#barra [data-bh=medir]')", 20)
             await p.evaluar(STUBS % {"m": json.dumps(MEDICION), "r": json.dumps(RESULTADO)} + "window.__fallar = true;")
-            await p.clic_en("#medir")
+            await p.clic_en("#barra [data-bh=medir]")                # the ruler of the tools (bottom bar) starts; «Terminar medida» (#medir) only shows while measuring
             await p.clic(800, 380)
             await asyncio.sleep(0.5)                      # two quick clicks would be a double click
             await p.clic(1000, 380)

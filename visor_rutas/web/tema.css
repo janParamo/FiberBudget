@@ -110,19 +110,42 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .buscador:focus-within { border-color: var(--primario-borde); box-shadow: var(--sombra), var(--foco); }
 .buscador input:focus-visible { box-shadow: none; }
 .buscar-resultados { border-radius: var(--radio-md); border: 1px solid var(--borde); }
-.barra-herramientas { border-radius: var(--radio-md); box-shadow: var(--sombra-suave); border: 1px solid var(--borde); padding: var(--e1); gap: 2px; }
-.bh-boton { border-radius: var(--radio-sm); color: var(--texto-suave); }
-.bh-boton:hover { background: var(--fondo-suave); color: var(--texto); }
-.bh-boton.activo { background: var(--primario-suave); color: var(--primario); box-shadow: inset 0 0 0 1.5px var(--primario-borde); }
-.bh-sep { background: var(--borde); }
 
 /* ---------------------------------------------------------------- barra inferior: un solo botón primario y el resto discretos */
-.barra { box-shadow: 0 -1px 0 var(--borde), 0 -4px 12px rgba(16, 24, 40, .05); gap: var(--e2); }
-.campo input { height: 34px; border-color: var(--borde-fuerte); }
-.hist-btn { height: 34px; border-color: var(--borde-fuerte); }
-.barra .btn:not(.btn-primario) { border-color: transparent; background: transparent; color: var(--texto-suave); }
-.barra .btn:not(.btn-primario):hover:not(:disabled) { background: var(--fondo-suave); color: var(--texto); border-color: var(--borde); }
-.barra .btn.activo { background: var(--primario-suave); color: var(--primario); border-color: var(--primario-borde); }
+/* Oscura, del mismo tono que el menú lateral (forman una «L» que enmarca el mapa). De izquierda a derecha: las herramientas del mapa (íconos), las acciones
+   de la ruta, las de medir y limpiar, y el estado del servidor. Ya no tiene el campo de coordenada: la ruta se genera desde el pincho. */
+:root { --barra-alto: 56px; --dock-texto: #c4cddd; --dock-tenue: #8a95aa; --dock-linea: rgba(255, 255, 255, .09); --dock-hover: rgba(255, 255, 255, .09); --dock-acento: #8fb4ff; }
+.barra { padding: 0 var(--e3); gap: var(--e3); border-top: 1px solid #0d111a; color: var(--dock-texto);
+         background: linear-gradient(180deg, #1c2334 0%, var(--menu-fondo) 55%, #131826 100%); box-shadow: 0 -8px 24px rgba(10, 14, 24, .22), inset 0 1px 0 rgba(255, 255, 255, .06); }
+.barra-herramientas, .barra-grupo { display: flex; align-items: center; gap: 2px; flex: none; padding: 3px; border: 1px solid var(--dock-linea); border-radius: 12px;
+                                    background: rgba(255, 255, 255, .04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); }
+.barra .bh-boton { width: 36px; height: 36px; border-radius: 9px; color: var(--dock-texto); transition: background-color .12s, color .12s, transform .12s; }
+.barra .bh-boton:hover { background: var(--dock-hover); color: #fff; }
+.barra .bh-boton:active { transform: scale(.94); }
+.barra .bh-boton.activo { background: rgba(107, 155, 245, .24); color: var(--dock-acento); box-shadow: inset 0 0 0 1.5px rgba(143, 180, 255, .55); }
+.barra .bh-boton[aria-disabled="true"] { color: #5d677a; }
+.barra .bh-sep { width: 1px; height: 20px; margin: 0 5px; background: rgba(255, 255, 255, .13); }
+.barra .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 11px; border: 0; border-radius: 9px; background: transparent; color: var(--dock-texto);
+              font-weight: 500; white-space: nowrap; transition: background-color .12s, color .12s; }
+.barra .btn[hidden] { display: none; }
+.barra .btn svg { flex: none; opacity: .9; }
+.barra .btn:hover:not(:disabled) { background: var(--dock-hover); color: #fff; border: 0; }
+.barra .btn:disabled { color: #5d677a; cursor: default; }
+.barra .btn.activo { background: var(--primario); color: #fff; box-shadow: 0 2px 10px rgba(37, 99, 235, .45); }
+.barra .btn.activo:hover:not(:disabled) { background: var(--primario-hover); }
+.barra #medir:not(.activo) { display: none; }                 /* measuring starts with the ruler of the tools; this one only ends it */
+.barra .campo { position: relative; }
+.barra .historial { bottom: 46px; left: auto; right: 0; width: 240px; border-radius: var(--radio-md); color: var(--texto); }
+.barra .estado-modo { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid var(--dock-linea);
+                      background: rgba(255, 255, 255, .05); color: var(--dock-texto); }
+.barra .estado-modo::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, .18); }
+.barra .estado-modo:hover { background: var(--dock-hover); color: #fff; }
+.barra .estado-modo.remoto { background: rgba(255, 255, 255, .05); border-color: var(--dock-linea); color: var(--dock-texto); }
+.barra .estado-modo.error { background: rgba(239, 68, 68, .16); border-color: rgba(239, 68, 68, .5); color: #ffb4ab; }
+.barra .estado-modo.error::before { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, .2); }
+.barra .estado-modo:empty { display: none; }
+@media (max-width: 1500px) { .barra .barra-grupo .btn:not(.activo) span { display: none; } .barra .barra-grupo .btn { padding: 0 9px; } }       /* narrow window: only the icons (the title says what each does) */
+@media (max-width: 1100px) { .barra { gap: var(--e2); padding: 0 var(--e2); } .barra .bh-boton { width: 31px; } .barra .estado-modo { max-width: 150px; } }
 .mensaje { border-radius: var(--radio-md); box-shadow: var(--sombra); }
 
 /* ---------------------------------------------------------------- ventanas, menús y mapa */
@@ -221,7 +244,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 body.es-guest .barra-herramientas { display: none; }
 
 /* el botón de postes: rojo mientras los postes están ocultos (para que se note que falta algo en el mapa) */
-.bh-boton.apagado { background: var(--error-suave); color: var(--error); box-shadow: inset 0 0 0 1.5px var(--error); }
+.barra .bh-boton.apagado { background: rgba(239, 68, 68, .2); color: #ff9d94; box-shadow: inset 0 0 0 1.5px rgba(239, 68, 68, .7); }
 
 /* Mis lugares › ruta de un presupuesto: la casilla de «volver a generar el presupuesto» */
 .ml-d-rehacer { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--primario-suave, rgba(37, 99, 235, .1)); font-size: 12.5px; line-height: 1.35; cursor: pointer; }

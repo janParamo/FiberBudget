@@ -633,7 +633,7 @@
           `<li>${esc(n.nombre)} <span class="nota">(${esc(n.tipo)}, ${metros(n.distancia_m, 0)})</span></li>`).join("") + "</ul>"));
       }
     } else {
-      html.push(`<p class="vacio">Pegue la coordenada del cliente abajo y presione <b>Generar ruta</b>.<br>
+      html.push(`<p class="vacio">Busque la coordenada del cliente arriba y presione <b>Generar ruta</b> en su pincho (o clic derecho en el mapa).<br>
         Clic derecho en el mapa para usar o copiar una coordenada, o para medir desde ahí.</p>`);
     }
     if (medidas.length) {
@@ -1374,11 +1374,11 @@
     mostrarDiagrama(d.nombre, `<div class="nota">${esc(d.ruta_relativa)}<br>${esc(d.coincidencias)} coincidencia(s) de «${esc(texto)}»</div>`, [archivo], 0, d.nombre);
   }
 
-  /** "Usar para generar ruta" of the pin: fills the bottom bar and calculates nothing. */
+  /** "Generar ruta" of the pin (and of the right-click menu and the recent coordinates): the route and its budget, at once. */
   function usarParaRuta(lat, lon) {
+    if (calculando) { mensaje("Ya se está calculando una ruta: espere a que termine", "error"); return; }
     $("coord").value = coordTexto(lat, lon);
-    $("coord").focus();
-    mensaje("Coordenada lista: presione Enter o Generar ruta");
+    generar();
   }
 
   /** A searched element of the network base: fly there and mark it like a searched mufa. */
@@ -1397,8 +1397,7 @@
     ocultarHistorial();
     const texto = $("coord").value.trim();
     if (!texto) {
-      mensaje("Pegue una coordenada: latitud, longitud (ejemplo: 12.153328, -86.263438)", "error");
-      $("coord").focus();
+      mensaje("Busque una coordenada arriba (latitud, longitud; ejemplo: 12.153328, -86.263438) y presione Generar ruta en su pincho", "error");
       return;
     }
     calculando = true;
@@ -1453,8 +1452,7 @@
       $("abrir-panel").hidden = true;
       actualizarOcupado();
     }
-    mensaje("Pegue una coordenada y presione Enter");
-    $("coord").focus();
+    mensaje("Busque una coordenada arriba y presione Generar ruta en su pincho");
   }
 
   // ------------------------------------------------------------------ historial
@@ -1475,9 +1473,10 @@
   function ocultarHistorial() { $("historial").hidden = true; marcadoHist = -1; }
   function elegirHistorial(i) {
     if (i < 0 || i >= historial.length) return;
+    if (calculando) { mensaje("Ya se está calculando una ruta: espere a que termine", "error"); return; }
     $("coord").value = historial[i];
     ocultarHistorial();
-    $("coord").focus();
+    generar();
   }
 
   // ------------------------------------------------------------------ menú de clic derecho
@@ -1499,9 +1498,7 @@
     if (!latlngMenu) return;
     const texto = coordTexto(latlngMenu.lat, latlngMenu.lng);
     if (accion === "usar") {
-      $("coord").value = texto;
-      $("coord").focus();
-      mensaje("Coordenada lista: presione Enter o Generar ruta");
+      usarParaRuta(latlngMenu.lat, latlngMenu.lng);
     } else if (accion === "copiar") {
       copiar(texto, `Coordenada copiada: ${texto}`);
     } else if (accion === "medir") {
@@ -2584,8 +2581,7 @@
           } });
         }
       }
-      mensaje("Pegue una coordenada y presione Enter");
-      $("coord").focus();
+      mensaje("Busque una coordenada arriba y presione Generar ruta en su pincho");
       actualizarEstadoModo();
       if (cfg.sin_configurar) abrirConfiguracion(true);   // remote mode, first time: URL and key
     } catch (e) {

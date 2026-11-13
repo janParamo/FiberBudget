@@ -1,7 +1,7 @@
 /* Pincho de una coordenada buscada (visor v2, fase 2), como la marca de Google Earth: un pincho amarillo con una
  * etiqueta con la coordenada en decimal. Clic en el pincho: copiar en decimal o en grados/minutos/segundos,
- * "Guardar en Mis lugares", "Usar para generar ruta" (llena la barra inferior SIN calcular) y "Quitar".
- * Hay uno solo: buscar otra coordenada lo cambia de sitio. No calcula ruta ni presupuesto.
+ * "Guardar en Mis lugares", "Generar ruta" (calcula de una vez la ruta y el presupuesto de esa coordenada) y "Quitar".
+ * Hay uno solo: buscar otra coordenada lo cambia de sitio y abre su ventana, con "Generar ruta" a un clic.
  *
  *   Pin.iniciar({mapa, capa, copiar, mensaje, usarParaRuta, alCambiar})
  *   Pin.poner(lat, lon)    Pin.quitar()    Pin.hay()
@@ -29,7 +29,7 @@
         <button type="button" class="btn btn-chico" data-pin="copiar-decimal">Copiar decimal</button>
         <button type="button" class="btn btn-chico" data-pin="copiar-gms">Copiar grados</button>
         <button type="button" class="btn btn-chico" data-pin="guardar" ${guardable ? "" : 'disabled title="Disponible con Mis lugares"'}>Guardar en Mis lugares</button>
-        <button type="button" class="btn btn-chico btn-primario" data-pin="ruta" title="Llena la barra inferior; no calcula nada">Usar para generar ruta</button>
+        <button type="button" class="btn btn-chico btn-primario" data-pin="ruta" title="Calcula la ruta y el presupuesto de esta coordenada">Generar ruta</button>
         <button type="button" class="btn btn-chico" data-pin="quitar">Quitar</button>
       </div></div>`;
   }
@@ -52,8 +52,12 @@
     marcador.on("popupopen", (e) => {
       e.popup.getElement().querySelectorAll("[data-pin]").forEach((b) => b.addEventListener("click", () => accion(b.dataset.pin, lat, lon)));
     });
-    if (volar) ctx.mapa.flyTo(ll, Math.max(ctx.mapa.getZoom(), 17), { duration: 0.8 });
-    ctx.mensaje(`${Coordenadas.formatoDecimal(lat, lon)} · clic en el pincho para copiar o usarla`, "ok");
+    if (volar) {
+      const puesto = marcador;                 // once there, its window opens: «Generar ruta» is one click away
+      ctx.mapa.once("moveend", () => { if (marcador === puesto) puesto.openPopup(); });
+      ctx.mapa.flyTo(ll, Math.max(ctx.mapa.getZoom(), 17), { duration: 0.8 });
+    }
+    ctx.mensaje(`${Coordenadas.formatoDecimal(lat, lon)} · Generar ruta en la ventana del pincho`, "ok");
     ctx.alCambiar();
     return marcador;
   }

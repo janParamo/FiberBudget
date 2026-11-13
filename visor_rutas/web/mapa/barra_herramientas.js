@@ -1,9 +1,9 @@
-/* Barra de herramientas del mapa (visor v2, fase 3), como la de Google Earth: íconos arriba del mapa, sin ventana aparte.
+/* Barra de herramientas del mapa (visor v2, fase 3): íconos al inicio de la barra inferior (antes flotaban sobre el mapa, bajo el buscador), sin ventana aparte.
  *
  *   Marca de posición · Polígono · Ruta · Medir | Mufa · Poste · Cliente · Cable (dibujar red, fase 4) | Importar (fase 5) · Coordenadas masivas (fase 6)
  *
- * Marca, polígono y ruta crean un lugar en una carpeta de "Mis lugares" (lugares/mis_lugares.js). Medir es el mismo botón de la
- * barra inferior. Lo que todavía no está queda deshabilitado, con un tooltip que dice en qué fase llega.
+ * Marca, polígono y ruta crean un lugar en una carpeta de "Mis lugares" (lugares/mis_lugares.js). Medir es el mismo botón «Terminar medida» de la
+ * barra inferior (ese solo se ve mientras se mide). Lo que todavía no está queda deshabilitado, con un tooltip que dice en qué fase llega.
  * El último botón (postes) no dibuja nada: oculta o muestra todos los postes del mapa (mapa/postes.js); se pone rojo mientras están ocultos.
  *   BarraHerramientas.iniciar({accion(id)})    BarraHerramientas.marcarActivo(id | null)
  */
@@ -18,7 +18,7 @@
     { id: "marca", titulo: "Marca de posición: clic en el mapa donde va", icono: svg('<path d="M12 21s-6-5.6-6-10a6 6 0 0 1 12 0c0 4.4-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>') },
     { id: "poligono", titulo: "Polígono: clic para cada punto, doble clic para terminar", icono: svg('<path d="M5 8 12 4l7 5-2 10H7z"/>') },
     { id: "ruta", titulo: "Ruta: clic para cada punto, doble clic para terminar", icono: svg('<path d="M4 18 9 9l5 6 6-10"/><circle cx="4" cy="18" r="1.4"/><circle cx="20" cy="5" r="1.4"/>') },
-    { id: "medir", titulo: "Medir distancia y área (es el botón Medir de la barra de abajo)", icono: svg('<path d="m3 16 13-13 5 5L8 21z"/><path d="m7 12 2 2M10 9l2 2M13 6l2 2"/>') },
+    { id: "medir", titulo: "Medir distancia y área: clic para cada punto, doble clic para terminar", icono: svg('<path d="m3 16 13-13 5 5L8 21z"/><path d="m7 12 2 2M10 9l2 2M13 6l2 2"/>') },
     null,
     { id: "mufa", titulo: "Mufa: clic en el mapa donde va (se guarda en una carpeta de Mis lugares)", icono: svg('<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/>') },
     { id: "poste", titulo: "Poste: clic en el mapa donde va (se guarda en una carpeta de Mis lugares)", icono: svg('<path d="M12 3v18M7 7h10M8 11h8"/>') },
@@ -36,7 +36,7 @@
 
   function iniciar(contexto) {
     ctx = contexto;
-    document.body.insertAdjacentHTML("beforeend", `<nav id="barra-herramientas" class="barra-herramientas" aria-label="Herramientas del mapa">${
+    ($("barra") || document.body).insertAdjacentHTML("afterbegin", `<nav id="barra-herramientas" class="barra-herramientas" aria-label="Herramientas del mapa">${
       BOTONES.map((b) => (b === null ? '<span class="bh-sep" role="separator"></span>'
         : `<button type="button" class="bh-boton" data-bh="${b.id}" title="${(b.pronto || b.titulo).replace(/"/g, "&quot;")}" aria-label="${b.titulo.split(":")[0]}"${b.pronto ? ' aria-disabled="true"' : ""}>${b.icono}</button>`)).join("")}</nav>`);
     $("barra-herramientas").addEventListener("click", (e) => {

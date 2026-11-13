@@ -96,13 +96,14 @@ async def _recorrido_dueno(mundo, tmp_path):
     async with pagina_edge(1366, 768, con=con) as p:
         await p.esperar("window.MisLugares && window.MisLugares.estado.listo", 20)
         await _plegar_secciones(p)
-        # ---- la barra de herramientas: arriba, sin pisar al buscador; lo que no es de esta fase, deshabilitado y con su razón
+        # ---- la barra de herramientas: dentro de la barra inferior (no sobre el mapa); lo que no es de esta fase, deshabilitado y con su razón
         botones = await p.evaluar("[...document.querySelectorAll('#barra-herramientas [data-bh]')].map(b => [b.dataset.bh, b.getAttribute('aria-disabled') === 'true', b.title])")
-        assert [b[0] for b in botones] == ["marca", "poligono", "ruta", "medir", "mufa", "poste", "cliente", "nodo", "odf", "cable", "importar", "masivas"]
+        assert [b[0] for b in botones] == ["marca", "poligono", "ruta", "medir", "mufa", "poste", "cliente", "nodo", "odf", "cable", "importar", "masivas", "postes"]
         assert [b[0] for b in botones if b[1]] == [] and "Coordenadas masivas" in botones[11][2]
         cajas = await p.cajas(barra="#barra-herramientas", buscador="#buscador", zoom=".leaflet-control-zoom", lugares="#lugares", abajo="#barra")
         assert cajas["barra"]["y"] >= cajas["buscador"]["y"] + cajas["buscador"]["h"] and not se_cruzan(cajas["barra"], cajas["buscador"])
         assert not se_cruzan(cajas["barra"], cajas["lugares"]) and not se_cruzan(cajas["barra"], cajas["zoom"])
+        assert await p.evaluar("!!document.querySelector('#barra > #barra-herramientas')") and cajas["barra"]["y"] >= cajas["abajo"]["y"]
         # ---- carpetas: la raíz, una carpeta y una subcarpeta (clic derecho)
         assert [f["texto"] for f in await _filas(p)] == ["▾ Mis lugares"]
         items = await _menu(p, "r", "Nueva carpeta")

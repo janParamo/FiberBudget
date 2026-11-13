@@ -1,11 +1,7 @@
 /* Mis lugares y la barra de herramientas del mapa (visor v2, fase 3). Los colores y z-index son los de visor.css. */
 
 /* ---------------------------------------------------------------- barra de herramientas (arriba, bajo el buscador) */
-.barra-herramientas {
-  position: absolute; top: 58px; z-index: calc(var(--z-buscador) - 5); transform: translateX(-50%);        /* under the search box: its results list opens over the toolbar */
-  left: calc(var(--ocupado-izquierda, 0px) + (100vw - var(--ocupado-izquierda, 0px) - var(--ocupado-derecha, 360px)) / 2);
-  display: flex; align-items: center; gap: 2px; padding: 4px; background: var(--fondo); border-radius: 10px; box-shadow: var(--sombra);
-}
+.barra-herramientas { display: flex; align-items: center; gap: 2px; flex: none; }        /* inside the bottom bar (tema.css gives it its look) */
 body.editando-red .barra-herramientas { display: none; }
 .bh-boton { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #3b4452; cursor: pointer; }
 .bh-boton:hover { background: var(--fondo-suave); }
@@ -13,9 +9,9 @@ body.editando-red .barra-herramientas { display: none; }
 .bh-boton[aria-disabled="true"] { color: #b3b8c2; cursor: not-allowed; }
 .bh-boton[aria-disabled="true"]:hover { background: transparent; }
 .bh-sep { width: 1px; height: 22px; background: var(--borde); margin: 0 4px; }
-.medir-ayuda { top: 108px; }
+.medir-ayuda { top: 60px; }
 .ml-ayuda {
-  position: absolute; top: 108px; transform: translateX(-50%); z-index: var(--z-ayuda);
+  position: absolute; top: 60px; transform: translateX(-50%); z-index: var(--z-ayuda);
   left: calc(var(--ocupado-izquierda, 0px) + (100vw - var(--ocupado-izquierda, 0px) - var(--ocupado-derecha, 360px)) / 2);
   background: rgba(20, 20, 20, .85); color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: var(--sombra);
   max-width: min(760px, 80vw); text-align: center; pointer-events: none;

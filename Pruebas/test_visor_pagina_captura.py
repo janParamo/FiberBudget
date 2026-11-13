@@ -1,5 +1,5 @@
 """Modo captura y buscador (página real, Edge sin ventana): el botón «Captura» deja solo el mapa a pantalla completa (sin menús, paneles, barras ni
-controles) y Esc lo devuelve; la lista de resultados del buscador queda por encima de la barra de herramientas."""
+controles) y Esc lo devuelve; las herramientas del mapa están dentro de la barra inferior, que ya no tiene campo de coordenada."""
 import asyncio
 
 import pytest
@@ -14,9 +14,9 @@ ESCONDER = ["#barra", ".barra-herramientas", ".buscador", "#lugares", "#abrir-lu
 async def _recorrido():
     async with pagina_edge(1366, 768) as p:
         await p.esperar("window.visor && window.visor.mapa && document.querySelector('.barra-herramientas')", 20)
-        # the results list of the search box is over the toolbar (same stacking context, higher z-index)
-        z = await p.evaluar("[getComputedStyle(document.querySelector('.buscador')).zIndex, getComputedStyle(document.querySelector('.barra-herramientas')).zIndex].map(Number)")
-        assert z[0] > z[1]
+        # the toolbar is inside the bottom bar (not over the map, where the results list of the search box had to open over it), and the bar has no coordinate field
+        assert await p.evaluar("!!document.querySelector('#barra > .barra-herramientas') && getComputedStyle(document.querySelector('.barra-herramientas')).position === 'static'")
+        assert await p.evaluar("document.getElementById('coord').type") == "hidden"
         visibles = await p.evaluar("%s.map(s => { const e = document.querySelector(s); return !!e && e.getBoundingClientRect().width > 0; })" % ESCONDER.__repr__())
         assert sum(visibles) >= 6                                                                  # before: the interface is there
         await p.evaluar("document.getElementById('captura').click(); true")

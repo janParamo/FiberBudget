@@ -1201,7 +1201,7 @@
       <button id="copiar-fusion" type="button" class="btn btn-chico" hidden disabled>Copiar ruta de fusión</button>
     </div>
     <div id="tarjetas" class="tarjetas" role="tabpanel">
-      <p class="vacio">Pegue la coordenada del cliente abajo y presione <b>Generar ruta</b>.</p>
+      <p class="vacio">Busque la coordenada del cliente arriba y presione <b>Generar ruta</b> en su pincho (o clic derecho en el mapa).</p>
     </div>
     <div id="fusion" class="tarjetas fusion" role="tabpanel" hidden></div>
     <!-- Presupuesto aproximado de la ruta generada (solo la coordenada, supuestos por defecto) -->
@@ -1241,21 +1241,24 @@
 
   <!-- Barra inferior -->
   <footer id="barra" class="barra">
-    <label for="coord" class="barra-etiqueta">Coordenada cliente (lat, lon):</label>
-    <div class="campo" id="campo">
-      <input id="coord" type="text" autocomplete="off" spellcheck="false"
-             placeholder="12.153328, -86.263438">
-      <button id="hist-btn" type="button" class="hist-btn" title="Últimas coordenadas" aria-label="Últimas coordenadas">&#x25BE;</button>
-      <ul id="historial" class="historial" hidden></ul>
+    <!-- Las herramientas del mapa (mapa/barra_herramientas.js) entran aquí, al inicio. La ruta se genera desde el pincho de una coordenada buscada
+         («Generar ruta») o con clic derecho en el mapa: ya no hay campo de coordenada en la barra (el campo oculto guarda la de la ruta actual). -->
+    <input id="coord" type="hidden">
+    <button id="generar" type="button" hidden></button>
+    <div class="barra-grupo">
+      <button id="ruta-mano" type="button" class="btn" title="Dibujar la ruta a mano: el presupuesto se va calculando mientras se dibuja"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/></svg><span>Ruta a mano</span></button>
+      <button id="captura" type="button" class="btn" title="Captura: oculta todo menos el mapa para tomar una imagen (Esc para volver)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg><span>Captura</span></button>
+      <div class="campo" id="campo">
+        <button id="hist-btn" type="button" class="btn" title="Últimas coordenadas: clic en una para generar su ruta de nuevo" aria-label="Últimas coordenadas"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Recientes</span></button>
+        <ul id="historial" class="historial" hidden></ul>
+      </div>
     </div>
-    <button id="generar" type="button" class="btn btn-primario">Generar ruta</button>
-    <button id="limpiar" type="button" class="btn">Limpiar</button>
-    <span class="separador"></span>
-    <button id="medir" type="button" class="btn" title="Medir distancias sobre el mapa">&#x1F4CF; Medir</button>
-    <button id="captura" type="button" class="btn" title="Captura: oculta todo menos el mapa para tomar una imagen (Esc para volver)">&#x1F4F7; Captura</button>
-    <button id="ruta-mano" type="button" class="btn" title="Dibujar la ruta a mano: el presupuesto se va calculando mientras se dibuja">&#x270E; Ruta a mano</button>
-    <button id="nueva-medida" type="button" class="btn" hidden title="Guarda la medida actual y empieza otra de otro color (N)">&#xFF0B; Nueva medida</button>
-    <button id="borrar-medidas" type="button" class="btn" disabled>Borrar medidas</button>
+    <div class="barra-grupo">
+      <button id="medir" type="button" class="btn" title="Medir distancias sobre el mapa">&#x1F4CF; Medir</button>
+      <button id="nueva-medida" type="button" class="btn" hidden title="Guarda la medida actual y empieza otra de otro color (N)">&#xFF0B; Nueva medida</button>
+      <button id="borrar-medidas" type="button" class="btn" disabled title="Borra las medidas hechas sobre el mapa"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 13-13 5 5L8 21z"/><path d="M4 4l16 16"/></svg><span>Borrar medidas</span></button>
+      <button id="limpiar" type="button" class="btn" title="Quita la ruta generada y su presupuesto del mapa"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg><span>Limpiar</span></button>
+    </div>
     <button id="estado-modo" type="button" class="estado-modo" title="Modo y servidor (clic: configuración)"></button>
   </footer>
   <!-- Aviso flotante sobre la barra: con la ventana angosta la barra no deja espacio para el texto y el mensaje quedaba tapado -->
@@ -1291,7 +1294,7 @@
 
   <!-- Menú de clic derecho -->
   <ul id="menu" class="menu" hidden>
-    <li data-accion="usar">Usar esta coordenada</li>
+    <li data-accion="usar">Generar ruta aquí</li>
     <li data-accion="copiar">Copiar coordenada</li>
     <li data-accion="medir">Medir desde aquí</li>
   </ul>

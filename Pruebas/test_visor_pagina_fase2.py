@@ -78,10 +78,12 @@ async def _recorrido(ancho, alto):
         await p.evaluar("document.querySelector('[data-pin=copiar-gms]').click()")
         await asyncio.sleep(0.3)
         assert await p.evaluar("window.__copiado") == ["13.094578, -86.002708", '13°5\'40.48"N 86°0\'9.75"O']
-        await p.evaluar("document.querySelector('[data-pin=ruta]').click()")
-        assert await p.evaluar("document.getElementById('coord').value") == "13.094578, -86.002708"      # the bottom bar is filled...
-        assert not NO_CALCULA & set(await p.evaluar("window.__llamadas"))                              # ...and nothing was calculated
-        assert await p.evaluar("document.getElementById('panel').hidden")                              # no result panel either
+        assert not NO_CALCULA & set(await p.evaluar("window.__llamadas"))                              # searching and copying calculate nothing
+        assert await p.evaluar("document.querySelector('[data-pin=ruta]').innerText") == "Generar ruta"
+        await p.evaluar("window.__stubs.calcular = (t) => { window.__calculada = t; return {ok: false, error: 'prueba'}; }; document.querySelector('[data-pin=ruta]').click()")
+        await p.esperar("window.__calculada", 5)                                                       # «Generar ruta» of the pin: the route at once (no field to fill, no second button)
+        assert await p.evaluar("window.__calculada") == "13.094578, -86.002708"
+        assert await p.evaluar("document.getElementById('panel').hidden")                              # (the stub fails: no result panel)
         # ---- swapped latitude / longitude: warning + the right order offered; DMS; outside Nicaragua; another coordinate moves the pin
         await _escribir(p, "-86.002708, 13.094578")
         lista = await _lista(p)
