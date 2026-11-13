@@ -144,17 +144,51 @@
     });
   }
 
+  const ZOOM_MAXIMO = 20;                 // of the map, for every base map
+  /** Esri's imagery has level 19 in Managua but not in the rest of the country: there it answers with a grey tile («Map data not yet available», always the same
+   *  2521 bytes) instead of an error, so Leaflet cannot know. This layer asks for the tiles of the last level itself and, when the grey one comes (or nothing),
+   *  draws that piece of the tile of the level before, enlarged. */
+  const CapaConRespaldo = L.TileLayer.extend({
+    options: { tamanosSinDatos: [2521] },
+    createTile(coords, done) {
+      if (coords.z < this.options.maxNativeZoom) return L.TileLayer.prototype.createTile.call(this, coords, done);
+      const lienzo = document.createElement("canvas");
+      lienzo.width = lienzo.height = 256;
+      const pintar = (img, sx, sy, lado) => { try { lienzo.getContext("2d").drawImage(img, sx, sy, lado, lado, 0, 0, 256, 256); done(null, lienzo); } catch (e) { done(e, lienzo); } };
+      const deAntes = () => {
+        const img = new Image();
+        img.onload = () => pintar(img, (coords.x % 2) * 128, (coords.y % 2) * 128, 128);
+        img.onerror = () => done(new Error("sin imagen"), lienzo);
+        img.src = L.Util.template(this._url, { ...this.options, x: coords.x >> 1, y: coords.y >> 1, z: coords.z - 1 });
+      };
+      fetch(L.Util.template(this._url, { ...this.options, x: coords.x, y: coords.y, z: coords.z }))
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.status))))
+        .then((b) => {
+          if (this.options.tamanosSinDatos.includes(b.size)) { deAntes(); return; }
+          const img = new Image(), url = URL.createObjectURL(b);
+          img.onload = () => { pintar(img, 0, 0, img.naturalWidth); URL.revokeObjectURL(url); };
+          img.onerror = () => { URL.revokeObjectURL(url); deAntes(); };
+          img.src = url;
+        })
+        .catch(deAntes);
+      return lienzo;
+    },
+  });
+
   function crearMapa() {
     crearIconos();
     // Zoom +/- at the bottom right (shifted by the summary panel, see visor.css): nothing covers the Lugares tab.
-    mapa = L.map("mapa", { zoomControl: false, maxZoom: 20, worldCopyJump: false })
+    // The zoom never goes past the limit, not even while pinching (bounceAtZoomLimits: Leaflet let the gesture overshoot and the map went grey until it came back),
+    // and one gesture of the touchpad is one level (it sends many wheel events at once: with the default 60 px per level they added up to two).
+    mapa = L.map("mapa", { zoomControl: false, maxZoom: ZOOM_MAXIMO, worldCopyJump: false, bounceAtZoomLimits: false, wheelPxPerZoomLevel: 120, wheelDebounceTime: 60 })
       .setView(cfg.inicio, cfg.zoom_inicial);
     L.control.zoom({ position: "bottomright", zoomInTitle: "Acercar", zoomOutTitle: "Alejar" }).addTo(mapa);
     mapa.attributionControl.setPrefix(false);
 
-    const opciones = { maxZoom: 20, maxNativeZoom: 19 };
+    // Each base map has tiles up to a level (maxNativeZoom); from there to the limit of the map the last ones are enlarged, never a grey map.
+    const opciones = { maxZoom: ZOOM_MAXIMO, maxNativeZoom: 19 };
     const satelite = L.layerGroup([
-      L.tileLayer(cfg.imagery_url, { ...opciones, attribution: "Imágenes © Esri, Maxar, Earthstar Geographics" }),
+      new CapaConRespaldo(cfg.imagery_url, { ...opciones, attribution: "Imágenes © Esri, Maxar, Earthstar Geographics" }),
       L.tileLayer(cfg.labels_url, { ...opciones, attribution: "Calles © Esri" }),
     ]).addTo(mapa);
     const calles = L.tileLayer(cfg.streets_url, { ...opciones, attribution: cfg.streets_attribution });

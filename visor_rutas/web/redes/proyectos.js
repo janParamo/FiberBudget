@@ -156,7 +156,7 @@
   function crearMapa() {
     if (st.mapa) return;
     const cfg = Redes.cfg || {};
-    st.mapa = L.map("pr-mapa", { zoomControl: true, maxZoom: 20 }).setView(cfg.inicio || [12.13, -86.25], 13);
+    st.mapa = L.map("pr-mapa", { zoomControl: true, maxZoom: 20, bounceAtZoomLimits: false, wheelPxPerZoomLevel: 120, wheelDebounceTime: 60 }).setView(cfg.inicio || [12.13, -86.25], 13);
     st.mapa.attributionControl.setPrefix(false);
     const { calles, satelite, claro } = capasBase();
     satelite.addTo(st.mapa);
@@ -497,7 +497,7 @@
         <span class="nota">(también: clic en la tarjeta del proyecto)</span></p>`;
     $("modal-pr-info").hidden = false;
     if (!st.info) {
-      st.info = L.map("pr-info-mapa", { zoomControl: true, maxZoom: 20 });
+      st.info = L.map("pr-info-mapa", { zoomControl: true, maxZoom: 20, bounceAtZoomLimits: false, wheelPxPerZoomLevel: 120, wheelDebounceTime: 60 });
       st.info.attributionControl.setPrefix(false);
       capasBase().satelite.addTo(st.info);
       st.infoCapa = L.layerGroup().addTo(st.info);
