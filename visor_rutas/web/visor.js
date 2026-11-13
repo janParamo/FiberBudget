@@ -2546,6 +2546,7 @@
       renderPanel();
       if (window.Menu) {               // side menu (menu.js) and the network module's user (redes/comun.js)
         window.Menu.iniciar({ api, mostrarVista, mensaje }).catch((e) => console.error("Menu", e));
+        if (window.Paleta) window.Paleta.iniciar();          // Ctrl+K: views, tools and actions by name (paleta.js)
         if (window.Redes) {
           window.Redes.cfg = cfg;      // base map (tiles) for the module's small maps
           window.Redes.iniciar(api).catch((e) => console.error("Redes", e));

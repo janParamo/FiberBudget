@@ -117,7 +117,7 @@ def verificar(carpeta: Path) -> None:
                    "redes/proyectos.js", "redes/editor_mapa.js", "redes/editor_mufa.js", "redes/trazado.js", "redes/diagrama.js",
                    "redes/problemas.js", "redes/pendientes.js", "redes/respaldos.js", "lugares/mis_lugares.js", "lugares/dibujar_red.js", "lugares/kmz_cambios.js", "lugares/importar_kmz.js", "lugares/masivas.js",
                    "mapa/editar_ruta.js", "mapa/editar_fusion.js", "mapa/medicion_total.js", "mapa/barra_herramientas.js", "lib/geoman/leaflet-geoman.js",
-                   "tema.css", "tickets.js", "mapa/postes.js", "lib/geoman/leaflet-geoman.css", "lib/quill/quill.js", "lib/quill/quill.snow.css", "lib/konva/konva.min.js"):
+                   "tema.css", "paleta.js", "tickets.js", "mapa/postes.js", "lib/geoman/leaflet-geoman.css", "lib/quill/quill.js", "lib/quill/quill.snow.css", "lib/konva/konva.min.js"):
         if not (carpeta / "_internal" / "visor_rutas" / "web" / pagina).is_file():
             problemas.append(f"falta visor_rutas/web/{pagina}")
     if problemas:

@@ -64,8 +64,17 @@
     caja.title = titulo || caja.textContent.trim();
   }
 
+  /** The icon of each view (the one of its menu option) in a chip before its title. */
+  function iconosDeVistas() {
+    items().forEach((b) => {
+      const cabecera = document.querySelector(`.vista[data-vista="${b.dataset.vista}"] > .vp-cabecera`), svg = b.querySelector("svg");
+      if (cabecera && svg && !cabecera.querySelector(".vista-icono")) cabecera.insertAdjacentHTML("afterbegin", `<span class="vista-icono" aria-hidden="true">${svg.outerHTML}</span>`);
+    });
+  }
+
   async function iniciar(contexto) {
     ctx = contexto;
+    iconosDeVistas();
     items().forEach((b) => {
       if (b.dataset.fase) {
         deshabilitar(b, "Próximamente");

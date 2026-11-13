@@ -1233,9 +1233,9 @@
   <!-- Indicaciones mientras se mide -->
   <div id="aviso-captura" class="aviso-captura" hidden>Modo captura · Esc para volver</div>
   <div id="medir-ayuda" class="medir-ayuda" hidden>
-    <b>Medir:</b> clic para agregar puntos · <b>Enter</b> o clic derecho para terminar · doble clic acerca el mapa (no termina) ·
-    <b>N</b> o <b>＋ Nueva medida</b> guarda esta y empieza otra de otro color ·
-    Retroceso quita el último punto · Esc cancela
+    <b>Medir:</b> clic para agregar puntos · <kbd>Enter</kbd> o clic derecho para terminar · doble clic acerca el mapa (no termina) ·
+    <kbd>N</kbd> o <b>＋ Nueva medida</b> guarda esta y empieza otra de otro color ·
+    <kbd>Retroceso</kbd> quita el último punto · <kbd>Esc</kbd> cancela
     <span id="medir-total" class="medir-total"></span>
   </div>
 
@@ -1259,6 +1259,7 @@
       <button id="borrar-medidas" type="button" class="btn" disabled title="Borra las medidas hechas sobre el mapa"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 13-13 5 5L8 21z"/><path d="M4 4l16 16"/></svg><span>Borrar medidas</span></button>
       <button id="limpiar" type="button" class="btn" title="Quita la ruta generada y su presupuesto del mapa"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg><span>Limpiar</span></button>
     </div>
+    <button id="abrir-paleta" type="button" class="barra-comandos" title="Comandos: ir a una vista, tomar una herramienta o hacer una acción escribiendo su nombre (Ctrl+K)"><span>Comandos</span><kbd>Ctrl</kbd><kbd>K</kbd></button>
     <button id="estado-modo" type="button" class="estado-modo" title="Modo y servidor (clic: configuración)"></button>
   </footer>
   <!-- Aviso flotante sobre la barra: con la ventana angosta la barra no deja espacio para el texto y el mensaje quedaba tapado -->
@@ -1331,6 +1332,7 @@
   <script src="mapa/postes.js"></script>
   <script src="mapa/barra_herramientas.js"></script>
   <script src="menu.js"></script>
+  <script src="paleta.js"></script>
   <script src="redes/comun.js"></script>
   <script src="redes/usuarios.js"></script>
   <script src="redes/proyectos.js"></script>

@@ -31,12 +31,16 @@
     pintar();
   }
 
+  // the avatar: the initials over a colour that is always the same for the same name
+  const iniciales = (nombre) => String(nombre || "?").trim().split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "?";
+  const tono = (nombre) => [...String(nombre || "")].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+
   function pintar() {
     $("us-filas").innerHTML = lista.map((u) => `<tr class="${u.activo ? "" : "inactivo"}">
-      <td><b>${esc(u.nombre)}</b></td>
+      <td><span class="us-persona"><span class="avatar" style="--tono:${tono(u.nombre)}" aria-hidden="true">${esc(iniciales(u.nombre))}</span><b>${esc(u.nombre)}</b></span></td>
       <td><span class="rol rol-${esc(u.rol)}">${esc(Redes.ROLES[u.rol] || u.rol)}</span></td>
       <td>${esc(u.correo || "")}</td><td>${esc(u.persona_visor || "")}</td><td>${esc(u.usuario_windows || "")}</td>
-      <td>${u.activo ? "Activo" : `Desactivado <span class="nota">${esc(Redes.fecha(u.borrado_en))}</span>`}</td>
+      <td>${u.activo ? '<span class="pastilla ok">Activo</span>' : `<span class="pastilla apagada">Desactivado</span> <span class="nota">${esc(Redes.fecha(u.borrado_en))}</span>`}</td>
       <td class="acciones">${puedeSobre(u) ? `
         <button type="button" class="btn-icono" data-us-editar="${u.id}" title="Editar datos"><svg><use href="#i-lapiz"/></svg></button>
         <button type="button" class="btn-icono" data-us-historial="${u.id}" title="Historial de cambios"><svg><use href="#i-reloj"/></svg></button>
