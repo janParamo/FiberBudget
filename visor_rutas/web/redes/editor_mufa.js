@@ -188,6 +188,7 @@
       pintarFondo(); moverNotas();
     });
     st.stage.on("dragmove", () => { pintarFondo(); moverNotas(); });
+    st.stage.on("scaleXChange", () => { const k = st.stage.scaleX(); $("mu-zoom").textContent = `${Math.round(k * 100)} %`; });
     st.stage.on("click", (e) => { if (e.target === st.stage) { st.seleccion = []; ocultarMenu(); resaltar(); } });
     st.stage.on("pointermove mousemove touchmove", alMover);
     st.stage.on("pointerup mouseup touchend", alSoltar);
@@ -1546,8 +1547,16 @@
     $("mu-deshacer").addEventListener("click", deshacer);
     $("mu-rehacer").addEventListener("click", rehacer);
     $("mu-ordenar").addEventListener("click", () => { antesDeCambiar(); distribuirFaltantes(true); dibujar(); ajustar(); });
-    $("mu-acercar").addEventListener("click", () => { st.stage.scale({ x: st.stage.scaleX() * 1.2, y: st.stage.scaleY() * 1.2 }); pintarFondo(); moverNotas(); });
-    $("mu-alejar").addEventListener("click", () => { st.stage.scale({ x: st.stage.scaleX() / 1.2, y: st.stage.scaleY() / 1.2 }); pintarFondo(); moverNotas(); });
+    const zoom = (factor, fijo) => {                             // from the centre of the canvas
+      const viejo = st.stage.scaleX(), nuevo = Math.max(0.15, Math.min(4, fijo || viejo * factor)), cx = st.stage.width() / 2, cy = st.stage.height() / 2;
+      const punto = { x: (cx - st.stage.x()) / viejo, y: (cy - st.stage.y()) / viejo };
+      st.stage.scale({ x: nuevo, y: nuevo });
+      st.stage.position({ x: cx - punto.x * nuevo, y: cy - punto.y * nuevo });
+      pintarFondo(); moverNotas();
+    };
+    $("mu-acercar").addEventListener("click", () => zoom(1.25));
+    $("mu-alejar").addEventListener("click", () => zoom(1 / 1.25));
+    $("mu-zoom").addEventListener("click", () => zoom(1, 1));
     $("mu-ajustar").addEventListener("click", ajustar);
     $("mu-estado").addEventListener("change", (e) => { const s = st.seleccion[0]; if (s && s.tipo === "hilo") cambiarEstado(s.id, e.target.value); });
     $("mu-diagrama").addEventListener("click", async () => {         // phase 6: the logical diagram from this mufa

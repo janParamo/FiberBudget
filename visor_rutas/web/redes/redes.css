@@ -507,6 +507,28 @@ textarea#pb-descripcion, textarea#pe-descripcion { width: 100%; resize: vertical
 .lz-ley i { flex: none; width: 12px; height: 12px; border-radius: 3px; }
 .lz-ley i.cable { height: 4px; width: 18px; border-radius: 2px; }
 .lz-ley span { margin-left: auto; padding-left: 10px; color: #8892a3; font-variant-numeric: tabular-nums; }
+.lz-zb svg, .con-icono svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.lz-zb { display: inline-flex; align-items: center; justify-content: center; }
+.lz-zb[aria-pressed="true"] { background: #e3ebfb; color: #1f58d8; }
+.lz-zoom-sep { margin-right: 3px; }
+.lz-alinear { top: 12px; left: 50%; transform: translateX(-50%); padding: 3px; gap: 2px; }
+.lz-alinear-n { padding: 0 8px 0 9px; color: #586174; font-weight: 600; white-space: nowrap; }
+.lz-mini { right: 12px; bottom: 56px; padding: 0; cursor: crosshair; }
+.lz-banda { position: absolute; z-index: 2; left: 0; top: 0; border: 1px solid #2563eb; background: rgba(37, 99, 235, .10); border-radius: 3px; pointer-events: none; }
+.lz-banda[hidden] { display: none; }
+.mu-konva[hidden] ~ .mu-zoom { display: none; }
+.btn.con-icono { display: inline-flex; align-items: center; gap: 6px; }
+.btn.con-icono[hidden] { display: none; }
+.btn.con-icono:empty { padding: 0 7px; }
+.btn.solo-icono { padding: 0 7px; gap: 0; font-size: 0; }       /* its text stays for the screen readers; the icon and the tooltip say it */
+#modal-lz .dg-titulo { min-width: 90px; }
+#modal-lz .mu-cabecera .vp-estado { flex: 0 1 auto; min-width: 0; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lz-exp { position: relative; display: inline-flex; }
+.lz-exp-menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; min-width: 170px; padding: 5px; background: var(--fondo); border: 1px solid var(--borde);
+  border-radius: 10px; box-shadow: 0 12px 32px rgba(16, 24, 40, .22); }
+.lz-exp-menu[hidden] { display: none; }
+.lz-exp-menu button { padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--texto); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.lz-exp-menu button:hover { background: var(--fondo-suave); }
 .lz-tip { position: absolute; z-index: 4; left: 0; top: 0; max-width: 320px; padding: 6px 10px; border-radius: 8px; background: #1a2130; color: #fff; font-size: 12px; line-height: 1.35;
   box-shadow: 0 8px 24px rgba(16, 24, 40, .28); pointer-events: none; }
 .lz-tip[hidden] { display: none; }

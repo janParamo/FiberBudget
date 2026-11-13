@@ -300,9 +300,6 @@
           <button id="mu-rehacer" type="button" class="btn-icono" title="Rehacer (Ctrl+Y)">↷</button>
         </div>
         <div class="mu-grupo">
-          <button id="mu-alejar" type="button" class="btn-icono" title="Alejar">−</button>
-          <button id="mu-acercar" type="button" class="btn-icono" title="Acercar">＋</button>
-          <button id="mu-ajustar" type="button" class="btn btn-chico" title="Ver todo">Ajustar</button>
           <button id="mu-trazar" type="button" class="btn btn-chico" disabled title="Seguir el hilo seleccionado de punta a punta (T)">Trazar hilo</button>
           <button id="mu-sangria" type="button" class="btn btn-chico" disabled title="Marcar la conexión elegida como sangría: el hilo sigue su camino y además alimenta a un cliente en esta mufa (se dibuja en rojo)">Sangría</button>
           <button id="mu-diagrama" type="button" class="btn btn-chico" title="Diagrama lógico de red desde esta mufa">Diagrama lógico</button>
@@ -325,6 +322,12 @@
         <div id="mu-red-vista" class="mu-red-vista" hidden></div>
         <div id="mu-konva" class="mu-konva"></div>
         <div id="mu-notas" class="mu-notas"></div>
+        <div class="lz-flota lz-zoom mu-zoom" role="group" aria-label="Zoom de la mufa">
+          <button id="mu-alejar" type="button" class="lz-zb" title="Alejar" aria-label="Alejar">−</button>
+          <button id="mu-zoom" type="button" class="lz-zb lz-zoom-valor" title="Volver al 100 %">100 %</button>
+          <button id="mu-acercar" type="button" class="lz-zb" title="Acercar" aria-label="Acercar">＋</button>
+          <button id="mu-ajustar" type="button" class="lz-zb lz-zoom-ajustar" title="Ver todo">Ajustar</button>
+        </div>
         <div id="mu-paleta" class="mu-paleta" hidden>
           <div class="mu-pal-cab"><b>Clientes de la mufa</b><button id="mu-paleta-cerrar" type="button" class="btn-icono" aria-label="Cerrar">✕</button></div>
           <p class="nota">Arrastre un cliente hasta el círculo del hilo o la salida del splitter a la que llega.</p>
@@ -396,6 +399,8 @@
         <button id="lz-renombrar" type="button" class="btn btn-chico" data-lz-edita title="Cambiar el nombre de este esquema">Renombrar</button>
         <button id="lz-borrar" type="button" class="btn btn-chico" data-lz-edita title="Eliminar este esquema (las mufas y los cables no se tocan)">Eliminar</button>
         <span id="lz-estado" class="vp-estado" role="status"></span>
+        <span class="lz-exp"><button id="lz-exportar" type="button" class="btn btn-chico" aria-haspopup="true" aria-expanded="false" title="Guardar el esquema completo como imagen o PDF">Exportar</button>
+          <span id="lz-exp-menu" class="lz-exp-menu" hidden role="menu"><button type="button" role="menuitem" data-lz-exp="png">Imagen PNG</button><button type="button" role="menuitem" data-lz-exp="pdf">Documento PDF</button></span></span>
         <button id="lz-aparte" type="button" class="btn btn-chico" title="Abrir el esquema en una ventana aparte (se puede mover fuera del programa, junto a la mufa o al Visio)">&#x29C9; Ventana aparte</button>
         <button id="lz-recargar" type="button" class="btn btn-chico" title="Leer otra vez el esquema">Recargar</button>
         <button id="lz-max" type="button" class="btn-icono" title="Maximizar / restaurar" aria-label="Maximizar">⛶</button>
@@ -410,6 +415,8 @@
           <button id="lz-renombrar-mufa" type="button" class="btn btn-chico" data-lz-edita disabled title="Cambiar el nombre de la caja elegida (F2)">Renombrar</button>
           <button id="lz-quitar" type="button" class="btn btn-chico" data-lz-edita disabled title="Quita la caja elegida del esquema (no la borra de la red) · Supr">Quitar del esquema</button>
           <button id="lz-eliminar-cable" type="button" class="btn btn-chico" data-lz-edita disabled title="Elimina el cable elegido · Supr">Eliminar cable</button>
+          <button id="lz-deshacer" type="button" class="btn btn-chico" data-lz-edita disabled title="Deshacer el último movimiento (Ctrl+Z)" aria-label="Deshacer"></button>
+          <button id="lz-rehacer" type="button" class="btn btn-chico" data-lz-edita disabled title="Rehacer (Ctrl+Y)" aria-label="Rehacer"></button>
           <button id="lz-hilos" type="button" class="btn btn-chico" hidden title="Conectar hilo con hilo los cables de la mufa elegida">Conectar hilos…</button>
           <button id="lz-hilos-a" type="button" class="btn btn-chico" hidden title="Conectar los hilos de este cable con los de otro cable en la mufa del origen">Hilos en el origen</button>
           <button id="lz-hilos-b" type="button" class="btn btn-chico" hidden title="Conectar los hilos de este cable con los de otro cable en la mufa del destino">Hilos en el destino</button>
@@ -434,8 +441,23 @@
           <p id="lz-vacio" class="dg-vacio">Arrastre aquí las mufas y los nodos de la lista (o haga doble clic en ellos) para armar el esquema de la zona.</p>
           <div id="lz-info" class="lz-flota lz-info" role="status"></div>
           <div id="lz-leyenda" class="lz-flota lz-leyenda" hidden aria-label="Colores del esquema"></div>
-          <div class="lz-flota lz-pista" title="Como en Visio"><kbd>Rueda</kbd> mover · <kbd>Ctrl</kbd> + <kbd>Rueda</kbd> zoom · arrastrar el fondo lo desplaza</div>
+          <div class="lz-flota lz-pista" title="Como en Visio"><kbd>Rueda</kbd> mover · <kbd>Ctrl</kbd> + <kbd>Rueda</kbd> zoom · <kbd>Mayús</kbd> + arrastrar elige varias</div>
+          <div id="lz-alinear" class="lz-flota lz-alinear" hidden role="toolbar" aria-label="Alinear las cajas elegidas">
+            <span id="lz-alinear-n" class="lz-alinear-n"></span>
+            <button type="button" class="lz-zb" data-lz-al="izq" title="Alinear a la izquierda" aria-label="Alinear a la izquierda"><svg viewBox="0 0 24 24"><path d="M4 3v18M8 7h11v4H8zM8 14h7v4H8z"/></svg></button>
+            <button type="button" class="lz-zb" data-lz-al="cx" title="Centrar en una columna" aria-label="Centrar en una columna"><svg viewBox="0 0 24 24"><path d="M12 3v18M6 7h12v4H6zM8 14h8v4H8z"/></svg></button>
+            <button type="button" class="lz-zb" data-lz-al="der" title="Alinear a la derecha" aria-label="Alinear a la derecha"><svg viewBox="0 0 24 24"><path d="M20 3v18M5 7h11v4H5zM9 14h7v4H9z"/></svg></button>
+            <button type="button" class="lz-zb" data-lz-al="arr" title="Alinear arriba" aria-label="Alinear arriba"><svg viewBox="0 0 24 24"><path d="M3 4h18M7 8h4v11H7zM14 8h4v7h-4z"/></svg></button>
+            <button type="button" class="lz-zb" data-lz-al="cy" title="Centrar en una fila" aria-label="Centrar en una fila"><svg viewBox="0 0 24 24"><path d="M3 12h18M7 6h4v12H7zM14 8h4v8h-4z"/></svg></button>
+            <button type="button" class="lz-zb" data-lz-al="aba" title="Alinear abajo" aria-label="Alinear abajo"><svg viewBox="0 0 24 24"><path d="M3 20h18M7 5h4v11H7zM14 9h4v7h-4z"/></svg></button>
+            <button type="button" class="lz-zb" data-lz-al="dh" title="Repartir a lo ancho (la misma separación)" aria-label="Repartir a lo ancho"><svg viewBox="0 0 24 24"><path d="M3 3v18M21 3v18M7 8h3v8H7zM14 8h3v8h-3z"/></svg></button>
+            <button type="button" class="lz-zb" data-lz-al="dv" title="Repartir a lo alto (la misma separación)" aria-label="Repartir a lo alto"><svg viewBox="0 0 24 24"><path d="M3 3h18M3 21h18M8 7h8v3H8zM8 14h8v3H8z"/></svg></button>
+          </div>
+          <canvas id="lz-mini" class="lz-flota lz-mini" width="190" height="124" hidden title="Vista general: clic o arrastre para ir a esa parte del esquema"></canvas>
+          <div id="lz-banda" class="lz-banda" hidden></div>
           <div class="lz-flota lz-zoom" role="group" aria-label="Zoom del esquema">
+            <button id="lz-cables" type="button" class="lz-zb" aria-pressed="true" title="Cables en ángulo recto o en línea directa" aria-label="Cables en ángulo recto"><svg viewBox="0 0 24 24"><path d="M4 18h8V6h8"/></svg></button>
+            <button id="lz-mini-ver" type="button" class="lz-zb lz-zoom-sep" aria-pressed="true" title="Mostrar u ocultar la vista general" aria-label="Vista general"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3zM13 12h6v5h-6z"/></svg></button>
             <button id="lz-alejar" type="button" class="lz-zb" title="Alejar" aria-label="Alejar">−</button>
             <button id="lz-zoom" type="button" class="lz-zb lz-zoom-valor" title="Volver al 100 %">100 %</button>
             <button id="lz-acercar" type="button" class="lz-zb" title="Acercar" aria-label="Acercar">＋</button>

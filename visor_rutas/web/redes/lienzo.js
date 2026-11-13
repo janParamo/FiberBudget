@@ -28,7 +28,26 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = (v) => Redes.esc(v);
-  const ANCHO = 132, ALTO = 44, BORDE_CAJA = "rgba(16, 24, 40, 0.45)";
+  const ANCHO = 132, ALTO = 44, FRANJA = 34;                  // the box: a white card with a strip of the colour of its kind and its symbol
+  // The symbol of each kind (24 x 24, drawn in white over the strip): a splice closure, a splitter, a terminal box, a coil of spare cable, a node (equipment) and an ODF (panel).
+  const SIMBOLO = {
+    empalme: "M2 12h3M19 12h3M7 8h10a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2zM9.5 8v8M14.5 8v8",
+    distribucion: "M2 12h7M9 12l8-6M9 12h8M9 12l8 6M17 6h4M17 12h4M17 18h4",
+    terminal: "M2 12h5M7 6h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H7zM11.5 10v4M15.5 10v4",
+    reserva: "M2 17h6M12 19a7 7 0 1 1 7-7M12 15.5a3.5 3.5 0 1 1 3.5-3.5M19 12v5h3",
+    nodo: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01M12 7h4M12 17h4M12 10v4",
+    odf: "M4 4h16v16H4zM4 9.3h16M4 14.7h16M8 6.7h.01M12 6.7h.01M16 6.7h.01M8 12h.01M12 12h.01M16 12h.01M8 17.3h.01M12 17.3h.01M16 17.3h.01",
+  };
+  const simboloDe = (e) => SIMBOLO[e.tipo === "mufa" ? (e.subtipo || "empalme") : e.tipo] || SIMBOLO.empalme;
+  const ICONOS_BARRA = {                                      // the icons of the buttons of the window (put when it is connected)
+    "lz-nuevo": "M12 5v14M5 12h14", "lz-renombrar": "M4 20h4L19 9l-4-4L4 16zM13 7l4 4", "lz-borrar": "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6",
+    "lz-exportar": "M12 3v12M8 11l4 4 4-4M4 17v3h16v-3", "lz-recargar": "M20 11a8 8 0 1 0-2.3 6.3M20 4v7h-7",
+    "lz-kmz": "M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10zM12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "lz-validar-todo": "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM8 12l3 3 5-6",
+    "lz-fuente": "M13 3 5 13h6l-1 8 8-10h-6z", "lz-conectar": "M7 12h10M5 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM23 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
+    "lz-renombrar-mufa": "M4 20h4L19 9l-4-4L4 16zM13 7l4 4", "lz-quitar": "M4 4h16v16H4zM8 12h8", "lz-eliminar-cable": "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6",
+    "lz-hilos": "M3 6h5l8 12h5M3 18h5l8-12h5", "lz-geo": "M12 2v4M12 18v4M2 12h4M18 12h4M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+    "lz-deshacer": "M8 7 4 11l4 4M4 11h11a5 5 0 0 1 0 10h-3", "lz-rehacer": "M16 7l4 4-4 4M20 11H9a5 5 0 0 0 0 10h3",
+  };
   const COLOR = { nodo: "#f5a623", odf: "#4a5568", empalme: "#e53935", distribucion: "#d4b000", terminal: "#d500f9", reserva: "#7b8794", mufa: "#e53935" };
   const COLOR_HILOS = { 144: "#e53935", 96: "#fb8c00", 72: "#1e88e5", 48: "#8e24aa", 24: "#43a047", 12: "#00acc1" };
   const HILOS = [12, 24, 48, 72, 96, 144, 2, 4, 6, 8];
@@ -41,7 +60,8 @@
   const LEE_PREF = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const st = { proyectoId: null, lienzoId: null, datos: null, elementos: new Map(), pos: new Map(), cables: [], zonas: [], modo: null, origen: null, seleccion: null,
                stage: null, capaLineas: null, capaCajas: null, cajas: new Map(), lineas: new Map(), pendientes: new Set(), quitar: new Set(), temporizador: null,
-               guardando: Promise.resolve(), conectado: false, referenciaPendiente: false, distribucion: LEE_PREF("lz.distribucion") === "real" ? "real" : "compacta", cacheCompacta: null };
+               guardando: Promise.resolve(), conectado: false, referenciaPendiente: false, distribucion: LEE_PREF("lz.distribucion") === "real" ? "real" : "compacta", cacheCompacta: null,
+               multi: new Set(), deshacer: [], rehacer: [], arrastre: null, cablesRectos: LEE_PREF("lz.cables") === "rectos", minimapa: LEE_PREF("lz.minimapa") !== "0", mini: null, miniFijo: false, banda: 0 };
   const mensaje = (t, tipo) => Redes.estadoEn($("lz-estado"), t, tipo);
   const puedeEditar = () => !!(st.datos && st.datos.proyecto && st.datos.proyecto.puede_editar);
   const colorDe = (e) => COLOR[e.tipo === "mufa" ? (e.subtipo || "empalme") : e.tipo] || "#e53935";
@@ -79,6 +99,7 @@
   }
 
   function aplicar(r, proyectoId, conservarVista) {
+    if (proyectoId !== st.proyectoId || (r.lienzo ? r.lienzo.id : null) !== st.lienzoId) { st.deshacer = []; st.rehacer = []; }      // another schema: its own history
     st.proyectoId = proyectoId;
     st.lienzoId = r.lienzo ? r.lienzo.id : null;
     st.datos = r;
@@ -90,6 +111,7 @@
     st.cacheCompacta = null;
     if (!st.cables.some((c) => st.seleccion && st.seleccion.tipo === "cable" && st.seleccion.id === c.id) && st.seleccion && st.seleccion.tipo === "cable") st.seleccion = null;
     if (st.seleccion && st.seleccion.tipo === "caja" && !st.pos.has(st.seleccion.id)) st.seleccion = null;
+    st.multi = new Set([...st.multi].filter((id) => st.pos.has(id)));
     document.querySelectorAll("#modal-lz [data-lz-edita]").forEach((b) => { b.hidden = !puedeEditar(); });
     $("lz-titulo").textContent = `Esquema de zona · ${r.proyecto.zona || r.proyecto.nombre}`;
     $("lz-esquema").innerHTML = (r.lienzos || []).map((l) => `<option value="${l.id}">${esc(l.nombre)}</option>`).join("");
@@ -212,6 +234,7 @@
     const fijas = [], movibles = [];
     st.pos.forEach((p, id) => { const e = st.elementos.get(id); const real = e && posicionReal(e); if (real) movibles.push({ id, real }); else fijas.push(p); });
     movibles.sort((a, b) => a.real.y - b.real.y || a.real.x - b.real.x);
+    recordar();
     const puestas = [...fijas];
     movibles.forEach((m) => { const p = redondear(libre(m.real, puestas)); puestas.push(p); st.pos.set(m.id, p); st.pendientes.add(m.id); });
     dibujar(); ajustar(); programarGuardado();
@@ -260,7 +283,7 @@
     st.stage.on("xChange yChange scaleXChange", programarVista);       // the grid and the zoom figure follow whatever moves or zooms the canvas
     st.stage.on("mousemove", moverTip);
     st.stage.on("mouseleave dragstart", () => tip(null));
-    st.stage.on("click tap", (e) => { if (e.target === st.stage) { seleccionar(null); if (st.modo === "cable") st.origen = null, resaltarOrigen(); } });
+    st.stage.on("click tap", (e) => { if (e.target === st.stage && Date.now() - st.banda > 300) { seleccionar(null); if (st.modo === "cable") st.origen = null, resaltarOrigen(); } });
     new ResizeObserver(() => { if (caja.clientWidth) st.stage.size({ width: caja.clientWidth, height: caja.clientHeight }); }).observe(caja);
   }
 
@@ -278,6 +301,177 @@
     caja.style.setProperty("--lz-x", `${st.stage.x()}px`);
     caja.style.setProperty("--lz-y", `${st.stage.y()}px`);
     $("lz-zoom").textContent = `${k >= 0.1 ? Math.round(k * 100) : (k * 100).toFixed(1)} %`;
+    minimapa();
+  }
+
+  /** The overview: the whole schema small (boxes, cables) and the part that is on screen as a frame. A click or a drag over it goes there. */
+  function minimapa() {
+    const c = $("lz-mini");
+    c.hidden = !st.minimapa || st.pos.size < 2;
+    if (c.hidden) return;
+    const k = st.stage.scaleX(), W = c.width, H = c.height, m = 8;
+    const v = { x: -st.stage.x() / k, y: -st.stage.y() / k, w: st.stage.width() / k, h: st.stage.height() / k };
+    if (!st.miniFijo || !st.mini) {                                // (while it is dragged the scale stays: it would move under the pointer)
+      let x0 = v.x, y0 = v.y, x1 = v.x + v.w, y1 = v.y + v.h;
+      st.pos.forEach((p) => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + ANCHO); y1 = Math.max(y1, p.y + ALTO); });
+      const e = Math.min((W - 2 * m) / (x1 - x0 || 1), (H - 2 * m) / (y1 - y0 || 1));
+      st.mini = { e, ox: m - x0 * e + (W - 2 * m - (x1 - x0) * e) / 2, oy: m - y0 * e + (H - 2 * m - (y1 - y0) * e) / 2 };
+    }
+    const { e, ox, oy } = st.mini, ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+    ctx.lineWidth = 1;
+    st.lineas.forEach((l) => {
+      const a = centro(l.c.origen_id), b = centro(l.c.destino_id);
+      ctx.strokeStyle = l.color; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.moveTo(ox + a.x * e, oy + a.y * e); ctx.lineTo(ox + b.x * e, oy + b.y * e); ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+    st.pos.forEach((p, id) => {
+      const el = st.elementos.get(id);
+      ctx.fillStyle = el ? colorDe(el) : "#888";
+      ctx.fillRect(ox + p.x * e, oy + p.y * e, Math.max(3, ANCHO * e), Math.max(2, ALTO * e));
+    });
+    ctx.fillStyle = "rgba(37, 99, 235, .10)"; ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 1.5;
+    ctx.fillRect(ox + v.x * e, oy + v.y * e, v.w * e, v.h * e); ctx.strokeRect(ox + v.x * e, oy + v.y * e, v.w * e, v.h * e);
+  }
+
+  function irDesdeMini(ev) {
+    const r = $("lz-mini").getBoundingClientRect(), k = st.stage.scaleX();
+    const x = (ev.clientX - r.left - st.mini.ox) / st.mini.e, y = (ev.clientY - r.top - st.mini.oy) / st.mini.e;
+    st.stage.position({ x: st.stage.width() / 2 - x * k, y: st.stage.height() / 2 - y * k });
+  }
+
+  // ------------------------------------------------------------------ cables: at right angles or straight
+  /** The points of the line of a cable between the centres of its two boxes: straight, or with right angles (it leaves along the longer side). */
+  function puntosCable(a, b) {
+    if (st.cablesRectos || Math.abs(a.x - b.x) < 1 || Math.abs(a.y - b.y) < 1) return [a.x, a.y, b.x, b.y];
+    if (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)) { const mx = (a.x + b.x) / 2; return [a.x, a.y, mx, a.y, mx, b.y, b.x, b.y]; }
+    const my = (a.y + b.y) / 2;
+    return [a.x, a.y, a.x, my, b.x, my, b.x, b.y];
+  }
+
+  // ------------------------------------------------------------------ several boxes at once, and undo / redo
+  /** The boxes that are chosen (one or several). */
+  const elegidas = () => (st.multi.size ? [...st.multi] : st.seleccion && st.seleccion.tipo === "caja" ? [st.seleccion.id] : []);
+
+  function elegirCajas(ids) {
+    if (ids.length <= 1) { seleccionar(ids.length ? { tipo: "caja", id: ids[0] } : null); return; }
+    st.multi = new Set(ids); st.seleccion = null;
+    resaltar(); info();
+  }
+
+  const fotoDe = () => new Map([...st.pos].map(([id, p]) => [id, { x: p.x, y: p.y }]));
+
+  /** Keeps how the boxes are now, before something moves, puts or takes them: Ctrl+Z comes back here. (Cables are not part of it: they are of the network.) */
+  function recordar() {
+    st.deshacer.push(fotoDe());
+    if (st.deshacer.length > 60) st.deshacer.shift();
+    st.rehacer = [];
+    botonesHistoria();
+  }
+
+  function botonesHistoria() {
+    $("lz-deshacer").disabled = !st.deshacer.length || !puedeEditar();
+    $("lz-rehacer").disabled = !st.rehacer.length || !puedeEditar();
+  }
+
+  function volverA(de, hacia) {
+    if (!de.length || !puedeEditar()) return;
+    hacia.push(fotoDe());
+    const foto = de.pop();
+    st.pos.forEach((p, id) => { if (!foto.has(id)) { st.quitar.add(id); st.pendientes.delete(id); } });
+    const nueva = new Map();
+    foto.forEach((p, id) => {
+      if (!st.elementos.has(id)) return;
+      const q = st.pos.get(id);
+      if (!q || q.x !== p.x || q.y !== p.y) { st.pendientes.add(id); st.quitar.delete(id); }
+      nueva.set(id, p);
+    });
+    st.pos = nueva;
+    st.multi = new Set([...st.multi].filter((id) => nueva.has(id)));
+    if (st.seleccion && st.seleccion.tipo === "caja" && !nueva.has(st.seleccion.id)) st.seleccion = null;
+    dibujar(); pintarLista(); info(); botonesHistoria();
+    programarGuardado();
+  }
+  const deshacer = () => volverA(st.deshacer, st.rehacer), rehacer = () => volverA(st.rehacer, st.deshacer);
+
+  /** Lines the chosen boxes up (izq, cx, der, arr, cy, aba) or spreads them evenly (dh, dv: three or more). */
+  function alinear(modo) {
+    const ids = [...st.multi];
+    if (ids.length < 2 || !puedeEditar()) return;
+    const ps = ids.map((id) => ({ id, ...st.pos.get(id) }));
+    const x0 = Math.min(...ps.map((p) => p.x)), x1 = Math.max(...ps.map((p) => p.x)), y0 = Math.min(...ps.map((p) => p.y)), y1 = Math.max(...ps.map((p) => p.y));
+    if ((modo === "dh" || modo === "dv") && ids.length < 3) { mensaje("Para repartir hacen falta tres cajas o más", "error"); return; }
+    recordar();
+    if (modo === "dh") ps.sort((a, b) => a.x - b.x).forEach((p, i) => { p.x = x0 + ((x1 - x0) * i) / (ps.length - 1); });
+    else if (modo === "dv") ps.sort((a, b) => a.y - b.y).forEach((p, i) => { p.y = y0 + ((y1 - y0) * i) / (ps.length - 1); });
+    else ps.forEach((p) => {
+      if (modo === "izq") p.x = x0; else if (modo === "der") p.x = x1; else if (modo === "cx") p.x = (x0 + x1) / 2;
+      else if (modo === "arr") p.y = y0; else if (modo === "aba") p.y = y1; else if (modo === "cy") p.y = (y0 + y1) / 2;
+    });
+    ps.forEach((p) => { st.pos.set(p.id, redondear({ x: p.x, y: p.y })); st.pendientes.add(p.id); st.quitar.delete(p.id); });
+    dibujar(); info();
+    programarGuardado();
+  }
+
+  /** Mayús + drag over the empty canvas: a frame; the boxes it touches are chosen. */
+  function empezarBanda(ev) {
+    if (!ev.shiftKey || ev.button !== 0 || !st.stage || st.modo === "cable") return;
+    st.stage.setPointersPositions(ev);
+    const p0 = st.stage.getPointerPosition();
+    if (!p0 || st.stage.getIntersection(p0)) return;             // over a box or a cable: its own click
+    ev.preventDefault();
+    st.stage.draggable(false);
+    const banda = $("lz-banda"), caja = $("lz-konva").getBoundingClientRect();
+    let r = null;
+    const mover = (e) => {
+      const x = e.clientX - caja.left, y = e.clientY - caja.top;
+      r = { x: Math.min(p0.x, x), y: Math.min(p0.y, y), w: Math.abs(x - p0.x), h: Math.abs(y - p0.y) };
+      banda.hidden = false;
+      banda.style.cssText = `transform:translate(${r.x}px,${r.y}px);width:${r.w}px;height:${r.h}px`;
+    };
+    const soltar = () => {
+      window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar);
+      banda.hidden = true;
+      st.stage.draggable(true);
+      st.banda = Date.now();
+      if (!r || (r.w < 4 && r.h < 4)) return;
+      const k = st.stage.scaleX(), a = { x: (r.x - st.stage.x()) / k, y: (r.y - st.stage.y()) / k, w: r.w / k, h: r.h / k };
+      elegirCajas([...st.pos].filter(([, p]) => p.x < a.x + a.w && p.x + ANCHO > a.x && p.y < a.y + a.h && p.y + ALTO > a.y).map(([id]) => id));
+    };
+    window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
+  }
+
+  // ------------------------------------------------------------------ export: the whole schema as an image or a PDF
+  async function exportar(tipo) {
+    if (!st.cajas.size) { mensaje("El esquema está vacío: no hay qué exportar", "error"); return; }
+    if (!Redes.api || !Redes.api.guardar_imagen) { mensaje("Exportar no está disponible aquí", "error"); return; }
+    mensaje("Preparando la imagen…", "cargando");
+    const antes = { s: st.stage.scaleX(), x: st.stage.x(), y: st.stage.y(), sel: st.seleccion, multi: st.multi };
+    st.seleccion = null; st.multi = new Set(); resaltar();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    st.pos.forEach((p) => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + ANCHO); y1 = Math.max(y1, p.y + ALTO); });
+    const m = 48, ancho = x1 - x0 + 2 * m, alto = y1 - y0 + 2 * m, f = Math.max(0.05, Math.min(2, 7000 / Math.max(ancho, alto)));
+    st.stage.scale({ x: 1, y: 1 }); st.stage.position({ x: m - x0, y: m - y0 });
+    let dibujo;
+    try { dibujo = st.stage.toCanvas({ x: 0, y: 0, width: ancho, height: alto, pixelRatio: f }); }
+    finally {
+      st.stage.scale({ x: antes.s, y: antes.s }); st.stage.position({ x: antes.x, y: antes.y });
+      st.seleccion = antes.sel; st.multi = antes.multi; resaltar();
+    }
+    const z = st.datos.proyecto, nombre = `${st.datos.lienzo ? st.datos.lienzo.nombre : "Esquema"} - ${z.zona || z.nombre}`;
+    const hoja = document.createElement("canvas"), u = Math.max(1, dibujo.width / 1400), cab = Math.round(54 * u);
+    hoja.width = dibujo.width; hoja.height = dibujo.height + cab;
+    const ctx = hoja.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, hoja.width, hoja.height);
+    ctx.fillStyle = "#1a2130"; ctx.font = `600 ${Math.round(20 * u)}px "Segoe UI", sans-serif`; ctx.textBaseline = "middle";
+    ctx.fillText(nombre, Math.round(24 * u), cab / 2);
+    ctx.fillStyle = "#6b7487"; ctx.font = `${Math.round(12 * u)}px "Segoe UI", sans-serif`; ctx.textAlign = "right";
+    ctx.fillText(`${st.pos.size} cajas · ${st.lineas.size} cables · ${new Date().toLocaleDateString("es-NI")}`, hoja.width - Math.round(24 * u), cab / 2);
+    ctx.fillStyle = "#e1e6ee"; ctx.fillRect(0, cab - 1, hoja.width, Math.max(1, Math.round(u)));
+    ctx.drawImage(dibujo, 0, cab);
+    const r = await Redes.api.guardar_imagen(nombre, hoja.toDataURL("image/png"), tipo);
+    if (r && r.ok) mensaje(`Esquema guardado en ${r.ruta}`, "ok"); else if (r && r.cancelado) mensaje(""); else mensaje((r && r.error) || "No se pudo exportar", "error");
   }
 
   /** Zooms by `factor` (or to `fijo`) keeping the centre of the canvas where it is. */
@@ -341,16 +535,41 @@
 
   function crearCaja(e, p) {
     const g = new Konva.Group({ x: p.x, y: p.y, draggable: puedeEditar() && st.modo !== "cable", name: "caja" });
-    g.add(new Konva.Rect({ width: ANCHO, height: ALTO, cornerRadius: e.tipo === "nodo" ? 22 : 10, fill: colorDe(e), stroke: BORDE_CAJA, strokeWidth: 1, shadowColor: "#101828", shadowBlur: 10, shadowOpacity: 0.22, shadowOffsetY: 3, name: "marco" }));
+    // A white card with the strip of its kind and its symbol (closure, splitter, terminal box, coil, node, ODF); a node is a pill, an ODF has square corners.
+    const color = colorDe(e), radio = e.tipo === "nodo" ? ALTO / 2 : e.tipo === "odf" ? 3 : 10, cables = st.cables.filter((c) => c.origen_id === e.id || c.destino_id === e.id).length;
+    g.setAttr("colorBase", color);
+    g.add(new Konva.Rect({ width: ANCHO, height: ALTO, cornerRadius: radio, fill: "#fff", stroke: color, strokeWidth: 1.5, shadowColor: "#101828", shadowBlur: 10, shadowOpacity: 0.2, shadowOffsetY: 3, name: "marco" }));
+    g.add(new Konva.Rect({ x: 0.75, y: 0.75, width: FRANJA, height: ALTO - 1.5, cornerRadius: [radio, 0, 0, radio], fill: color, listening: false }));
+    g.add(new Konva.Path({ x: (FRANJA - 20) / 2 + (e.tipo === "nodo" ? 3 : 1), y: (ALTO - 20) / 2, scaleX: 20 / 24, scaleY: 20 / 24, data: simboloDe(e), stroke: "#fff", strokeWidth: 1.9, lineCap: "round", lineJoin: "round", listening: false }));
     if (e.tipo !== "mufa") g.add(new Konva.Text({ x: 0, y: -15, width: ANCHO, text: "⚡ Fuente de la red", fontSize: 10, fontStyle: "bold", fill: "#b45309", align: "center", listening: false }));
-    g.add(new Konva.Text({ x: 6, y: 5, width: ANCHO - 12, height: ALTO - 10, text: e.nombre, fontSize: 12, fontStyle: "bold", fill: "#fff", align: "center", verticalAlign: "middle", ellipsis: true, wrap: "word", listening: false }));
-    g.on("dragmove", () => { st.pos.set(e.id, { x: g.x(), y: g.y() }); moverLineas(e.id); });
-    g.on("dragend", () => { st.pos.set(e.id, { x: Math.round(g.x() * 100) / 100, y: Math.round(g.y() * 100) / 100 }); st.pendientes.add(e.id); st.quitar.delete(e.id); programarGuardado(); });
-    g.on("click tap", (ev) => { ev.cancelBubble = true; clicCaja(e); });
+    g.add(new Konva.Text({ x: FRANJA + 7, y: 3, width: ANCHO - FRANJA - 13, height: ALTO - 6, text: e.nombre, fontSize: 11, fontStyle: "bold", fill: "#1a2130", lineHeight: 1.15, verticalAlign: "middle", ellipsis: true, wrap: "word", listening: false }));
+    if (cables) {                                              // how many cables reach it, on its corner
+      const n = String(cables), w = n.length > 1 ? 20 : 16;
+      g.add(new Konva.Rect({ x: ANCHO - w + 5, y: -7, width: w, height: 16, cornerRadius: 8, fill: "#1a2130", stroke: "#fff", strokeWidth: 1.5, listening: false }));
+      g.add(new Konva.Text({ x: ANCHO - w + 5, y: -7, width: w, height: 16, text: n, fontSize: 10, fontStyle: "bold", fill: "#fff", align: "center", verticalAlign: "middle", listening: false }));
+    }
+    g.on("dragstart", () => {
+      tip(null); recordar();
+      st.arrastre = st.multi.size > 1 && st.multi.has(e.id) ? { x: g.x(), y: g.y(), otros: [...st.multi].filter((id) => id !== e.id).map((id) => ({ id, ...st.pos.get(id) })) } : null;
+    });
+    g.on("dragmove", () => {
+      st.pos.set(e.id, { x: g.x(), y: g.y() }); moverLineas(e.id);
+      if (st.arrastre) st.arrastre.otros.forEach((o) => {        // the other chosen boxes go with it
+        const p = { x: o.x + g.x() - st.arrastre.x, y: o.y + g.y() - st.arrastre.y }, otra = st.cajas.get(o.id);
+        st.pos.set(o.id, p); if (otra) otra.position(p); moverLineas(o.id);
+      });
+      programarVista();
+    });
+    g.on("dragend", () => {
+      st.pos.set(e.id, { x: g.x(), y: g.y() });
+      [e.id, ...(st.arrastre ? st.arrastre.otros.map((o) => o.id) : [])].forEach((id) => { st.pos.set(id, redondear(st.pos.get(id))); st.pendientes.add(id); st.quitar.delete(id); });
+      st.arrastre = null;
+      programarGuardado();
+    });
+    g.on("click tap", (ev) => { ev.cancelBubble = true; clicCaja(e, ev.evt); });
     g.on("dblclick dbltap", (ev) => { ev.cancelBubble = true; entrar(e); });
     g.on("mouseenter", () => { st.stage.container().style.cursor = st.modo === "cable" ? "crosshair" : "pointer"; tip(tipCaja(e)); });
     g.on("mouseleave", () => { st.stage.container().style.cursor = "default"; tip(null); });
-    g.on("dragstart", () => tip(null));
     st.capaCajas.add(g);
     st.cajas.set(e.id, g);
   }
@@ -364,7 +583,7 @@
     const a = centro(c.origen_id), b = centro(c.destino_id);
     const color = c.color && !/^#1f6feb$/i.test(c.color) ? c.color : (COLOR_HILOS[c.hilos] || "#1f6feb");
     const g = new Konva.Group({ name: "cable" });
-    const linea = new Konva.Line({ points: [a.x, a.y, b.x, b.y], stroke: color, strokeWidth: Math.max(2, Math.min(7, Math.round((c.hilos || 12) / 24) + 2)), lineCap: "round", hitStrokeWidth: 14, name: "trazo" });
+    const linea = new Konva.Line({ points: puntosCable(a, b), lineJoin: "round", stroke: color, strokeWidth: Math.max(2, Math.min(7, Math.round((c.hilos || 12) / 24) + 2)), lineCap: "round", hitStrokeWidth: 14, name: "trazo" });
     const rotulo = new Konva.Label({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, listening: false });
     rotulo.add(new Konva.Tag({ fill: "#ffffff", stroke: color, cornerRadius: 4, pointerDirection: "none" }));
     rotulo.add(new Konva.Text({ text: `${c.hilos ? c.hilos + " h" : "? h"}${c.conectados ? ` · ${c.conectados}↔` : ""}`, fontSize: 11, padding: 3, fill: "#222" }));
@@ -381,7 +600,7 @@
     st.lineas.forEach((l) => {
       if (l.c.origen_id !== id && l.c.destino_id !== id) return;
       const a = centro(l.c.origen_id), b = centro(l.c.destino_id);
-      l.linea.points([a.x, a.y, b.x, b.y]);
+      l.linea.points(puntosCable(a, b));
       l.rotulo.position({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
     });
     st.capaLineas.batchDraw();
@@ -390,9 +609,10 @@
   function resaltar() {
     st.cajas.forEach((g, id) => {
       const marco = g.findOne(".marco");
-      const sel = st.seleccion && st.seleccion.tipo === "caja" && st.seleccion.id === id;
+      const sel = (st.seleccion && st.seleccion.tipo === "caja" && st.seleccion.id === id) || st.multi.has(id);
       const origen = st.modo === "cable" && st.origen === id;
-      marco.stroke(origen ? "#00c853" : sel ? "#1f6feb" : BORDE_CAJA); marco.strokeWidth(origen || sel ? 4 : 1);
+      marco.stroke(origen ? "#00c853" : sel ? "#1f6feb" : g.getAttr("colorBase")); marco.strokeWidth(origen || sel ? 3.5 : 1.5);
+      marco.shadowColor(sel ? "#1f6feb" : "#101828"); marco.shadowOpacity(sel ? 0.45 : 0.2);
     });
     st.lineas.forEach((l, id) => {
       const sel = st.seleccion && st.seleccion.tipo === "cable" && st.seleccion.id === id;
@@ -405,18 +625,24 @@
 
   function seleccionar(sel) {
     st.seleccion = sel;
+    st.multi.clear();
     resaltar();
     info();
   }
 
   function info() {
-    const s = st.seleccion, caja = $("lz-info");
-    $("lz-quitar").disabled = !(s && s.tipo === "caja" && puedeEditar());
+    const s = st.seleccion, caja = $("lz-info"), varias = st.multi.size > 1;
+    $("lz-alinear").hidden = !varias || !puedeEditar();
+    caja.hidden = !$("lz-alinear").hidden;                     // the bar of the chosen boxes takes its place
+    $("lz-alinear-n").textContent = `${st.multi.size} cajas`;
+    botonesHistoria();
+    $("lz-quitar").disabled = !((varias || (s && s.tipo === "caja")) && puedeEditar());
     $("lz-renombrar-mufa").disabled = !(s && s.tipo === "caja" && puedeEditar());
     $("lz-eliminar-cable").disabled = !(s && s.tipo === "cable" && puedeEditar());
     $("lz-abrir-a").hidden = $("lz-abrir-b").hidden = !(s && s.tipo === "cable");
     $("lz-hilos").hidden = !(s && s.tipo === "caja");
     $("lz-hilos-a").hidden = $("lz-hilos-b").hidden = !(s && s.tipo === "cable");
+    if (varias) { caja.innerHTML = `<b>${st.multi.size} cajas elegidas</b> · arrástrelas juntas, alinéelas o quítelas del esquema (Supr)`; return; }
     if (!s) {
       caja.textContent = st.modo === "cable" ? (st.origen ? "Clic en la caja donde termina el cable" : "Clic en la caja donde empieza el cable") : "Seleccione una caja o un cable · doble clic en una caja abre su editor de mufa";
       return;
@@ -457,6 +683,7 @@
     const e = st.elementos.get(id);
     if (!e || !puedeEditar()) return;
     const real = $("lz-por-coord").checked ? posicionReal(e) : null;                // where the mufa is on the map, else where it was dropped
+    recordar();
     const ocupadas = [...st.pos.entries()].filter(([otro]) => otro !== id).map(([, q]) => q);
     const p = redondear(real ? libre(real, ocupadas) : punto);
     st.pos.set(id, p);
@@ -478,9 +705,10 @@
   }
 
   function quitarSeleccion() {
-    const s = st.seleccion;
-    if (!s || s.tipo !== "caja" || !puedeEditar()) return;
-    st.pos.delete(s.id); st.pendientes.delete(s.id); st.quitar.add(s.id);
+    const ids = elegidas();
+    if (!ids.length || !puedeEditar()) return;
+    recordar();
+    ids.forEach((id) => { st.pos.delete(id); st.pendientes.delete(id); st.quitar.add(id); });
     seleccionar(null);
     dibujar(); pintarLista();
     programarGuardado();
@@ -517,8 +745,15 @@
   }
 
   // ------------------------------------------------------------------ cables
-  function clicCaja(e) {
-    if (st.modo !== "cable") { seleccionar({ tipo: "caja", id: e.id }); return; }
+  function clicCaja(e, evt) {
+    if (st.modo !== "cable") {
+      if (evt && (evt.ctrlKey || evt.shiftKey || evt.metaKey)) {             // Ctrl / Mayús + click: adds it to (or takes it from) what is chosen
+        const ids = new Set(elegidas());
+        if (ids.has(e.id)) ids.delete(e.id); else ids.add(e.id);
+        elegirCajas([...ids]);
+      } else seleccionar({ tipo: "caja", id: e.id });
+      return;
+    }
     if (st.origen === null) { st.origen = e.id; resaltar(); info(); return; }
     if (st.origen === e.id) { st.origen = null; resaltar(); info(); return; }
     const origen = st.origen;
@@ -865,6 +1100,33 @@
     $("lz-alejar").addEventListener("click", () => zoom(1 / 1.25));
     $("lz-zoom").addEventListener("click", () => zoom(1, 1));
     $("lz-conectar").addEventListener("click", () => modoCable(st.modo !== "cable"));
+    Object.entries(ICONOS_BARRA).forEach(([id, d]) => {
+      const b = $(id);
+      if (!b) return;
+      b.classList.add("con-icono");
+      if (["lz-renombrar", "lz-borrar", "lz-recargar"].includes(id)) { b.classList.add("solo-icono"); b.setAttribute("aria-label", b.textContent.trim()); }
+      b.insertAdjacentHTML("afterbegin", `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`);
+    });
+    $("lz-deshacer").addEventListener("click", deshacer);
+    $("lz-rehacer").addEventListener("click", rehacer);
+    $("lz-alinear").addEventListener("click", (e) => { const b = e.target.closest("[data-lz-al]"); if (b) alinear(b.dataset.lzAl); });
+    const pintarOpciones = () => {
+      $("lz-cables").setAttribute("aria-pressed", st.cablesRectos ? "false" : "true");
+      $("lz-mini-ver").setAttribute("aria-pressed", st.minimapa ? "true" : "false");
+    };
+    pintarOpciones();
+    $("lz-cables").addEventListener("click", () => { st.cablesRectos = !st.cablesRectos; GUARDA_PREF("lz.cables", st.cablesRectos ? "rectos" : "angulo"); pintarOpciones(); dibujar(); });
+    $("lz-mini-ver").addEventListener("click", () => { st.minimapa = !st.minimapa; GUARDA_PREF("lz.minimapa", st.minimapa ? "1" : "0"); pintarOpciones(); vista(); });
+    $("lz-mini").addEventListener("mousedown", (e) => {
+      e.preventDefault(); st.miniFijo = true; irDesdeMini(e);
+      const fin = () => { st.miniFijo = false; window.removeEventListener("mousemove", irDesdeMini); window.removeEventListener("mouseup", fin); programarVista(); };
+      window.addEventListener("mousemove", irDesdeMini); window.addEventListener("mouseup", fin);
+    });
+    $("lz-konva").addEventListener("mousedown", empezarBanda, true);
+    const menuExp = (ver) => { $("lz-exp-menu").hidden = !ver; $("lz-exportar").setAttribute("aria-expanded", ver ? "true" : "false"); };
+    $("lz-exportar").addEventListener("click", (e) => { e.stopPropagation(); menuExp($("lz-exp-menu").hidden); });
+    $("lz-exp-menu").addEventListener("click", (e) => { const b = e.target.closest("[data-lz-exp]"); if (b) { menuExp(false); exportar(b.dataset.lzExp); } });
+    document.addEventListener("click", () => { if (!$("lz-exp-menu").hidden) menuExp(false); });
     $("lz-quitar").addEventListener("click", quitarSeleccion);
     $("lz-renombrar-mufa").addEventListener("click", renombrarCaja);
     $("lz-eliminar-cable").addEventListener("click", eliminarCable);
@@ -923,6 +1185,8 @@
       if (e.key === "Escape" && !encima) { e.stopPropagation(); if (st.modo === "cable") modoCable(false); else cerrar(); return; }
       if (encima || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName || ""))) return;
       if (e.key === "F2") { e.preventDefault(); renombrarCaja(); return; }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key)) { e.preventDefault(); if (/y/i.test(e.key) || e.shiftKey) rehacer(); else deshacer(); return; }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && /^a$/i.test(e.key)) { e.preventDefault(); elegirCajas([...st.pos.keys()]); return; }
       if (e.key === "Delete" || e.key === "Supr") { if (st.seleccion && st.seleccion.tipo === "cable") eliminarCable(); else quitarSeleccion(); }
     }, true);
   }
@@ -930,5 +1194,5 @@
   document.addEventListener("DOMContentLoaded", conectar);
   if (document.readyState !== "loading") conectar();
 
-  window.Esquema = { abrir, cerrar, nuevoEsquema, renombrarEsquema, _posicionReal: posicionReal, _libre: libre, _st: st, _poner: poner };
+  window.Esquema = { abrir, cerrar, nuevoEsquema, renombrarEsquema, deshacer, rehacer, alinear, exportar, elegirCajas, _posicionReal: posicionReal, _libre: libre, _st: st, _poner: poner };
 })();

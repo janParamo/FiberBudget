@@ -80,6 +80,33 @@ async def _recorrido(zona):
         await p_.evaluar("window.Esquema._st.cajas.get(%d).fire('mouseleave'); true" % ids["m1"])
         assert await p_.evaluar("document.getElementById('lz-tip').hidden") is True
         await p_.evaluar("document.getElementById('lz-ajustar').click(); true")
+        # each box is a card with the symbol of its kind and the number of its cables; the overview shows
+        assert await p_.evaluar("window.Esquema._st.cajas.get(%d).find('Path').length === 1 && window.Esquema._st.cajas.get(%d).find('Text').some(t => t.text() === '2')" % (ids["m1"], ids["m1"])) is True
+        assert await p_.evaluar("document.getElementById('lz-mini').hidden") is False
+        # several boxes at once (Ctrl + click), lined up; Ctrl+Z puts them back and Ctrl+Y lines them up again
+        antes = await p_.evaluar("[...window.Esquema._st.pos].map(([id, q]) => [id, q.x, q.y])")
+        await p_.evaluar("window.Esquema._st.cajas.get(%d).fire('click'); window.Esquema._st.cajas.get(%d).fire('click', {evt: {ctrlKey: true}}); window.Esquema._st.cajas.get(%d).fire('click', {evt: {ctrlKey: true}}); true" % (ids["n"], ids["m1"], ids["m2"]))
+        assert await p_.evaluar("window.Esquema._st.multi.size === 3 && !document.getElementById('lz-alinear').hidden && document.getElementById('lz-info').textContent.includes('3 cajas')") is True
+        await p_.evaluar("document.querySelector('[data-lz-al=arr]').click(); true")
+        assert await p_.evaluar("new Set([...window.Esquema._st.pos.values()].map(q => q.y)).size") == 1
+        await p_.evaluar("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'z', ctrlKey: true, bubbles: true})); true")
+        assert await p_.evaluar("[...window.Esquema._st.pos].map(([id, q]) => [id, q.x, q.y])") == antes
+        await p_.evaluar("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'y', ctrlKey: true, bubbles: true})); true")
+        assert await p_.evaluar("new Set([...window.Esquema._st.pos.values()].map(q => q.y)).size") == 1
+        await p_.evaluar("document.getElementById('lz-deshacer').click(); true")
+        assert await p_.evaluar("[...window.Esquema._st.pos].map(([id, q]) => [id, q.x, q.y])") == antes
+        # cables at right angles (4 points when the boxes are not in line) or straight
+        await p_.evaluar("(() => { const g = window.Esquema._st.cajas.get(%d); g.x(g.x() + 300); g.fire('dragmove'); return true; })()" % ids["m2"])
+        assert await p_.evaluar("Math.max(...[...window.Esquema._st.lineas.values()].map(l => l.linea.points().length))") == 8
+        await p_.evaluar("document.getElementById('lz-cables').click(); true")
+        assert await p_.evaluar("Math.max(...[...window.Esquema._st.lineas.values()].map(l => l.linea.points().length))") == 4
+        await p_.evaluar("document.getElementById('lz-cables').click(); true")
+        # export: the whole schema as a PNG handed to the program
+        await p_.evaluar("window.__exp = null; window.__stubs.guardar_imagen = (n, d, t) => { window.__exp = [n, d.slice(0, 22), t]; return {ok: true, ruta: 'C:/x.pdf'}; }; window.Esquema.exportar('pdf'); true")
+        await p_.esperar("window.__exp && document.getElementById('lz-estado').textContent.includes('C:/x.pdf')", 10)
+        exp = await p_.evaluar("window.__exp")
+        assert exp[0].startswith("General - ") and "Jalapa" in exp[0] and exp[1:] == ["data:image/png;base64,", "pdf"]
+        await asyncio.sleep(1.5)                                                                     # (what undo / redo left to save is saved)
         # moving a box saves its new place
         await p_.evaluar("(() => { const g = window.Esquema._st.cajas.get(%d); g.x(900); g.y(300); g.fire('dragend'); return true; })()" % ids["m2"])
         await p_.esperar("document.getElementById('lz-estado').textContent.includes('Guardado')", 10)
