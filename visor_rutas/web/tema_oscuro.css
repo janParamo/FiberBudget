@@ -23,8 +23,6 @@ body.tema-oscuro .diagnostico .nota { color: #f7cd9b; }
 body.tema-oscuro .bloque-piloto { background: #39250d; }
 body.tema-oscuro .casilla-piloto { color: #f4b67c; }
 body.tema-oscuro .parada .hilos b { color: #96f5be; }
-body.tema-oscuro .diagrama-lienzo { background: #1e2432; }
-body.tema-oscuro .diagrama-lienzo img { background: #161b24; }
 body.tema-oscuro .buscar-resultados li:hover, body.tema-oscuro .buscar-resultados li.marcado { background: #270f41; }
 body.tema-oscuro .panel-tirador:hover, body.tema-oscuro .panel-tirador.activo { background: linear-gradient(to right, transparent 3px, #4f3373 3px 6px, transparent 6px); }
 body.tema-oscuro .dg-bus-texto:focus { outline: 2px solid #1a3970; }
@@ -150,7 +148,6 @@ body.tema-oscuro .dg-tabla th { background: #192635; }
 body.tema-oscuro .dg-tabla td { border-top: 1px solid #1f2833; }
 body.tema-oscuro .dg-tabla tbody tr[data-dg]:hover { background: #0d1b37; }
 body.tema-oscuro .dg-tabla tbody tr.sel { background: #0f213f; }
-body.tema-oscuro .dg-lienzo { background: #1e252f; }
 body.tema-oscuro .vm-filtros select { background: #161b24; }
 body.tema-oscuro .sev-baja { background: #1a3b1c; color: #8fd692; }
 body.tema-oscuro .sev-media { background: #433710; color: #f5d487; }
