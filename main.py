@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 import db
 import mapa_ruta
+import metro
 import reglas_mufas
 import ruta_lugares
 import origen
@@ -596,10 +597,21 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     get_route = get_route or routing.get_route
     log.info("Ticket %s received (%.6f, %.6f)", req.ticket_id, req.latitude, req.longitude)
     rules = load_rules(settings.rules_path)
+    # Customer equipment (MATERIALES) and the way of connecting: GPON or Metro (metro.py).
+    technology, technology_source = seleccionar_tecnologia(
+        req.bandwidth, req.technology, req.raw_comment, rules)
+    es_metro = technology == "metro"
 
     # 1) Connection point: KMZ mufa, then reserva (never a line projection); the Visio
-    # network fills in when the KMZ has nothing near the client.
-    seg, busqueda, desde_visio = _resolver_conexion(req.latitude, req.longitude, rules, visio_con)
+    # network fills in when the KMZ has nothing near the client. Metro: the nearest NODO.
+    if es_metro:
+        try:
+            seg, busqueda = metro.resolver_nodo(req.latitude, req.longitude, rules, visio_con)
+        except metro.SinNodo as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        desde_visio = True
+    else:
+        seg, busqueda, desde_visio = _resolver_conexion(req.latitude, req.longitude, rules, visio_con)
     if seg is None:
         raise HTTPException(status_code=404, detail="No eligible mufa or reserva found")
 
@@ -612,21 +624,26 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
         log.error("Directions failure (%s)", type(exc).__name__)
         raise HTTPException(status_code=502, detail="Google Directions API failed")
     # The nearest point by straight line may be a long way round by street, or have no hilos.
-    seg, route, seleccion = _elegir_por_ruta(seg, desde_visio, req.latitude, req.longitude, rules,
-                                             visio_con, route, get_route)
+    seleccion = None
+    if not es_metro:                                  # Metro goes to the nearest node: no other point is compared
+        seg, route, seleccion = _elegir_por_ruta(seg, desde_visio, req.latitude, req.longitude, rules,
+                                                 visio_con, route, get_route)
 
     route_wkt = _route_linestring_wkt(route.points)
-    try:
-        route_mufas = db.find_mufas_near_route(
-            route_wkt,
-            rules.get("fixed_events", {}).get("route_mufa_search_buffer_m", 15),
-            rules["excluded_tipo_keywords"],
-            excluded_names=reglas_mufas.patrones_sql(reglas_mufas.configuracion(rules)),
-        )
-    except db.ExistingPolesQueryError:
-        raise HTTPException(status_code=500, detail="Database mufa query failed")
     mufas_cfg = reglas_mufas.configuracion(rules)
-    route_mufas = reglas_mufas.filtrar(route_mufas, mufas_cfg)
+    if es_metro:                                      # Metro intervenes one mufa (the one nearest to the node), not those along the route
+        route_mufas = []
+    else:
+        try:
+            route_mufas = db.find_mufas_near_route(
+                route_wkt,
+                rules.get("fixed_events", {}).get("route_mufa_search_buffer_m", 15),
+                rules["excluded_tipo_keywords"],
+                excluded_names=reglas_mufas.patrones_sql(reglas_mufas.configuracion(rules)),
+            )
+        except db.ExistingPolesQueryError:
+            raise HTTPException(status_code=500, detail="Database mufa query failed")
+        route_mufas = reglas_mufas.filtrar(route_mufas, mufas_cfg)
 
     # Intervened mufas: every mufa the new hilo passes from where the service is fed down
     # to the client, plus any other mufa on the new route. That path comes from the Visio
@@ -634,7 +651,11 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     # node); otherwise from the PostGIS upstream chain to the distribution mufa. A reserva
     # gets a new mufa instead, whose price already includes the intervention.
     intervened: dict[Any, str | None] = {}
-    if desde_visio:
+    metro_warnings: list[str] = []
+    if es_metro:
+        chain = []
+        distribution_reason = None
+    elif desde_visio:
         chain = [db.ChainMufa(seg.id, seg.nombre)]   # not in the KMZ: no PostGIS chain
         distribution_reason = None
     elif seg.is_mufa:
@@ -648,10 +669,21 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     else:
         chain = []
         distribution_reason = None
-    origin, origin_warnings = _traffic_origin(seg, chain[:1] if desde_visio else chain, rules, visio_con)
-    use_diagram_path = (seg.is_mufa and origin.path_traced
-                        and rules.get("traffic_origin", {}).get("count_path_mufas", True))
-    if use_diagram_path:
+    if es_metro:
+        # The traffic origin is the node itself; the only intervened mufa is the one nearest to it.
+        origin, origin_warnings = metro.origen_trafico(seg), []
+        mufa_nodo, metro_warnings = metro.mufa_del_nodo(seg, rules, lambda s: _no_disponible(s, rules, visio_con))
+        if mufa_nodo is not None:
+            intervened[mufa_nodo.id] = mufa_nodo.nombre
+        mufa_count_source = metro.MUFA_COUNT_SOURCE
+        use_diagram_path = False
+    else:
+        origin, origin_warnings = _traffic_origin(seg, chain[:1] if desde_visio else chain, rules, visio_con)
+        use_diagram_path = (seg.is_mufa and origin.path_traced
+                            and rules.get("traffic_origin", {}).get("count_path_mufas", True))
+    if es_metro:
+        pass
+    elif use_diagram_path:
         # path[0] is the connection mufa itself: keep its PostGIS id so route mufas dedupe.
         intervened[seg.id] = seg.nombre
         # the mufas de corte / aérea / punta plana of the path are passed by, not intervened
@@ -774,9 +806,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     distance_km = round(route.distance_m / 1000, 3)
     distance_threshold_km = float(rules.get("budget_alerts", {}).get("distance_threshold_km", 5.0))
 
-    # Customer equipment (MATERIALES): GPON or Metro kit plus one ODF.
-    technology, technology_source = seleccionar_tecnologia(
-        req.bandwidth, req.technology, req.raw_comment, rules)
+    # Customer equipment (MATERIALES): GPON or Metro kit plus one ODF (technology chosen at the top).
     equipment = calcular_equipos(technology, req.odf_rack_ports, rules)
     log.info("Equipment audit: technology=%s source=%s items=%s", technology, technology_source, equipment)
 
@@ -836,7 +866,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
         excel_data["route_map_png"] = map_png          # absent (route_map.enabled: false) = the "ESQUEMA DE RUTA PROYECTADA" box stays blank
     generated = generar_excel(excel_data, rules, settings.template_path, output_dir)
     missing_equipment = [item for item in generated.missing_materials if item in equipment]
-    warnings = origin_warnings + marked_warnings + list(generated.warnings)
+    warnings = origin_warnings + metro_warnings + marked_warnings + list(generated.warnings)
     if (aviso := _aviso_seleccion(seleccion)) is not None:
         warnings.insert(0, aviso)
     if getattr(route, "aviso", None):                                  # routing.calibrar replaced the street route (walking path / straight line)

@@ -154,7 +154,7 @@ def test_estimate_defaults_from_visor_estimacion(entorno):
     propio = {**rules, "visor_estimacion": {**rules["visor_estimacion"], "bandwidth": "200 Mbps",
                                             "servicio_hasta_umbral": "Corporativo"}}
     otro = pv.supuestos_estimacion(100, propio)
-    assert (otro["service_type"], otro["bandwidth"], otro["technology"]) == ("Corporativo", "200 Mbps", "gpon")   # solo_gpon
+    assert (otro["service_type"], otro["bandwidth"], otro["technology"]) == ("Corporativo", "200 Mbps", "metro")   # above the Metro threshold (100 Mbps)
 
 
 def test_estimate_reuses_the_viewer_route_without_calling_google_again(entorno):

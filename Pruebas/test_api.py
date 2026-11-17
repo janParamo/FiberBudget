@@ -250,7 +250,7 @@ def test_exceeds_5km_uses_configured_threshold(client, monkeypatch):
 def test_default_gpon_kit_is_written_to_materials(client):
     data = client.post("/presupuesto", json=BODY, headers=HEADERS).json()
     assert data["equipment"]["technology"] == "gpon"
-    assert data["equipment"]["technology_source"] == "solo_gpon"          # only GPON routes are in use (equipment.solo_gpon)
+    assert data["equipment"]["technology_source"] == "bandwidth"          # 100 Mbps is not above the Metro threshold (equipment.solo_gpon is off)
     assert data["equipment"]["missing_in_template"] == []
     sheet = load_workbook(data["excel_path"])["Presupuesto"]
     written = {sheet.cell(row, 5).value: sheet.cell(row, 7).value for row in range(56, 63)}
@@ -261,7 +261,7 @@ def test_default_gpon_kit_is_written_to_materials(client):
 
 
 def test_metro_with_rack_odf_reports_rows_missing_from_template(client, monkeypatch):
-    _con_reglas(monkeypatch, **{"equipment.solo_gpon": False})              # the choice of technology on (it is off in production)
+    _metro_preparado(monkeypatch, [(2, "NODO CERCA", None, 12.13, -86.25, "visio", None, None)])     # Metro needs a node of the network
     body = {**BODY, "ticket_id": "T-METRO", "technology": "METRO", "odf_rack_ports": "24"}
     response = client.post("/presupuesto", json=body, headers=HEADERS)
     assert response.status_code == 200
@@ -637,3 +637,83 @@ def test_the_route_of_an_api_budget_goes_to_the_owner_of_the_env_in_mis_lugares(
     monkeypatch.setenv("LUGARES_USUARIO_PRESUPUESTOS", "jparamo")
     assert client.post("/presupuesto", json={**BODY, "ticket_id": "LUG-2"}, headers=HEADERS).status_code == 200
     assert llamadas[-1] == ("LUG-2", 3, {"usuario_windows": "jparamo"})
+
+
+# --------------------------------------------------------------------------- Fibra Metro: to the nearest node, one mufa
+
+def _metro_preparado(monkeypatch, nodos):
+    """The Metro fixture: the nodes of the network, one mufa next to the nearest node and a mufa along the route (GPON would count it)."""
+    import main
+    import metro
+
+    monkeypatch.setattr(metro, "_filas_nodos", lambda con: nodos)
+    mufa_nodo = main.db.Segment(id=99, tipo="mufa", lat=12.1301, lon=-86.2501, distance_m=15.0, is_mufa=True, nombre="MF CERCA DEL NODO")
+    consultas = []
+    monkeypatch.setattr(main.db, "find_connection_candidates", lambda lat, lon, *a, **k: consultas.append((lat, lon)) or [mufa_nodo])
+    monkeypatch.setattr(main.db, "find_mufas_near_route", lambda *a, **k: [
+        main.db.RouteMufa(id=5, tipo="mufa", lat=12.135, lon=-86.25, distance_m=3.0, is_backbone=False, nombre="MF EN RUTA")])
+    salidas = []
+    ruta = main.routing.Route(distance_m=1850.0, duration_s=300.0, points=[(12.13, -86.25), (12.14, -86.25), (12.14, -86.24)])
+    monkeypatch.setattr(main.routing, "get_route", lambda origin=None, destination=None: salidas.append(origin) or ruta)
+    return consultas, salidas
+
+
+def test_metro_goes_to_the_nearest_node_and_intervenes_only_the_mufa_next_to_it(client, monkeypatch):
+    import main
+
+    nodos = [(1, "NODO LEJANO", None, 12.20, -86.30, "visio", None, None), (2, "NODO CERCA", None, 12.13, -86.25, "visio", None, None)]
+    consultas, salidas = _metro_preparado(monkeypatch, nodos)
+    response = client.post("/presupuesto", json={**BODY, "ticket_id": "T-METRO-NODO", "technology": "metro"}, headers=HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["equipment"]["technology"] == "metro"
+    assert (data["connection_point"]["name"], data["connection_point"]["segment_id"]) == ("NODO CERCA", "visio:2")
+    assert salidas == [(12.13, -86.25)]                                    # the route starts at the node, not at a mufa; only one route is asked
+    assert consultas == [(12.13, -86.25)]                                  # the mufa is the one nearest to the NODE
+    assert data["budget"]["mufa_count"] == 1
+    assert data["budget"]["intervened_mufas"] == [{"id": 99, "name": "MF CERCA DEL NODO"}]    # not the mufa along the route
+    assert data["budget"]["mufa_count_source"] == "metro_nodo"
+    assert data["traffic_origin"]["node"] == "NODO CERCA"
+    labels = main.load_rules(main.settings.rules_path)["splice"]
+    assert data["quantities"][labels["mufa_intervention_row_label"]] == 1
+    assert data["quantities"][labels["new_mufa_row_label"]] == 0
+    assert data["budget"]["new_poles_8m"] > 0                              # poles are put where there are none
+    assert data["budget"]["existing_poles"] == 1                           # and the existing ones are used
+
+
+def test_gpon_still_goes_to_the_nearest_mufa_and_counts_the_mufas_of_the_route(client, monkeypatch):
+    nodos = [(2, "NODO CERCA", None, 12.13, -86.25, "visio", None, None)]
+    _metro_preparado(monkeypatch, nodos)
+    data = client.post("/presupuesto", json={**BODY, "ticket_id": "T-GPON-RUTA", "technology": "gpon"}, headers=HEADERS).json()
+    assert data["equipment"]["technology"] == "gpon"
+    assert data["connection_point"]["segment_id"] == 7                      # the KMZ mufa of the fixture
+    assert "MF EN RUTA" in [m["name"] for m in data["budget"]["intervened_mufas"]]
+
+
+def test_metro_without_a_node_in_the_network_is_404(client, monkeypatch):
+    _metro_preparado(monkeypatch, [])
+    response = client.post("/presupuesto", json={**BODY, "ticket_id": "T-METRO-SIN", "technology": "metro"}, headers=HEADERS)
+    assert response.status_code == 404
+    assert "nodo" in response.json()["detail"]
+
+
+def test_metro_without_a_mufa_near_the_node_intervenes_none_and_says_so(client, monkeypatch):
+    import main
+
+    _metro_preparado(monkeypatch, [(2, "NODO CERCA", None, 12.13, -86.25, "visio", None, None)])
+    monkeypatch.setattr(main.db, "find_connection_candidates", lambda *a, **k: [])
+    data = client.post("/presupuesto", json={**BODY, "ticket_id": "T-METRO-SINMF", "technology": "metro"}, headers=HEADERS).json()
+    assert data["budget"]["mufa_count"] == 0
+    assert any("No hay mufa" in w for w in data["warnings"])
+
+
+def test_nearest_node_prefers_real_coordinates_over_estimated_ones():
+    import metro
+
+    nodos = [(1, "NODO ESTIMADO", None, 12.1301, -86.2501, "estimada_vecinos", None, None), (2, "NODO REAL", None, 12.14, -86.25, "visio", None, None)]
+    original = metro._filas_nodos
+    metro._filas_nodos = lambda con: nodos
+    try:
+        assert metro.nodo_mas_cercano(12.13, -86.25, None)["nombre"] == "NODO REAL"
+    finally:
+        metro._filas_nodos = original

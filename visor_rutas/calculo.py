@@ -23,6 +23,7 @@ from fastapi import HTTPException
 
 import db
 import main
+import metro
 import presupuesto
 import red_fibra_pg
 import reglas_mufas
@@ -219,13 +220,13 @@ class RutaFija:
         return routing.Route(distance_m=self.distancia_m, duration_s=0.0, points=list(self.puntos))
 
 
-def calcular_con_ruta(lat: float | None, lon: float | None, puntos: Any, postes_extra: int = 0) -> dict[str, Any]:
+def calcular_con_ruta(lat: float | None, lon: float | None, puntos: Any, postes_extra: int = 0, technology: str | None = None) -> dict[str, Any]:
     """The same result as calcular_ruta, for a route the user edited or drew (no Google). (lat, lon) is the client; without it,
     the last point of the route. Everything is recalculated from the polyline: distance, metraje, poles, mufas, quantities."""
     ruta = RutaFija(puntos)
     if lat is None or lon is None:
         lat, lon = ruta.puntos[-1]
-    resultado = calcular_ruta(float(lat), float(lon), get_route=ruta, postes_extra=int(postes_extra or 0))
+    resultado = calcular_ruta(float(lat), float(lon), get_route=ruta, postes_extra=int(postes_extra or 0), technology=technology)
     resultado["ruta"]["manual"] = True
     resultado["ruta"]["aproximada"] = False
     rules = main.load_rules(main.settings.rules_path)
@@ -253,12 +254,13 @@ def usando_rutas(get_route: Any) -> Iterator[None]:
         _get_route_activo.reset(token)
 
 
-def calcular_ruta(lat: float, lon: float, get_route: Any = None, postes_extra: int = 0) -> dict[str, Any]:
+def calcular_ruta(lat: float, lon: float, get_route: Any = None, postes_extra: int = 0, technology: str | None = None) -> dict[str, Any]:
     """Punto de conexión, ruta, postes, mufas y origen de tráfico para el cliente (lat, lon).
 
     get_route: routing.get_route, o el caché de rutas del visor (presupuesto_visor.CacheRutas)
     para que el presupuesto aproximado de la misma coordenada no vuelva a llamar a Google.
     Sin argumento se usa el que esté activo con usando_rutas(), si hay uno.
+    technology: "metro" lleva el cliente al nodo más cercano (metro.py); cualquier otro valor es GPON (a la mufa más cercana).
     """
     get_route = get_route or _get_route_activo.get()
     validar_coordenadas(lat, lon)
@@ -269,19 +271,26 @@ def calcular_ruta(lat: float, lon: float, get_route: Any = None, postes_extra: i
         avisos.append("Base Visio no disponible: se usó solo el KMZ" if red_fibra_pg.enabled()
                       else "Base Visio desactivada (VISIO_DB_NAME vacío): se usó solo el KMZ")
     try:
-        return _calcular(lat, lon, rules, visio_con, avisos, get_route or routing.get_route, postes_extra)
+        return _calcular(lat, lon, rules, visio_con, avisos, get_route or routing.get_route, postes_extra, technology == "metro")
     finally:
         if visio_con is not None:
             visio_con.close()
 
 
 def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
-              avisos: list[str], get_route: Any = None, postes_extra: int = 0) -> dict[str, Any]:
+              avisos: list[str], get_route: Any = None, postes_extra: int = 0, es_metro: bool = False) -> dict[str, Any]:
     get_route = get_route or routing.get_route
     log.info("Visor: route for (%.6f, %.6f)", lat, lon)
 
     # 1) Punto de conexión (misma función que el presupuesto).
-    seg, busqueda, desde_visio = _resolver(lat, lon, rules, visio_con, avisos)
+    if es_metro:                                  # Fibra Metro: the nearest NODO is the connection point
+        try:
+            seg, busqueda = metro.resolver_nodo(lat, lon, rules, visio_con)
+        except metro.SinNodo as exc:
+            raise SinPuntoConexion(str(exc)) from exc
+        desde_visio = True
+    else:
+        seg, busqueda, desde_visio = _resolver(lat, lon, rules, visio_con, avisos)
     if busqueda.fuente == red_fibra_pg.SIN_CONEXION and visio_con is not None:
         avisos.append("La consulta a la base Visio falló: se usó solo el KMZ")
     if seg is None:
@@ -303,7 +312,7 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
     # Igual que el presupuesto: si la más cercana da mucha vuelta por calle o no tiene hilos, se
     # comparan las mufas cercanas por metraje de ruta (sin Google no se puede comparar).
     seleccion = None
-    if not aproximada:
+    if not aproximada and not es_metro:
         seg, route, seleccion = main._elegir_por_ruta(seg, desde_visio, lat, lon, rules, visio_con, route,
                                                       get_route)
         puntos, distancia_m = list(route.points), route.distance_m
@@ -319,17 +328,23 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
 
     # 3) Mufas sobre la ruta (sin las de corte, aéreas ni punta plana: reglas_mufas.py).
     mufas_cfg = reglas_mufas.configuracion(rules)
-    try:
-        route_mufas = reglas_mufas.filtrar(db.find_mufas_near_route(
-            route_wkt, rules.get("fixed_events", {}).get("route_mufa_search_buffer_m", 15),
-            rules["excluded_tipo_keywords"], excluded_names=reglas_mufas.patrones_sql(mufas_cfg)), mufas_cfg)
-    except db.ExistingPolesQueryError:
-        route_mufas = []
-        avisos.append("No se pudieron consultar las mufas de la ruta (el presupuesto fallaría)")
+    route_mufas = []
+    if not es_metro:                              # Metro intervenes one mufa (the nearest to the node), not those along the route
+        try:
+            route_mufas = reglas_mufas.filtrar(db.find_mufas_near_route(
+                route_wkt, rules.get("fixed_events", {}).get("route_mufa_search_buffer_m", 15),
+                rules["excluded_tipo_keywords"], excluded_names=reglas_mufas.patrones_sql(mufas_cfg)), mufas_cfg)
+        except db.ExistingPolesQueryError:
+            avisos.append("No se pudieron consultar las mufas de la ruta (el presupuesto fallaría)")
 
     # 4) Cadena aguas arriba y origen de tráfico: igual que main._generar_presupuesto_con.
     distribution_reason = None
-    if desde_visio:
+    mufa_metro = None
+    if es_metro:
+        chain = []
+        mufa_metro, avisos_metro = metro.mufa_del_nodo(seg, rules, lambda s: main._no_disponible(s, rules, visio_con))
+        avisos.extend(avisos_metro)
+    elif desde_visio:
         chain = [db.ChainMufa(seg.id, seg.nombre)]
     elif seg.is_mufa:
         try:
@@ -342,13 +357,17 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
             avisos.append("No se pudo consultar la cadena de mufas aguas arriba (el presupuesto fallaría)")
     else:
         chain = []
-    origin, _ = main._traffic_origin(seg, chain[:1] if desde_visio else chain, rules, visio_con)
+    origin = metro.origen_trafico(seg) if es_metro else main._traffic_origin(seg, chain[:1] if desde_visio else chain, rules, visio_con)[0]
 
     # Mufas intervenidas: copia de main._generar_presupuesto_con (test_visor_rutas compara ambos).
     intervened: dict[Any, str | None] = {}
-    use_diagram_path = (seg.is_mufa and origin.path_traced
+    use_diagram_path = (not es_metro and seg.is_mufa and origin.path_traced
                         and rules.get("traffic_origin", {}).get("count_path_mufas", True))
-    if use_diagram_path:
+    if es_metro:
+        if mufa_metro is not None:
+            intervened[mufa_metro.id] = mufa_metro.nombre
+        mufa_count_source = metro.MUFA_COUNT_SOURCE
+    elif use_diagram_path:
         intervened[seg.id] = seg.nombre
         intervened.update((f"diagrama:{name}", name) for name in origin.path[1:] if reglas_mufas.usable(name, mufas_cfg))
         mufa_count_source = "diagramas"
@@ -441,6 +460,8 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
 
     # Coordenadas de las mufas intervenidas, cuando existen.
     coords: dict[Any, LatLon] = {seg.id: (seg.lat, seg.lon)}
+    if mufa_metro is not None:
+        coords[mufa_metro.id] = (mufa_metro.lat, mufa_metro.lon)
     coords.update({m.id: (m.lat, m.lon) for m in route_mufas})
     ids_postgis = [mid for mid in intervened if mid not in coords and not str(mid).startswith(("diagrama:", "visio:"))]
     try:
@@ -520,9 +541,13 @@ def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
 
     # 7) Ruta de fusión (solo datos de la base de diagramas); nunca rompe el cálculo de la ruta.
     try:
-        resultado["ruta_fusion"] = fusion.ruta_fusion(resultado["origen_trafico"], resultado["conexion"],
-                                                      visio_con=visio_con, archivo_sqlite=main.settings.red_fibra_db,
-                                                      avisos=avisos)
+        if es_metro:                      # one stop: the mufa nearest to the node (no diagram path to walk)
+            resultado["ruta_fusion"] = ([{"nombre": mufa_metro.nombre or f"Mufa {mufa_metro.id}", "lat": mufa_metro.lat, "lon": mufa_metro.lon}]
+                                        if mufa_metro is not None else [])
+        else:
+            resultado["ruta_fusion"] = fusion.ruta_fusion(resultado["origen_trafico"], resultado["conexion"],
+                                                          visio_con=visio_con, archivo_sqlite=main.settings.red_fibra_db,
+                                                          avisos=avisos)
     except Exception as exc:
         log.warning("Visor: fusion route failed (%s: %s)", type(exc).__name__, exc)
         resultado["ruta_fusion"] = []

@@ -97,6 +97,28 @@ def test_visor_da_las_mismas_cantidades_que_el_presupuesto(entorno):
         data["connection_point"]["latitude"], data["connection_point"]["longitude"])
 
 
+def test_metro_en_el_visor_va_al_nodo_y_da_lo_mismo_que_el_presupuesto(entorno, monkeypatch):
+    main, calculo, _ = entorno
+    import metro
+
+    monkeypatch.setattr(metro, "_filas_nodos", lambda con: [(2, "NODO CERCA", None, 12.13, -86.25, "visio", None, None)])
+    mufa = main.db.Segment(id=99, tipo="mufa", lat=12.1301, lon=-86.2501, distance_m=15.0, is_mufa=True, nombre="MF CERCA DEL NODO")
+    monkeypatch.setattr(main.db, "find_connection_candidates", lambda *a, **k: [mufa])
+    r = calculo.calcular_ruta(LAT, LON, technology="metro")
+
+    assert (r["conexion"]["nombre"], r["conexion"]["tipo"], r["conexion"]["lat"], r["conexion"]["lon"]) == ("NODO CERCA", "nodo Visio", 12.13, -86.25)
+    assert [m["nombre"] for m in r["mufas_intervenidas"]] == ["MF CERCA DEL NODO"]          # one mufa: not the chain, not the one on the route
+    assert r["mufas_intervenidas_fuente"] == "metro_nodo" and r["mufas_en_ruta"] == []
+    assert r["origen_trafico"]["nodo"] == "NODO CERCA"
+    assert r["postes_nuevos"]["cantidad"] > 0 and len(r["postes_existentes"]) == 2
+
+    data = TestClient(main.app).post("/presupuesto", json={**BODY, "technology": "metro"}, headers={"X-API-Key": "secret"}).json()
+    budget = data["budget"]
+    assert r["ruta"]["distancia_m"] == budget["route_distance_m"] and r["postes_nuevos"]["cantidad"] == budget["new_poles_8m"]
+    assert [m["id"] for m in r["mufas_intervenidas"]] == [m["id"] for m in budget["intervened_mufas"]]
+    assert [p["nombre"] for p in r["plan_fusion"]["pasos"]] == ["MF CERCA DEL NODO"]        # the plan of the fusion route: that one mufa
+
+
 def test_acometida_del_fin_de_ruta_al_cliente(entorno):
     main, calculo, _ = entorno
     r = calculo.calcular_ruta(LAT, LON)

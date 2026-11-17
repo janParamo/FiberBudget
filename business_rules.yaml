@@ -172,9 +172,10 @@ odf:
 # Technology: the request's `technology` field, else a single "gpon"/"metro" word in the
 # ticket comment, else bandwidth above metro_bandwidth_threshold_mbps -> metro, otherwise gpon.
 equipment:
-  # Only GPON routes are in use (2026-10-23): the kit is always the GPON one, whatever the request, the comment or the bandwidth say.
-  # false brings back the choice (request field, then a gpon / metro word in the comment, then the bandwidth threshold below).
-  solo_gpon: true
+  # Fibra Metro back in use (2026-11-17): the choice of technology is on (request field, then a gpon / metro word in the comment, then the
+  # bandwidth threshold below). Metro connects the client to the nearest NODO and intervenes one mufa (see `metro` below).
+  # true forces GPON again whatever the request, the comment or the bandwidth say.
+  solo_gpon: false
   metro_bandwidth_threshold_mbps: 100
   kits:
     gpon:
@@ -193,6 +194,13 @@ equipment:
   odf_rack_labels:
     12: "Odf Rack 12 Acopladores"
     24: "Odf Rack 24 Acopladores"
+
+# Fibra Metro (metro.py): the client is taken to the nearest NODO of the Visio network (tipo NODO), not to the nearest mufa. The route goes from
+# that node to the client along the existing poles (new poles where there are none, the same pole rules as GPON). Only ONE mufa is intervened:
+# the KMZ mufa nearest to the node (never the mufas found along the route or up the chain). A mufa marked ELIMINADA / SATURADA is skipped.
+metro:
+  mufa_radius_m: 1000        # no mufa this close to the node -> no mufa is intervened and the budget says so
+  max_candidates: 5          # nearest mufas looked at, to skip the ones without hilos
 
 # A technical visit is budgeted when the client is in a plaza, a building or a mall (words of the client's name, the ticket comment or the
 # service type; whole words, no accents); otherwise the row stays at 0. Rule of 2026-10-20.

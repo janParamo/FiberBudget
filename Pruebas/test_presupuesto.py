@@ -146,7 +146,9 @@ def test_hardware_internal_count_is_per_pole_and_the_green_preformed_is_twice_th
 
 def test_only_gpon_and_only_adss_can_be_switched_off():
     rules = _production_rules()
-    assert seleccionar_tecnologia("500 Mbps", "metro", "Instalar por Metro", rules) == ("gpon", "solo_gpon")      # whatever the request says
+    assert seleccionar_tecnologia("500 Mbps", "gpon", "", rules) == ("gpon", "request")                          # Fibra Metro is back (2026-11-17)
+    rules["equipment"]["solo_gpon"] = True                                                                        # the old switch still forces GPON
+    assert seleccionar_tecnologia("500 Mbps", "metro", "Instalar por Metro", rules) == ("gpon", "solo_gpon")
     assert calcular_materiales(100, 5, rules)["cable_key"] == "adss"
     rules["equipment"]["solo_gpon"] = False
     rules["cable"]["solo_adss"] = False
