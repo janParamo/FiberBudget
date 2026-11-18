@@ -89,8 +89,8 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
         otro_id = c["origen_id"] if llega else c["destino_id"]
         pre = "o_" if llega else "d_"
         fibras = []
-        clientes_hilo = {f["hilo_id"]: {k: f[k] for k in ("id", "version", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "fuente")} for f in con.execute(
-            "SELECT s.id, s.version, s.hilo_id, s.codigo_cliente, s.nombre, s.id_servicio, s.elemento_id, s.fuente FROM redes.hilo_servicios s "
+        clientes_hilo = {f["hilo_id"]: {k: f[k] for k in ("id", "version", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "hilo_cliente", "fuente")} for f in con.execute(
+            "SELECT s.id, s.version, s.hilo_id, s.codigo_cliente, s.nombre, s.id_servicio, s.elemento_id, s.hilo_cliente, s.fuente FROM redes.hilo_servicios s "
             "JOIN redes.hilos h ON h.id = s.hilo_id WHERE h.cable_id = %s AND s.borrado_en IS NULL", (c["id"],)).fetchall()}
         for h in con.execute("SELECT id, numero, buffer, color, color_buffer, estado, observacion, version FROM redes.hilos "
                              "WHERE cable_id = %s AND borrado_en IS NULL ORDER BY numero", (c["id"],)).fetchall():
@@ -106,16 +106,16 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
                        "x": x, "y": y, "pos_version": pos_version, "fibras": fibras})
     servicios: dict[int, dict[int, dict[str, Any]]] = {}
     for f in con.execute(
-            "SELECT p.splitter_id, p.numero, x.version, x.codigo_cliente, x.nombre, x.id_servicio, x.elemento_id, x.fuente FROM redes.puerto_servicios x "
+            "SELECT p.splitter_id, p.numero, x.version, x.codigo_cliente, x.nombre, x.id_servicio, x.elemento_id, x.hilo_cliente, x.fuente FROM redes.puerto_servicios x "
             "JOIN redes.puertos p ON p.id = x.puerto_id JOIN redes.splitters s ON s.id = p.splitter_id "
             "WHERE s.mufa_id = %s AND s.borrado_en IS NULL AND x.borrado_en IS NULL", (m["id"],)).fetchall():
-        servicios.setdefault(f["splitter_id"], {})[f["numero"]] = {k: f[k] for k in ("version", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "fuente")}
+        servicios.setdefault(f["splitter_id"], {})[f["numero"]] = {k: f[k] for k in ("version", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "hilo_cliente", "fuente")}
     splitters = [dict(s) | {"puertos": _puertos(con, splitter_id=s["id"]), "servicios": servicios.get(s["id"], {}),
                             "propiedades": s["propiedades"] or {}} for s in con.execute(
         "SELECT id, nombre, salidas, relacion, conector, x, y, propiedades, fuente, confianza, version FROM redes.splitters "
         "WHERE mufa_id = %s AND borrado_en IS NULL ORDER BY id", (m["id"],)).fetchall()]
     clientes = [dict(f) for f in con.execute(
-        "SELECT codigo_cliente, nombre, id_servicio, elemento_id, fuente FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL "
+        "SELECT codigo_cliente, nombre, id_servicio, elemento_id, hilos, x, y, fuente FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL "
         "ORDER BY codigo_cliente NULLS LAST, nombre", (m["id"],)).fetchall()]
     conectores = [dict(k) for k in con.execute(
         "SELECT id, nombre, tipo, x, y, version FROM redes.conectores WHERE mufa_id = %s AND borrado_en IS NULL ORDER BY id",
@@ -200,7 +200,51 @@ def _valores_cliente(con: Any, actor: dict[str, Any], d: dict[str, Any], quien: 
         if e["proyecto_id"] != proyecto_id and not proyectos.puede_ver(con, actor, e["proyecto_id"]):
             raise DatosInvalidos({quien: "no tiene acceso al proyecto del cliente del mapa"})
         elemento = e["id"]
-    return {"codigo_cliente": codigo, "nombre": nombre, "id_servicio": servicio, "elemento_id": elemento}
+    return {"codigo_cliente": codigo, "nombre": nombre, "id_servicio": servicio, "elemento_id": elemento, "hilo_cliente": _hilo_cliente(d.get("hilo_cliente"), quien)}
+
+
+MAX_HILOS_CLIENTE = 48
+
+
+def _hilo_cliente(valor: Any, quien: str, campo: str = "hilo del cliente") -> int:
+    """The number of the client's own fibre that is on this fibre / output (1 when the client has a single line)."""
+    try:
+        n = int(valor if valor not in (None, "") else 1)
+    except (TypeError, ValueError):
+        raise DatosInvalidos({quien: f"el {campo} es un número"}) from None
+    if not 1 <= n <= MAX_HILOS_CLIENTE:
+        raise DatosInvalidos({quien: f"el {campo} va de 1 a {MAX_HILOS_CLIENTE}"})
+    return n
+
+
+def _guardar_cliente_mufa(con: Any, actor: dict[str, Any], mid: int, d: dict[str, Any], proyecto_id: int) -> None:
+    """A client of the mufa (how many fibres it has, where its card is on the canvas): created when the mufa did not list it, else updated.
+    Only what the person configured: putting a client on a fibre does not list it in the mufa (that decides whether a fusion is a tap)."""
+    codigo = _texto_corto(d.get("codigo_cliente"), 20)
+    codigo = codigo.upper() if codigo else None
+    nombre, servicio = _texto_corto(d.get("nombre"), 160) or None, _texto_corto(d.get("id_servicio"), 40) or None
+    if not (codigo or nombre or servicio):
+        raise DatosInvalidos({"Cliente": "escriba el código, el nombre o el ID de servicio del cliente"})
+    quien = f"Cliente {codigo or nombre or servicio}"
+    if codigo and not re.fullmatch(r"C\d{3,7}", codigo):
+        raise DatosInvalidos({quien: "el código del cliente es una C seguida de números (por ejemplo C23839)"})
+    if codigo:
+        previo = con.execute("SELECT * FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL AND codigo_cliente = %s FOR UPDATE", (mid, codigo)).fetchone()
+    else:
+        previo = con.execute("SELECT * FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL AND codigo_cliente IS NULL AND lower(nombre) = lower(%s) FOR UPDATE",
+                             (mid, nombre or servicio)).fetchone()
+    valores: dict[str, Any] = {"hilos": _hilo_cliente(d.get("hilos"), quien, "número de hilos del cliente")}
+    if d.get("x") is not None and d.get("y") is not None:
+        valores["x"], valores["y"] = _numero(d["x"], quien, "x"), _numero(d["y"], quien, "y")
+    if previo is None:
+        fila = repositorio.insertar(con, "mufa_clientes", {"mufa_id": mid, "codigo_cliente": codigo, "nombre": nombre, "id_servicio": servicio,
+                                                           **valores, "fuente": "usuario", "confianza": "verificada"}, actor["id"])
+        repositorio.registrar(con, actor["id"], "mufa_cliente", fila["id"], "crear", {"cliente": [None, codigo or nombre or servicio]}, proyecto_id=proyecto_id)
+        return
+    antes, despues = _actualizar(con, "mufa_clientes", previo["id"], {"version": previo["version"]}, valores, actor, quien)
+    cambio = repositorio.diferencias({k: antes[k] for k in valores}, {k: despues[k] for k in valores})
+    if "hilos" in cambio:
+        repositorio.registrar(con, actor["id"], "mufa_cliente", previo["id"], "editar", {"hilos": cambio["hilos"]}, proyecto_id=proyecto_id)
 
 
 def _alimenta_cliente(con: Any, mufa_id: int, hilo_id: int) -> bool:
@@ -484,6 +528,9 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
                 cambio = repositorio.diferencias({k: antes[k] for k in valores}, {k: despues[k] for k in valores})
                 if cambio:
                     repositorio.registrar(con, actor["id"], "puerto_servicio", previo["id"], "editar", cambio, proyecto_id=proyecto_id)
+        # 4d) the clients of the mufa: how many fibres each one has and where its card is drawn
+        for d in lista("clientes_mufa"):
+            _guardar_cliente_mufa(con, actor, mid, d, proyecto_id)
         # 5) notes inside the canvas
         for d in lista("notas"):
             if d.get("eliminar"):
@@ -509,7 +556,7 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
                 actual = _propio(con, "notas", int(d["id"]), mid, "Nota")
                 _actualizar(con, "notas", actual["id"], d, valores, actor, "Nota")
         # 6) a migrated mufa that a person changes is "editada": a re-import never overwrites it
-        if any(lista(k) for k in ("splitters", "conectores", "conexiones", "hilos", "hilo_clientes", "puerto_clientes", "notas")):
+        if any(lista(k) for k in ("splitters", "conectores", "conexiones", "hilos", "hilo_clientes", "puerto_clientes", "clientes_mufa", "notas")):
             con.execute("UPDATE redes.elementos SET estado_migracion = 'editada' WHERE id = %s AND estado_migracion IN ('automatica', 'en_revision')",
                         (mid,))
         # 7) a mufa with a model: new splitters get a tray and new splices a position (estimated)

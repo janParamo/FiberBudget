@@ -160,6 +160,21 @@ def test_map_search_box_finds_new_elements_and_clients_but_not_migrated_mufas(re
     assert mufas_existentes.buscar_elementos(con, lector, texto="nandu")["elementos"] == []
     assert len(mufas_existentes.buscar_elementos(con, admin, texto="nandu")["elementos"]) == 1
 
+def test_client_search_looks_in_every_mufa_and_the_map_without_repeats(red_base):
+    """A client can be put on a fibre of a mufa even when the program did not list it there: it is searched in the whole network."""
+    con, admin, p, ids, _ = red_base
+    con.execute("INSERT INTO redes.mufa_clientes (mufa_id, codigo_cliente, nombre, id_servicio, fuente, confianza) "
+                "VALUES (%s, 'C28995', 'Casa del Café', 'ID3156118', 'texto_diagrama', 'media')", (ids["a"],))
+    red.guardar(con, admin, proyecto_id=p["id"], cambios={"elementos": [
+        {"id": "k", "tipo": "cliente", "nombre": "Casa del Café", "codigo": "C28995", "lat": 12.131, "lon": -86.301}]})
+    buscar = lambda texto: mufas_existentes.buscar_clientes(con, admin, texto=texto)["clientes"]
+    hallados = buscar("casa del cafe")
+    assert len(hallados) == 1 and hallados[0]["codigo_cliente"] == "C28995"            # accents ignored; the same client in two places is one
+    assert hallados[0]["mufa"] == "MF Peñón" and hallados[0]["id_servicio"] == "ID3156118"
+    assert [c["codigo_cliente"] for c in buscar("id3156118")] == ["C28995"]
+    assert buscar("c") == [] and buscar("zzzz") == []
+
+
 def test_a_mufa_of_a_zone_wins_over_the_empty_one_made_from_the_map(red_base):
     con, admin, p, ids, _ = red_base
     vacia = mufas_existentes.crear_vacia(con, admin, nombre="MF LOS POLLOS", lat=11.92569, lon=-85.955211)["mufa"]          # made from the map first

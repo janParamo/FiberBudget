@@ -35,7 +35,7 @@ async def _recorrido(mundo_):
         # dropped on fibre 3: the client is drawn as an object joined to that fibre by a line
         await p.evaluar("(%s)(%d)" % (SOLTAR, hilos[3]))
         await p.esperar("window.EditorMufa._st.capa.find('.cliente-hilo').length === 1", 5)
-        assert await p.evaluar("window.EditorMufa._st.capa.find('.hilo-cliente').length") == 1
+        assert await p.evaluar("window.EditorMufa._st.capaLineas.find('.hilo-cliente').length") == 1
         assert await p.evaluar("window.EditorMufa._st.hiloClientes.get(%d).codigo_cliente" % hilos[3]) == "C24656"
         # dropped on fibre 4: the same client moves (it is not left on two fibres)
         await p.evaluar("(%s)(%d)" % (SOLTAR, hilos[4]))
@@ -98,3 +98,38 @@ async def _en_splitter(mundo_):
 
 def test_a_client_is_dragged_from_the_palette_to_a_splitter_output(mundo):
     asyncio.run(_en_splitter(mundo))
+
+
+async def _con_dos_hilos(mundo_):
+    """A client with 2 fibres: ONE card with two circles, each joined to its own place (a fibre of the mufa and an output of the splitter); the card is moved
+    freely and stays where it was left, also after saving."""
+    con, admin, proy, ids = mundo_
+    sid = mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"splitters": [{"id": "s1", "nombre": "SPL 1X8", "salidas": 8, "x": 470, "y": 40}]})["ids"]["s1"]
+    hilos = {f["numero"]: f["id"] for c in mufa.leer(con, admin, mufa_id=ids["a"])["cables"] for f in c["fibras"]}
+    mufa.guardar(con, admin, mufa_id=ids["a"], cambios={
+        "clientes_mufa": [{"codigo_cliente": "C28995", "nombre": "Casa del Café", "hilos": 2}],
+        "hilo_clientes": [{"hilo_id": hilos[2], "codigo_cliente": "C28995", "nombre": "Casa del Café", "hilo_cliente": 1}],
+        "puerto_clientes": [{"splitter": sid, "numero": 6, "codigo_cliente": "C28995", "nombre": "Casa del Café", "hilo_cliente": 2}]})
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.EditorMufa && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.EditorMufa.abrir(%d, 'MF Uno'); true" % ids["a"])
+        await p.esperar("window.EditorMufa._st.datos && window.EditorMufa._st.splitters.size === 1", 15)
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.cliente-hilo').length") == 1                # one card for the client
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.puerto-cliente').length") == 2              # with a circle for each of its two fibres
+        assert await p.evaluar("window.EditorMufa._st.capaLineas.find('.hilo-cliente').length") == 2          # and a line from each to its place
+        # the card dragged anywhere stays there (it does not go back)
+        await p.evaluar("""(() => { const t = window.EditorMufa._st.capa.find('.cliente-hilo')[0]; t.fire('dragstart'); t.position({x: 777, y: 333}); t.fire('dragend'); return true; })()""")
+        await p.esperar("window.EditorMufa._st.clientesMufa.size === 1", 5)
+        await p.evaluar("window.EditorMufa._st.capa.getLayer().batchDraw(); true")
+        await asyncio.sleep(0.2)
+        assert await p.evaluar("(() => { const t = window.EditorMufa._st.capa.find('.cliente-hilo')[0]; return [t.x(), t.y()]; })()") == [777, 333]
+        await p.evaluar("document.getElementById('mu-aplicar').click(); true")
+        await p.esperar("window.EditorMufa._st.clientesMufa.size === 0 && document.getElementById('mu-cambios').textContent === 'Guardado'", 10)
+        fila = dict(con.execute("SELECT hilos, x, y FROM redes.mufa_clientes WHERE codigo_cliente = 'C28995' AND borrado_en IS NULL").fetchone())
+        assert fila == {"hilos": 2, "x": 777, "y": 333}
+        assert await p.evaluar("(() => { const t = window.EditorMufa._st.capa.find('.cliente-hilo')[0]; return [t.x(), t.y()]; })()") == [777, 333]
+        assert await p.errores() == []
+
+
+def test_a_client_with_two_fibres_is_one_card_with_two_lines_and_moves_freely(mundo):
+    asyncio.run(_con_dos_hilos(mundo))

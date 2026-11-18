@@ -133,6 +133,56 @@ def buscar_elementos(con: Any, actor: dict[str, Any], *, texto: str, limite: int
                            "lat": None if f["lat"] is None else float(f["lat"]), "lon": None if f["lon"] is None else float(f["lon"])}
                           for f in filas]}
 
+def buscar_clientes(con: Any, actor: dict[str, Any], *, texto: str, limite: int = 15) -> dict[str, Any]:
+    """Search of a client in the WHOLE network (not only the ones the program put in a mufa): by code, name or service ID, accents and case ignored,
+    every typed word must appear. Looks at the clients listed in any mufa, the ones on the splitter outputs and the clients of the map.
+    Among the projects the user sees. Each client comes once, with the mufa where it is listed."""
+    palabras = _comparable(texto).split()
+    if not palabras or sum(len(p) for p in palabras) < 2:
+        return {"clientes": []}
+    plano = "upper(translate(coalesce({}, ''), 'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun'))"
+    visibles = "(p.es_red_base OR %(admin)s OR EXISTS (SELECT 1 FROM redes.proyecto_usuarios pu WHERE pu.proyecto_id = p.id AND pu.usuario_id = %(u)s))"
+    args: dict[str, Any] = {"admin": bool(usuarios.es_admin(actor)), "u": actor.get("id"), "limite": max(1, min(int(limite or 15), 40)) * 4}
+
+    def condiciones(*columnas: str) -> str:
+        partes = []
+        for i, palabra in enumerate(palabras):
+            args[f"p{i}"] = f"%{palabra}%"
+            partes.append("(" + " OR ".join(f"{plano.format(c)} LIKE %(p{i})s" for c in columnas) + ")")
+        return " AND ".join(partes)
+
+    filas: list[dict[str, Any]] = []
+    filas += con.execute(
+        "SELECT x.codigo_cliente, x.nombre, x.id_servicio, x.elemento_id, m.nombre AS mufa FROM redes.mufa_clientes x "
+        "JOIN redes.elementos m ON m.id = x.mufa_id JOIN redes.proyectos p ON p.id = m.proyecto_id "
+        f"WHERE x.borrado_en IS NULL AND m.borrado_en IS NULL AND p.borrado_en IS NULL AND {visibles} AND "
+        + condiciones("x.codigo_cliente", "x.nombre", "x.id_servicio") + " LIMIT %(limite)s", args).fetchall()
+    filas += con.execute(
+        "SELECT x.codigo_cliente, x.nombre, x.id_servicio, x.elemento_id, m.nombre AS mufa FROM redes.puerto_servicios x "
+        "JOIN redes.puertos pu ON pu.id = x.puerto_id JOIN redes.splitters s ON s.id = pu.splitter_id "
+        "JOIN redes.elementos m ON m.id = s.mufa_id JOIN redes.proyectos p ON p.id = m.proyecto_id "
+        f"WHERE x.borrado_en IS NULL AND m.borrado_en IS NULL AND p.borrado_en IS NULL AND {visibles} AND "
+        + condiciones("x.codigo_cliente", "x.nombre", "x.id_servicio") + " LIMIT %(limite)s", args).fetchall()
+    filas += con.execute(
+        "SELECT e.codigo AS codigo_cliente, e.nombre, NULL AS id_servicio, e.id AS elemento_id, NULL AS mufa FROM redes.elementos e "
+        f"JOIN redes.proyectos p ON p.id = e.proyecto_id WHERE e.tipo = 'cliente' AND e.borrado_en IS NULL AND p.borrado_en IS NULL AND {visibles} AND "
+        + condiciones("e.codigo", "e.nombre") + " LIMIT %(limite)s", args).fetchall()
+    vistos: dict[str, dict[str, Any]] = {}
+    for f in filas:
+        codigo = (f["codigo_cliente"] or "").upper()
+        clave = codigo or _comparable(f["nombre"] or f["id_servicio"] or "")
+        previo = vistos.get(clave)
+        actual = {"codigo_cliente": codigo, "nombre": f["nombre"] or "", "id_servicio": f["id_servicio"] or "",
+                  "elemento_id": f["elemento_id"], "mufa": f["mufa"]}
+        if previo is None:
+            vistos[clave] = actual
+        else:                                                   # the same client seen twice: keep what is known of it
+            for k in ("nombre", "id_servicio", "elemento_id", "mufa"):
+                previo[k] = previo[k] or actual[k]
+    resultado = sorted(vistos.values(), key=lambda c: (c["codigo_cliente"] or "~", c["nombre"]))
+    return {"clientes": resultado[: max(1, min(int(limite or 15), 40))]}
+
+
 def _elemento_editable(con: Any, actor: dict[str, Any], mufa_id: int) -> dict[str, Any]:
     m = con.execute("SELECT id, proyecto_id, tipo, nombre, estado_migracion FROM redes.elementos WHERE id = %s AND borrado_en IS NULL",
                     (int(mufa_id),)).fetchone()

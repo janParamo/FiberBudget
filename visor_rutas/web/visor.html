@@ -604,12 +604,18 @@
     <div class="modal-caja config-caja">
       <header class="modal-cabecera pr-cabecera"><h2 id="mu-hc-titulo">Cliente del hilo</h2></header>
       <div class="config-cuerpo">
-        <p class="nota">Un cliente identificado puede estar en un hilo de manera individual (por ejemplo el hilo 1), sin pasar por un splitter. Solo salen los clientes de esta mufa.</p>
+        <p class="nota">Un cliente identificado puede estar en un hilo de manera individual (por ejemplo el hilo 1), sin pasar por un splitter. Elija uno de esta mufa, o búsquelo en toda la red por su código, nombre o ID de servicio.</p>
         <form id="mu-hc-form" autocomplete="off" novalidate>
           <label class="dg-campo dg-ancho">Cliente de esta mufa <select name="conocido"></select></label>
+          <label class="dg-campo dg-ancho">Buscar un cliente en toda la red <input name="buscar" type="search" maxlength="60" placeholder="Código, nombre o ID de servicio (por ejemplo C28995 o Casa del Café)"></label>
+          <select name="encontrado" class="dg-ancho" size="4" aria-label="Clientes encontrados" hidden></select>
           <label class="dg-check"><input type="checkbox" name="manual"> Escribir otro cliente (no está en la lista de esta mufa)</label>
           <label class="dg-campo">Código <input name="codigo" maxlength="20" placeholder="C23839" readonly></label>
           <label class="dg-campo dg-ancho">Nombre <input name="nombre" maxlength="160" readonly></label>
+          <div class="vp-fila">
+            <label class="dg-campo">Hilos del cliente <input name="hilos" type="number" min="1" max="48" value="1" title="Un cliente tiene una sola línea por omisión. Con más hilos se dibuja como una mufa pequeña y cada hilo puede llegar a un hilo o a una salida de splitter distinta"></label>
+            <label class="dg-campo">Hilo del cliente en este lugar <input name="hilocliente" type="number" min="1" max="48" value="1"></label>
+          </div>
           <label class="dg-campo">ID de servicio <input name="servicio" maxlength="40" placeholder="ID418400" readonly></label>
           <p id="mu-hc-error" class="vp-estado error" role="alert"></p>
           <div class="lz-cable-botones"><button id="mu-hc-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Asignar</button></div>

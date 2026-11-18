@@ -122,3 +122,19 @@ def test_a_mufa_drawn_with_only_its_name_in_a_network_diagram_becomes_a_node_wit
     con = reg.obtener("MUFA EL BALCON DE LA LAGUNA", 11.99, -86.11, "Red Nindirí")
     assert reg.obtener("MUFA EL BALCON DE LA LAGUNA", None, None, "Red Nindirí") == con
     assert reg.obtener("MF EL BALCON DE LA LAGUNA", None, None, "Red Nindirí") == con                                # MF / MUFA are the same name
+
+
+def test_a_cable_label_on_the_drawn_line_gives_the_hilos_and_metres_between_two_mufas():
+    """«12H 260mts» written over the line that joins two mufa icons is the cable between those mufas (not a client's)."""
+    iconos = [{"pagina": 0, "x": 2.0, "y": 5.0, "mw": 0.9, "mh": 0.6}, {"pagina": 0, "x": 12.0, "y": 5.0, "mw": 0.9, "mh": 0.6}]
+    lineas = [(0, [(2.0, 5.0), (12.0, 5.0)])]
+    sobre = {"pagina": 0, "x": 7.0, "y": 4.4, "hilos": 12, "metros": 260, "texto": "12H\n260mts"}
+    lejos = {"pagina": 0, "x": 7.0, "y": 12.0, "hilos": 2, "metros": 180, "texto": "2H\n180mts"}
+    otra_pagina = {"pagina": 1, "x": 7.0, "y": 5.0, "hilos": 6, "metros": 10, "texto": "6H\n10mts"}
+    sin_dato = {"pagina": 0, "x": 7.0, "y": 5.2, "hilos": None, "metros": None, "texto": "Casa"}
+    r = imp.etiquetas_en_lineas(iconos, lineas, [lejos, otra_pagina, sin_dato, sobre])
+    assert r == {(0, 1): sobre}                                  # the label far from the line, on another page, or without data is not taken
+    assert imp.etiquetas_en_lineas(iconos, lineas, [lejos]) == {}
+    # two labels near the same stretch: only the nearest one
+    cerca, algo_mas = {**sobre, "y": 5.3}, {**sobre, "y": 4.0, "hilos": 24}
+    assert imp.etiquetas_en_lineas(iconos, lineas, [algo_mas, cerca]) == {(0, 1): cerca}

@@ -259,6 +259,7 @@ def extraer_textos(odg):
 # las une. Ícono de mufa = moño (dos triángulos enfrentados). Cable = trazo sólido oscuro;
 # las líneas punteadas de color son hilos/buffers dentro de la mufa y no cuentan.
 TOLERANCIA_LINEA_CM = 0.35
+ETIQUETA_LINEA_CM = 2.5         # etiqueta de cable ("12H 260mts") -> la línea dibujada entre dos mufas sobre la que está
 DISTANCIA_ETIQUETA_CM = 12      # etiqueta con coordenadas -> ícono de su mufa
 DISTANCIA_SERVICIO_CM = 15      # texto de servicio (SPL ... OLT ...) -> ícono más cercano
 NS_ST = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0'
@@ -409,6 +410,69 @@ def enlaces_por_lineas(iconos, lineas, tol=TOLERANCIA_LINEA_CM):
                 orden.append(k)
         pares.update((min(a, b), max(a, b)) for a, b in zip(orden, orden[1:]))
     return pares
+
+
+def _subtramo(pts, r1, r2):
+    """Puntos de la polilínea entre los recorridos r1 y r2 (cm desde su inicio)."""
+    salida, recorrido = [], 0.0
+    for p, q in zip(pts, pts[1:]):
+        largo = math.hypot(q[0] - p[0], q[1] - p[1])
+        fin = recorrido + largo
+        if fin >= r1 and recorrido <= r2 and largo > 0:
+            t0, t1 = max(r1 - recorrido, 0) / largo, min(r2 - recorrido, largo) / largo
+            salida += [(p[0] + (q[0] - p[0]) * t0, p[1] + (q[1] - p[1]) * t0), (p[0] + (q[0] - p[0]) * t1, p[1] + (q[1] - p[1]) * t1)]
+        recorrido = fin
+    return salida
+
+
+def _distancia_punto_polilinea(x, y, pts):
+    mejor = float('inf')
+    for p, q in zip(pts, pts[1:]):
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        l2 = dx * dx + dy * dy
+        t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((x - p[0]) * dx + (y - p[1]) * dy) / l2))
+        mejor = min(mejor, math.hypot(x - (p[0] + t * dx), y - (p[1] + t * dy)))
+    return mejor
+
+
+def etiquetas_en_lineas(iconos, lineas, cables, max_cm=ETIQUETA_LINEA_CM, tol=TOLERANCIA_LINEA_CM):
+    """{(ícono a, ícono b): etiqueta de cable}: la etiqueta («12H 260mts») que está sobre el tramo de la línea dibujada entre esos dos íconos
+    consecutivos (a menos de `max_cm` del dibujo). Cada etiqueta sirve a un solo tramo (el más cercano) y cada tramo toma una sola etiqueta.
+    Dice cuántos hilos tiene el cable que une las dos mufas y cuántos metros hay entre ellas; no es del cliente."""
+    candidatos = []
+    for pi, pts in lineas:
+        toques, recorrido = [], 0.0
+        for p, q in zip(pts, pts[1:]):
+            largo = math.hypot(q[0] - p[0], q[1] - p[1])
+            x0, x1 = min(p[0], q[0]) - 4, max(p[0], q[0]) + 4
+            y0, y1 = min(p[1], q[1]) - 4, max(p[1], q[1]) + 4
+            for k, ic in enumerate(iconos):
+                if ic['pagina'] != pi or not (x0 <= ic['x'] <= x1 and y0 <= ic['y'] <= y1):
+                    continue
+                d, t = _distancia_tramo_icono(p, q, ic)
+                if d <= tol:
+                    toques.append((recorrido + t * largo, k))
+            recorrido += largo
+        orden = []
+        for r, k in sorted(toques):
+            if k not in [o[1] for o in orden]:
+                orden.append((r, k))
+        for (r1, k1), (r2, k2) in zip(orden, orden[1:]):
+            tramo = _subtramo(pts, r1, r2)
+            if len(tramo) < 2:
+                continue
+            for j, c in enumerate(cables):
+                if c['pagina'] != pi or not (c.get('hilos') or c.get('metros')):
+                    continue
+                d = _distancia_punto_polilinea(c['x'], c['y'], tramo)
+                if d <= max_cm:
+                    candidatos.append((d, (min(k1, k2), max(k1, k2)), j))
+    asignado, usadas = {}, set()
+    for d, par, j in sorted(candidatos):
+        if par not in asignado and j not in usadas:
+            asignado[par] = cables[j]
+            usadas.add(j)
+    return asignado
 
 
 def nombrar_iconos(iconos, nodos, max_cm=DISTANCIA_ETIQUETA_CM):
@@ -861,6 +925,7 @@ def main():
                                     'texto': c['texto'] if c else None})
             else:
                 # Red: cada etiqueta de cable une los dos nodos entre los que está dibujada
+                usadas = set()
                 for c in info['cables']:
                     cand = [(i, n) for i, n in idx_nodos if n['pagina'] == c['pagina']]
                     mejor = None
@@ -876,17 +941,24 @@ def main():
                             if desvio < 0.25 * d12 + 1.0 and (mejor is None or desvio < mejor[0]):
                                 mejor = (desvio, i1, i2)
                     if mejor:
+                        usadas.add(id(c))
                         enlaces.append({'a': mejor[1], 'b': mejor[2], 'hilos': c['hilos'], 'metros': c['metros'],
                                         'usados': None, 'logico': None, 'fuente': 'visio_red',
                                         'confianza': 'baja', 'archivo': a['id'], 'texto': c['texto']})
                 # y cada línea de cable dibujada une las mufas por las que pasa
                 iconos, lineas = extraer_geometria(odg)
                 icono_nodo = nombrar_iconos(iconos, info['nodos'])
+                # la etiqueta («12H 260mts») que está sobre la línea dibujada entre dos mufas dice sus hilos y los metros que las separan
+                en_linea = {}
+                for (k1, k2), c in etiquetas_en_lineas(iconos, lineas, [c for c in info['cables'] if id(c) not in usadas]).items():
+                    if k1 in icono_nodo and k2 in icono_nodo:
+                        en_linea[(min(icono_nodo[k1], icono_nodo[k2]), max(icono_nodo[k1], icono_nodo[k2]))] = c
                 for j1, j2 in enlaces_entre_nodos(enlaces_por_lineas(iconos, lineas), icono_nodo):
                     if idx_nodos[j1][0] != idx_nodos[j2][0]:
-                        enlaces.append({'a': idx_nodos[j1][0], 'b': idx_nodos[j2][0], 'hilos': None,
-                                        'metros': None, 'usados': None, 'logico': None, 'fuente': 'visio_linea',
-                                        'confianza': 'media', 'archivo': a['id'], 'texto': None})
+                        c = en_linea.get((min(j1, j2), max(j1, j2)))
+                        enlaces.append({'a': idx_nodos[j1][0], 'b': idx_nodos[j2][0], 'hilos': c['hilos'] if c else None,
+                                        'metros': c['metros'] if c else None, 'usados': None, 'logico': None, 'fuente': 'visio_linea',
+                                        'confianza': 'baja' if c else 'media', 'archivo': a['id'], 'texto': c['texto'] if c else None})
 
             # Servicios: en diagramas de mufa van a la mufa del diagrama; en subred/red, a la
             # mufa cuyo ícono está más cerca del texto (o a la etiqueta de nodo más cercana).
@@ -956,6 +1028,9 @@ def main():
         if e['fuente'] == 'visio_mufa' and e['metros'] and d is not None and not coherente:
             e['texto'] = (e['texto'] or '') + ' [longitud descartada: no coincide con %.0f m en línea recta]' % d
             e['metros'] = None
+        if e['fuente'] == 'visio_linea' and e['metros'] and not coherente:        # a label that is not compatible with the geography is not that cable's
+            e['texto'] = None
+            e['hilos'] = e['metros'] = None
         validos.append(e)
     enlaces = validos
 

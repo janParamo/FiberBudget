@@ -60,6 +60,7 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "configurar_cable": mufas_existentes.configurar_cable,
     "red_de_mufas": mufas_existentes.red_de_mufas,
     "buscar_elementos": mufas_existentes.buscar_elementos,            # visor v2: buscador del mapa
+    "buscar_clientes": mufas_existentes.buscar_clientes,              # a client of the whole network, to put it on a fibre / splitter output
     # migración Visio, fase 6: tablero y cola de corrección
     "tablero_migracion": migracion_tablero.tablero,
     "correcciones_migracion": migracion_tablero.correcciones,
@@ -180,7 +181,7 @@ PERMITIDOS_TECNICO = {"estado"}
 PERMITIDOS_GUEST = {"estado", "buscar_elementos", "mufa_existente", "estilos_kmz", "cambios_kmz", "capa_importados_kmz"}
 # prueba: read only in everything (it tests the endpoints without risk): these are the methods that only read.
 SOLO_LECTURA = {"estado", "usuarios", "historial_usuario", "proyectos", "proyecto", "historial_proyecto", "usuarios_asignables", "geocodificar", "red_proyecto", "mufa", "mufa_existente",
-                "red_de_mufas", "buscar_elementos", "tablero_migracion", "correcciones_migracion", "exportar_correcciones", "trazar_hilo", "diagramas", "problemas", "problema",
+                "red_de_mufas", "buscar_elementos", "buscar_clientes", "tablero_migracion", "correcciones_migracion", "exportar_correcciones", "trazar_hilo", "diagramas", "problemas", "problema",
                 "foto_problema", "historial_problema", "referencias_proyecto", "pendientes", "historial_pendiente", "respaldos", "lugares", "lugar", "adjunto_lugar", "compartidos_lugares",
                 "exportar_lugares_kmz", "cambios_kmz", "importaciones_kmz", "importacion_kmz", "mapa_importacion_kmz", "capa_importados_kmz", "estilos_kmz", "estado_actualizar_red",
                 "visio_estado", "visio_progreso", "comparar_red_presupuesto", "splitters_de_diagrama", "campo_puntos", "campo_jornadas", "campo_ubicaciones", "campo_foto", "campo_trazos",

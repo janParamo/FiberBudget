@@ -522,6 +522,10 @@ textarea#pb-descripcion, textarea#pe-descripcion { width: 100%; resize: vertical
 .btn.con-icono:empty { padding: 0 7px; }
 .btn.solo-icono { padding: 0 7px; gap: 0; font-size: 0; }       /* its text stays for the screen readers; the icon and the tooltip say it */
 #modal-lz .dg-titulo { min-width: 90px; }
+#modal-lz .mu-cabecera { flex-wrap: wrap; row-gap: 6px; }
+#modal-lz .mu-cabecera .dg-titulo { white-space: nowrap; flex: 0 0 auto; }
+#modal-lz .mu-cabecera #lz-max { margin-left: auto; }
+#modal-lz .mu-cabecera .lz-zona-caja select { max-width: 260px; }
 #modal-lz .mu-cabecera .vp-estado { flex: 0 1 auto; min-width: 0; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lz-exp { position: relative; display: inline-flex; }
 .lz-exp-menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; min-width: 170px; padding: 5px; background: var(--fondo); border: 1px solid var(--borde);

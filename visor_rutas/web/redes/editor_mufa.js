@@ -45,7 +45,7 @@
     return JSON.stringify({
       cables: st.cables.map((c) => ({ id: c.id, x: c.x, y: c.y, movido: c.movido })),
       splitters: [...st.splitters.values()], conectores: [...st.conectores.values()], conexiones: [...st.conexiones.values()],
-      notas: [...st.notas.values()], hilos: [...st.hilos.entries()], hiloClientes: [...st.hiloClientes.entries()], puertoClientes: [...st.puertoClientes.entries()],
+      notas: [...st.notas.values()], hilos: [...st.hilos.entries()], hiloClientes: [...st.hiloClientes.entries()], puertoClientes: [...st.puertoClientes.entries()], clientesMufa: [...st.clientesMufa.entries()],
       borrados: Object.fromEntries(Object.entries(st.borrados).map(([k, v]) => [k, [...v]])), sucios: [...st.sucios], temporal: st.temporal,
     });
   }
@@ -59,6 +59,7 @@
     st.hilos = new Map(s.hilos);
     st.hiloClientes = new Map(s.hiloClientes || []);
     st.puertoClientes = new Map(s.puertoClientes || []);
+    st.clientesMufa = new Map(s.clientesMufa || []);
     st.borrados = Object.fromEntries(Object.entries(s.borrados).map(([k, v]) => [k, new Map(v)]));
     st.sucios = new Set(s.sucios);
     st.temporal = s.temporal;
@@ -70,7 +71,7 @@
   }
   function deshacer() { if (!st.pilas.deshacer.length) return; st.pilas.rehacer.push(instantanea()); restaurar(st.pilas.deshacer.pop()); st.seleccion = []; dibujar(); }
   function rehacer() { if (!st.pilas.rehacer.length) return; st.pilas.deshacer.push(instantanea()); restaurar(st.pilas.rehacer.pop()); st.seleccion = []; dibujar(); }
-  const nCambios = () => st.sucios.size + st.hilos.size + st.hiloClientes.size + st.puertoClientes.size + Object.values(st.borrados).reduce((n, m) => n + m.size, 0)
+  const nCambios = () => st.sucios.size + st.hilos.size + st.hiloClientes.size + st.puertoClientes.size + st.clientesMufa.size + Object.values(st.borrados).reduce((n, m) => n + m.size, 0)
     + st.cables.filter((c) => c.movido).length;
 
   function actualizarBarra() {
@@ -128,6 +129,7 @@
     st.hilos = new Map();
     st.hiloClientes = new Map();
     st.puertoClientes = new Map();
+    st.clientesMufa = new Map();                      // clients whose fibres / position changed and wait to be saved (key: claveCliente)
     st.borrados = { splitters: new Map(), conectores: new Map(), conexiones: new Map(), notas: new Map() };
     st.sucios = new Set();
     st.pilas = { deshacer: [], rehacer: [] };
@@ -221,6 +223,7 @@
     st.cables.forEach(dibujarCable);
     st.splitters.forEach(dibujarSplitter);
     st.conectores.forEach(dibujarConector);
+    dibujarClientes();
     dibujarConexiones();
     dibujarNotas();
     resaltar();
@@ -293,7 +296,7 @@
     }
     g.on("dragstart", () => antesDeCambiar());
     g.on("dragmove", () => { c.x = g.x(); c.y = g.y(); dibujarConexiones(); });
-    g.on("dragend", () => { c.movido = true; actualizarBarra(); });
+    g.on("dragend", () => { c.movido = true; actualizarBarra(); setTimeout(dibujar, 0); });   // the clients without a place of their own go with the cable
     g.on("click", (e) => { if (e.target.name() !== "puerto") seleccionar({ tipo: "cable", id: c.id }, e.evt.ctrlKey); });
     // the cable tooltip (5.1): over its frame, its header and its buffer bars
     const delCable = (e) => ["marco", "cabecera", "barra"].includes(e.target.name());
@@ -342,59 +345,178 @@
     circulo.on("mouseenter", () => tooltip(htmlFibra(c, f)));
     circulo.on("mouseleave", () => tooltip(null));
     cajaDestinoHilo(g, c, f, cy, izq, idx);
-    etiquetaCliente(g, f, cx, cy, izq, TIA[idx]);
   }
 
-  const LARGO_CLIENTE = 44;                           // from the end of the fibre to the client object
+  // ------------------------------------------------------------------ clientes: tarjetas con sus hilos
+  // A client with ONE fibre (the default) is drawn as always: the house icon with its code, joined by a straight line to its fibre or splitter output.
+  // A client with several fibres is drawn ONCE as a small card (like a very small mufa): the house icon, its code, and one little circle for each of its fibres. Each fibre of the client is joined by a line to the place where it arrives: a fibre of the mufa's cables or an output of a
+  // splitter. So one client can be on different places (its fibre 1 on a fibre of the mufa, its fibre 2 on a splitter output: the tap of a client to another).
+  // Either one can be dragged anywhere to tidy the drawing (its position is saved). A card: a circle dragged onto another fibre or output moves that fibre of the client
+  // there. A single icon: dropped right on another fibre or output it moves there (a ring shows where); anywhere else it just stays.
+  const TARJ_CAB = 28, TARJ_FILA = 16, TARJ_ANCHO = 86, TARJ_SOLA = 38;
 
-  /** The client that is on this fibre by itself, drawn as an object (see objetoCliente). */
-  function etiquetaCliente(g, f, cx, cy, izq, color) {
-    const cl = clienteDeHilo(f.id);
-    if (!cl) return;
-    objetoCliente(g, cl, { x0: cx + (izq ? 8 : -8), y: cy, salida: izq ? 1 : -1, largo: LARGO_CLIENTE, color: color || "#2e9d4a", lugar: { hilo: f.id } });
+  /** Every place that has a client: [{k, lugar, clave (key of the port), n (fibre of the client)}]. */
+  function lugaresConCliente() {
+    const r = [];
+    st.cables.forEach((c) => c.fibras.forEach((fb) => {
+      const k = clienteDeHilo(fb.id);
+      if (k) r.push({ k, lugar: { hilo: fb.id }, clave: `h:${fb.id}`, n: Number(k.hilo_cliente) || 1 });
+    }));
+    st.splitters.forEach((sp) => {
+      for (let n = 1; n <= sp.salidas; n++) {
+        const k = clienteEn({ splitter: sp.id, numero: n });
+        if (k) r.push({ k, lugar: { splitter: sp.id, numero: n }, clave: `s:${sp.id}:salida:${n}`, n: Number(k.hilo_cliente) || 1 });
+      }
+    });
+    return r;
+  }
+  const lugaresDeCliente = (k) => lugaresConCliente().filter((x) => claveCliente(x.k) === claveCliente(k)).sort((a, b) => a.n - b.n);
+
+  /** How many fibres a client has, and where its card is (null: automatic): what waits to be saved, else what the mufa has. */
+  function infoCliente(k) {
+    const clave = claveCliente(k);
+    const base = st.clientesMufa.get(clave) || (st.datos.clientes || []).find((c) => claveCliente(c) === clave) || {};
+    const usados = lugaresDeCliente(k).reduce((m, x) => Math.max(m, x.n), 1);
+    return { hilos: Math.max(Number(base.hilos) || 1, usados), x: base.x ?? null, y: base.y ?? null };
+  }
+  function guardarInfoCliente(k, cambios) {
+    const info = infoCliente(k);
+    st.clientesMufa.set(claveCliente(k), { codigo_cliente: k.codigo_cliente || "", nombre: k.nombre || "", id_servicio: k.id_servicio || "", ...info, ...cambios });
+  }
+  /** The first fibre of the client (1..hilos) that is not on any place yet; null when all are used. */
+  function primerHiloLibre(k, hilos) {
+    const usados = new Set(lugaresDeCliente(k).map((x) => x.n));
+    for (let n = 1; n <= hilos; n++) if (!usados.has(n)) return n;
+    return null;
+  }
+  const colorLugar = (l) => { if (l.hilo == null) return "#2e9d4a"; const [c, f] = fibraPorId(l.hilo); return c ? TIA[colorHilo(c, f.numero)] : "#2e9d4a"; };
+
+  function dibujarClientes() {
+    st.tarjetas = new Map();
+    const grupos = new Map();
+    lugaresConCliente().forEach((x) => {
+      const clave = claveCliente(x.k);
+      if (!grupos.has(clave)) grupos.set(clave, { k: x.k, lugares: [] });
+      grupos.get(clave).lugares.push(x);
+    });
+    const lista = [...grupos.entries()].map(([clave, g]) => {
+      g.lugares.sort((a, b) => a.n - b.n);
+      g.clave = clave;
+      g.primero = posicion(g.lugares[0].clave);
+      return g;
+    }).filter((g) => g.primero).sort((a, b) => a.primero.y - b.primero.y);
+    const libre = new Map();                                                      // column -> y from which the next automatic card fits
+    lista.forEach((g) => {
+      const info = infoCliente(g.k), multi = info.hilos > 1, lado = g.primero.salida;      // the card goes to the side the fibre faces
+      const ancho = multi ? TARJ_ANCHO : TARJ_SOLA, alto = multi ? TARJ_CAB + info.hilos * TARJ_FILA + 6 : 46;
+      const dyPuerto = (n) => (multi ? TARJ_CAB + (n - 1) * TARJ_FILA + 8 : 18);
+      let x = info.x, y = info.y;
+      if (x == null || y == null) {
+        x = multi ? (lado > 0 ? g.primero.x + 74 : g.primero.x - 74 - ancho) : g.primero.x + lado * 44 - ancho / 2;          // a single icon: 44 px from the fibre, as always
+        y = g.primero.y - dyPuerto(g.lugares[0].n);
+        const col = Math.round(x / 50), minimo = libre.get(col) ?? -Infinity;
+        if (y < minimo) y = minimo;
+        libre.set(col, y + alto + 8);
+      }
+      g.x = x; g.y = y;
+      dibujarTarjeta(g, { info, multi, lado, ancho, alto, dyPuerto });
+    });
   }
 
-  /** A client drawn as an object: a house icon (the client) joined by a line to the fibre or to the output of the splitter it is on, so the fibre is seen reaching the client.
-   *  It is dragged onto another fibre or splitter output to move it; double click: change it; right click: change / take off. The full name is in the tooltip.
-   *  `lugar` is {hilo} or {splitter, numero}; `compacto` (the splitter outputs, close together) puts the text beside the icon and makes it smaller. */
-  function objetoCliente(g, cl, { x0, y, salida, largo, color, lugar, compacto = false }) {
-    const x1 = x0 + salida * largo, k = compacto ? 0.72 : 1;
-    const texto = cl.codigo_cliente || (cl.nombre || cl.id_servicio || "").slice(0, 10);
-    const hilo = new Konva.Line({ points: [x0, y, x1, y], stroke: color || "#2e9d4a", strokeWidth: 3, listening: false, name: "hilo-cliente" });
-    g.add(hilo);
-    const objeto = new Konva.Group({ x: x1, y, name: "cliente-hilo", draggable: st.puedeEditar });
-    if (compacto) objeto.add(new Konva.Text({ x: 15 * k + 4, y: -5, width: 150, text: textoServicio(cl) || cl.id_servicio || "", fontSize: 9.5, fill: "#0a6b3d", wrap: "none", ellipsis: true, listening: false }));
-    else objeto.add(new Konva.Text({ x: -42, y: 17, width: 84, text: texto, fontSize: 10, fontStyle: "bold", fill: "#14532d", align: "center", listening: false }));
-    const icono = new Konva.Group({ scaleX: k, scaleY: k });
+  function dibujarTarjeta(gr, { info, multi, lado, ancho, alto, dyPuerto }) {
+    const k = gr.k, hilos = info.hilos, dxPuerto = lado > 0 ? 0 : ancho;
+    const tarjeta = new Konva.Group({ x: gr.x, y: gr.y, draggable: st.puedeEditar, name: "cliente-hilo" });
+    const resumen = () => `<div class="mu-tt-titulo">Cliente ${esc(textoCliente(k))}</div>${k.id_servicio ? `<div>${esc(k.id_servicio)}</div>` : ""}`
+      + `<div>${hilos} ${hilos === 1 ? "hilo" : "hilos"}: ${[...Array(hilos).keys()].map((i) => { const x = gr.lugares.find((l) => l.n === i + 1);
+        return `H${i + 1} ${x ? `→ ${esc(textoLugar(x.lugar))}` : "libre"}`; }).join(" · ")}</div>`
+      + (st.puedeEditar ? '<div class="mu-tt-sec">Arrastrar: moverlo · un círculo a otro hilo o salida: cambiar su conexión · Doble clic: hilos del cliente</div>' : "");
+    tarjeta.add(new Konva.Rect({ width: ancho, height: alto, fill: multi ? "#f3fbf5" : "rgba(255,255,255,0)", stroke: multi ? "#2e9d4a" : null, strokeWidth: 1.6, cornerRadius: 6 }));
+    if (!multi) tarjeta.setAttr("icono", { x: ancho / 2, y: 18, r: 12.5 });
+    // the house icon of the client (the same as always, smaller on a card with several fibres)
+    const k2 = multi ? 0.72 : 0.82, cx = multi ? (lado > 0 ? 20 : ancho - 20) : ancho / 2, cy = multi ? 16 : 18;
+    const icono = new Konva.Group({ x: cx, y: cy, scaleX: k2, scaleY: k2, listening: false });
     icono.add(new Konva.Circle({ radius: 15, fill: "#d8f3e0", stroke: "#2e9d4a", strokeWidth: 2 }));
-    icono.add(new Konva.Line({ points: [-8, 8, -8, -1, 0, -9, 8, -1, 8, 8], closed: true, fill: "#ffffff", stroke: "#14532d", strokeWidth: 1.6, lineJoin: "round", listening: false }));
-    icono.add(new Konva.Rect({ x: -2.5, y: 2, width: 5, height: 6, fill: "#2e9d4a", listening: false }));
-    objeto.add(icono);
-    const seleccion = lugar.hilo != null ? { tipo: "hilo", id: lugar.hilo } : { tipo: "splitter", id: lugar.splitter };
-    objeto.on("click", (e) => { e.cancelBubble = true; seleccionar(seleccion); });
-    objeto.on("dblclick dbltap", (e) => { e.cancelBubble = true; if (st.puedeEditar) abrirClienteHilo(lugar); });
-    objeto.on("contextmenu", (e) => { e.evt.preventDefault(); e.cancelBubble = true; seleccionar(seleccion); menuCliente(e.evt, lugar); });
-    objeto.on("mouseenter", () => { st.stage.container().style.cursor = st.puedeEditar ? "grab" : "pointer"; tooltip(`<div class="mu-tt-titulo">Cliente en ${esc(textoLugar(lugar))}</div><div><b>${esc(textoCliente(cl))}</b>${cl.id_servicio ? ` · ${esc(cl.id_servicio)}` : ""}</div>${st.puedeEditar ? '<div class="mu-tt-sec">Arrastrar a otro hilo o salida: moverlo · Doble clic: cambiar</div>' : ""}`); });
-    objeto.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
+    icono.add(new Konva.Line({ points: [-8, 8, -8, -1, 0, -9, 8, -1, 8, 8], closed: true, fill: "#ffffff", stroke: "#14532d", strokeWidth: 1.6, lineJoin: "round" }));
+    icono.add(new Konva.Rect({ x: -2.5, y: 2, width: 5, height: 6, fill: "#2e9d4a" }));
+    tarjeta.add(icono);
+    const texto = k.codigo_cliente || (k.nombre || k.id_servicio || "").slice(0, 10);
+    if (multi) tarjeta.add(new Konva.Text({ x: lado > 0 ? 34 : 4, y: 10, width: ancho - 38, text: texto, fontSize: 9.5, fontStyle: "bold", fill: "#14532d", wrap: "none", ellipsis: true, listening: false,
+                                            align: lado > 0 ? "left" : "right" }));
+    else tarjeta.add(new Konva.Text({ x: -22, y: 33, width: ancho + 44, text: texto, fontSize: 10, fontStyle: "bold", fill: "#14532d", align: "center", listening: false }));
+    const seleccion = gr.lugares[0].lugar.hilo != null ? { tipo: "hilo", id: gr.lugares[0].lugar.hilo } : { tipo: "splitter", id: gr.lugares[0].lugar.splitter };
+    tarjeta.on("click", (e) => { e.cancelBubble = true; seleccionar(seleccion); });
+    tarjeta.on("dblclick dbltap", (e) => { e.cancelBubble = true; if (st.puedeEditar) abrirClienteHilo(gr.lugares[0].lugar); });
+    tarjeta.on("contextmenu", (e) => { e.evt.preventDefault(); e.cancelBubble = true; seleccionar(seleccion); menuCliente(e.evt, gr.lugares[0].lugar); });
+    tarjeta.on("mouseenter", () => { st.stage.container().style.cursor = st.puedeEditar ? "grab" : "pointer"; tooltip(resumen()); });
+    tarjeta.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
     if (st.puedeEditar) {
-      objeto.on("dragstart", (e) => { e.cancelBubble = true; tooltip(null); st.stage.draggable(false); });
-      objeto.on("dragmove", (e) => {
-        e.cancelBubble = true;                                              // the cable or splitter must not move with it
-        hilo.points([x0, y, objeto.x(), objeto.y()]);
-        marcarDestino(puertoClienteCercano(puntoLienzo()));
-        g.getLayer().batchDraw();
-      });
-      objeto.on("dragend", (e) => {
+      tarjeta.on("dragstart", (e) => { e.cancelBubble = true; tooltip(null); st.stage.draggable(false); antesDeCambiar(); });
+      tarjeta.on("dragmove", (e) => {                                                          // the lines follow; the cable or splitter must not move with it
         e.cancelBubble = true;
-        const destino = puertoClienteCercano(puntoLienzo());
-        marcarDestino(null);
+        if (!multi) marcarDestino(puertoClienteCercano(puntoLienzo(), 12));
+        dibujarConexiones();
+      });
+      tarjeta.on("dragend", (e) => {
+        e.cancelBubble = true;
         st.stage.draggable(true);
-        setTimeout(() => {                                                  // a drop on another fibre or output moves the client; anywhere else it goes back
-          if (destino && !mismoLugar(destino.lugar, lugar)) asignarCliente(destino.lugar, cl, lugar); else dibujar();
-        }, 0);
+        const destino = multi ? null : puertoClienteCercano(puntoLienzo(), 12);
+        if (!multi) marcarDestino(null);
+        const propio = gr.lugares[0];
+        if (destino && !mismoLugar(destino.lugar, propio.lugar)) {                              // a single icon dropped right on another fibre or output moves there
+          st.pilas.deshacer.pop();                                                              // asignarCliente makes its own undo step
+          setTimeout(() => asignarCliente(destino.lugar, k, propio.lugar, 1), 0);
+          return;
+        }
+        guardarInfoCliente(k, { x: Math.round(tarjeta.x()), y: Math.round(tarjeta.y()) });     // anywhere else it stays where it was left
+        gr.x = tarjeta.x(); gr.y = tarjeta.y();
+        actualizarBarra();
       });
     }
-    g.add(objeto);
+    // one circle per fibre of the client; a free one is empty
+    for (let n = 1; multi && n <= hilos; n++) {
+      const usado = gr.lugares.find((l) => l.n === n);
+      const color = usado ? colorLugar(usado.lugar) : "#ffffff";
+      const dy = dyPuerto(n);
+      const c = new Konva.Circle({ x: dxPuerto, y: dy, radius: multi ? 6.5 : 5, fill: color, stroke: "#14532d", strokeWidth: 1.5, draggable: st.puedeEditar, name: "puerto-cliente" });
+      tarjeta.add(c);
+      if (multi) tarjeta.add(new Konva.Text({ x: dxPuerto - 6.5, y: dy - 4.5, width: 13, align: "center", text: String(n), fontSize: 8, fill: usado && OSCUROS.has(TIA.indexOf(color)) ? "#fff" : "#111", listening: false }));
+      c.on("mouseenter", (e) => { e.cancelBubble = true; st.stage.container().style.cursor = st.puedeEditar ? "pointer" : ""; tooltip(`<div class="mu-tt-titulo">Hilo ${n} del cliente ${esc(texto)}</div><div>${usado ? `Llega a ${esc(textoLugar(usado.lugar))}` : "Libre"}</div>${st.puedeEditar ? '<div class="mu-tt-sec">Arrastre el círculo a un hilo o a una salida de splitter para conectarlo</div>' : ""}`); });
+      c.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
+      if (st.puedeEditar) {
+        c.on("dragstart", (e) => { e.cancelBubble = true; tooltip(null); st.stage.draggable(false); tarjeta.draggable(false); });
+        c.on("dragmove", (e) => { e.cancelBubble = true; marcarDestino(puertoClienteCercano(puntoLienzo(), 14)); });
+        c.on("dragend", (e) => {
+          e.cancelBubble = true;
+          const destino = puertoClienteCercano(puntoLienzo(), 14);
+          marcarDestino(null);
+          st.stage.draggable(true);
+          setTimeout(() => {                                                // dropped on a fibre or output: that fibre of the client goes there; anywhere else it goes back
+            if (destino && !(usado && mismoLugar(destino.lugar, usado.lugar))) asignarCliente(destino.lugar, k, usado ? usado.lugar : null, n); else dibujar();
+          }, 0);
+        });
+      }
+    }
+    st.tarjetas.set(gr.clave, { grupo: tarjeta, dx: dxPuerto, dy: dyPuerto, salida: -lado, lugares: gr.lugares, multi });
+    st.capa.add(tarjeta);
+  }
+
+  /** The lines from each place to the fibre of the client that arrives there (drawn with the connections, so they follow the cables and splitters when these move). */
+  function lineasClientes() {
+    let i = 0;
+    st.tarjetas.forEach((t) => {
+      t.lugares.forEach((l) => {
+        const p1 = posicion(l.clave);
+        if (!p1) return;
+        const brillo = st.seleccion.some((s) => (l.lugar.hilo != null ? s.tipo === "hilo" && s.id === l.lugar.hilo : s.tipo === "splitter" && s.id === l.lugar.splitter));
+        let puntos;
+        if (t.multi) puntos = ruta(p1, { x: t.grupo.x() + t.dx, y: t.grupo.y() + t.dy(l.n), salida: t.salida }, (i++ % 5) - 2);
+        else {                                                                                  // one fibre: a straight line to the edge of the icon, as always
+          const ic = t.grupo.getAttr("icono"), cx = t.grupo.x() + ic.x, cy = t.grupo.y() + ic.y, d = Math.hypot(p1.x - cx, p1.y - cy) || 1;
+          puntos = [p1.x, p1.y, cx + (p1.x - cx) / d * ic.r, cy + (p1.y - cy) / d * ic.r];
+        }
+        st.capaLineas.add(new Konva.Line({ points: puntos, stroke: colorLugar(l.lugar), strokeWidth: brillo ? 4 : 3, lineJoin: "round", listening: false, name: "hilo-cliente" }));
+      });
+    });
   }
 
   /** The fibre circle or splitter output nearest to a point of the canvas (within a few pixels): where a dragged client would be dropped. */
@@ -463,10 +585,6 @@
       g.add(new Konva.Text({ x: 62, y: y - 4.5, width: 12, align: "center", text: String(n), fontSize: 8, fill: "#fff", listening: false }));
       registrarPuerto(cs, g, 74, y, { splitter: s.id, lado: "salida", numero: n }, 1, null);
       eventosPuerto(r, cs);
-      const servicio = clienteEn({ splitter: s.id, numero: n });
-      if (servicio) {                                   // the client this output feeds (from the Visio list or put here): an object joined to the output
-        objetoCliente(g, servicio, { x0: 74, y, salida: 1, largo: 24, color: "#2e9d4a", lugar: { splitter: s.id, numero: n }, compacto: true });
-      }
     }
     const p = s.propiedades || {};
     const olt = [p.olt ? `OLT ${p.olt}` : "", p.puerto_olt || ""].filter(Boolean).join(" ");
@@ -500,7 +618,7 @@
     g.setAttr("obj", { tipo, id: o.id });
     g.on("dragstart", () => antesDeCambiar());
     g.on("dragmove", () => { o.x = g.x(); o.y = g.y(); dibujarConexiones(); });
-    g.on("dragend", () => { st.sucios.add(`${tabla}:${o.id}`); actualizarBarra(); });
+    g.on("dragend", () => { st.sucios.add(`${tabla}:${o.id}`); actualizarBarra(); setTimeout(dibujar, 0); });
     g.on("click", (e) => { if (e.target.name() === "cuerpo") seleccionar({ tipo, id: o.id }, e.evt.ctrlKey); });
     g.on("dblclick", (e) => { if (e.target.name() === "cuerpo" && st.puedeEditar) abrirObjeto(tipo, o); });
   }
@@ -572,6 +690,7 @@
       linea.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
       st.capaLineas.add(linea);
     });
+    lineasClientes();
     st.capaLineas.batchDraw();
   }
 
@@ -1176,7 +1295,7 @@
   // where a client can be: on a fibre ({hilo}) or on an output of a splitter ({splitter, numero})
   const clavePuerto = (sid, n) => `${sid}:${n}`;
   const mismoLugar = (a, b) => !!a && !!b && (a.hilo != null ? a.hilo === b.hilo : (a.hilo == null && b.hilo == null && a.splitter === b.splitter && a.numero === b.numero));
-  const claveCliente = (k) => `${k.codigo_cliente || ""}|${k.nombre || ""}`.toLowerCase();
+  const claveCliente = (k) => (k.codigo_cliente ? String(k.codigo_cliente).toUpperCase() : `|${String(k.nombre || k.id_servicio || "").toLowerCase()}`);   // the code identifies it; else the name
   const lugarDe = (arg) => (arg !== null && typeof arg === "object" ? arg : { hilo: arg });
 
   /** What is saved at a place (a client with its version), or null. */
@@ -1196,9 +1315,9 @@
     const sp = st.splitters.get(l.splitter);
     return `salida ${l.numero} de ${sp ? sp.nombre : "un splitter"}`;
   }
-  function fijarCliente(l, k) {
+  function fijarCliente(l, k, n = 1) {
     const g = guardadoEn(l), version = g && g.version != null ? g.version : undefined;
-    const datos = { codigo_cliente: k.codigo_cliente || "", nombre: k.nombre || "", id_servicio: k.id_servicio || "", elemento_id: k.elemento_id || null, version };
+    const datos = { codigo_cliente: k.codigo_cliente || "", nombre: k.nombre || "", id_servicio: k.id_servicio || "", elemento_id: k.elemento_id || null, hilo_cliente: n, version };
     if (l.hilo != null) st.hiloClientes.set(l.hilo, { hilo_id: l.hilo, ...datos });
     else st.puertoClientes.set(clavePuerto(l.splitter, l.numero), { splitter: l.splitter, numero: l.numero, ...datos });
   }
@@ -1208,14 +1327,8 @@
     if (g) mapa.set(clave, l.hilo != null ? { hilo_id: l.hilo, quitar: true, version: g.version } : { splitter: l.splitter, numero: l.numero, quitar: true, version: g.version });
     else mapa.delete(clave);                                        // it was only waiting to be saved
   }
-  /** Where a client of this mufa is now (a fibre or a splitter output), or null. */
-  function lugarDeCliente(k) {
-    for (const c of st.cables) for (const fb of c.fibras) { const x = clienteDeHilo(fb.id); if (x && claveCliente(x) === claveCliente(k)) return { hilo: fb.id }; }
-    for (const sp of st.splitters.values()) {
-      for (let n = 1; n <= sp.salidas; n++) { const x = clienteEn({ splitter: sp.id, numero: n }); if (x && claveCliente(x) === claveCliente(k)) return { splitter: sp.id, numero: n }; }
-    }
-    return null;
-  }
+  /** Where a client of this mufa is now (the first of its places: a fibre or a splitter output), or null. */
+  function lugarDeCliente(k) { const l = lugaresDeCliente(k)[0]; return l ? l.lugar : null; }
 
   function abrirClienteHilo(arg) {
     if (!st.puedeEditar) return;
@@ -1235,10 +1348,23 @@
     form.elements.nombre.value = actual ? actual.nombre || "" : "";
     form.elements.servicio.value = actual ? actual.id_servicio || "" : "";
     st.hiloCliente.elemento = actual ? actual.elemento_id || null : null;
+    st.hiloCliente.buscado = false;
+    form.elements.hilos.value = actual ? infoCliente(actual).hilos : 1;
+    form.elements.hilocliente.value = actual ? actual.hilo_cliente || 1 : 1;
+    form.elements.buscar.value = "";
+    form.elements.encontrado.innerHTML = "";
+    form.elements.encontrado.hidden = true;
     modoManualCliente();
     $("mu-hc-error").textContent = "";
     $("modal-mu-hcliente").hidden = false;
     (form.elements.manual.checked ? form.elements.codigo : form.elements.conocido).focus();
+  }
+
+  /** A client chosen in the dialog: its number of fibres, and the first of them that is still free (the one to put here). */
+  function sugerirHilos(k) {
+    const f = $("mu-hc-form"), hilos = k ? infoCliente(k).hilos : 1;
+    f.elements.hilos.value = hilos;
+    f.elements.hilocliente.value = (k && primerHiloLibre(k, hilos)) || 1;
   }
 
   /** The three boxes can only be typed in when «Escribir otro cliente» is ticked; otherwise they show the client chosen from the list. */
@@ -1253,11 +1379,20 @@
     ev.preventDefault();
     const form = $("mu-hc-form"), { lugar } = st.hiloCliente;
     const codigo = form.elements.codigo.value.trim().toUpperCase(), nombre = form.elements.nombre.value.trim(), servicio = form.elements.servicio.value.trim();
-    if (!form.elements.manual.checked && form.elements.conocido.value === "") { $("mu-hc-error").textContent = "Elija un cliente de la lista de esta mufa (o marque «Escribir otro cliente»)"; return; }
+    if (!form.elements.manual.checked && form.elements.conocido.value === "" && !st.hiloCliente.buscado) { $("mu-hc-error").textContent = "Elija un cliente de la lista de esta mufa (o marque «Escribir otro cliente»)"; return; }
     if (!(codigo || nombre || servicio)) { $("mu-hc-error").textContent = "Escriba el código, el nombre o el ID de servicio del cliente"; return; }
     if (codigo && !/^C\d{3,7}$/.test(codigo)) { $("mu-hc-error").textContent = "El código es una C seguida de números (por ejemplo C23839)"; return; }
+    const hilos = Number(form.elements.hilos.value), hilo = Number(form.elements.hilocliente.value);
+    if (!Number.isInteger(hilos) || hilos < 1 || hilos > 48) { $("mu-hc-error").textContent = "Los hilos del cliente van de 1 a 48"; return; }
+    if (!Number.isInteger(hilo) || hilo < 1 || hilo > hilos) { $("mu-hc-error").textContent = `El hilo del cliente en este lugar va de 1 a ${hilos}`; return; }
+    const k = { codigo_cliente: codigo, nombre, id_servicio: servicio, elemento_id: st.hiloCliente.elemento || null };
+    const otros = lugaresDeCliente(k).filter((x) => !mismoLugar(x.lugar, lugar));
+    if (otros.some((x) => x.n === hilo)) { $("mu-hc-error").textContent = `El hilo ${hilo} de este cliente ya llega a ${textoLugar(otros.find((x) => x.n === hilo).lugar)}`; return; }
+    const masAlto = Math.max(hilo, ...otros.map((x) => x.n));
+    if (hilos < masAlto) { $("mu-hc-error").textContent = `El cliente ya usa su hilo ${masAlto}: no puede tener menos de ${masAlto} hilos`; return; }
     antesDeCambiar();
-    fijarCliente(lugar, { codigo_cliente: codigo, nombre, id_servicio: servicio, elemento_id: st.hiloCliente.elemento || null });
+    fijarCliente(lugar, k, hilo);
+    if (hilos !== infoCliente(k).hilos) guardarInfoCliente(k, { hilos });
     $("modal-mu-hcliente").hidden = true;
     dibujar();
   }
@@ -1270,19 +1405,25 @@
     dibujar();
   }
 
-  /** Drop a client at a place: dragged from the palette, or moved from where it was (origen). A fibre or output has one client; a client is in one place. */
-  function asignarCliente(destino, k, origen = null) {
+  /** Put a fibre of a client at a place: dragged from the palette (the first free fibre of the client), or moved from where it was (`origen`), or the fibre `n` of the
+   *  client taken from its card. A client with one fibre is in one place (it moves); one with several can be in as many places as fibres, each with its own. */
+  function asignarCliente(destino, k, origen = null, n = null) {
     if (!st.puedeEditar) return false;
-    const actual = clienteEn(destino);
-    if (actual && claveCliente(actual) === claveCliente(k)) { dibujar(); return false; }
-    if (actual) { mensaje(`En ${textoLugar(destino)} ya está el cliente ${textoCliente(actual) || actual.id_servicio}: quítelo antes`, "error"); dibujar(); return false; }
-    const antes = origen || lugarDeCliente(k);
+    const actual = clienteEn(destino), nombre = textoCliente(k) || k.id_servicio;
+    if (actual && claveCliente(actual) === claveCliente(k) && (!origen || mismoLugar(origen, destino))) { dibujar(); return false; }
+    if (actual) { mensaje(`En ${textoLugar(destino)} ya está ${claveCliente(actual) === claveCliente(k) ? "otro hilo de este cliente" : `el cliente ${textoCliente(actual) || actual.id_servicio}`}: quítelo antes`, "error"); dibujar(); return false; }
+    const hilos = infoCliente(k).hilos, lugares = lugaresDeCliente(k);
+    const antes = origen || (hilos <= 1 && lugares.length ? lugares[0].lugar : null);          // one fibre: it moves, it is not left in two places
+    const hecho = antes ? lugares.find((x) => mismoLugar(x.lugar, antes)) : null;
+    const hilo = n ?? (hecho ? hecho.n : primerHiloLibre(k, hilos));
+    if (hilo == null) { mensaje(`Todos los hilos de ${nombre} ya están conectados: aumente sus hilos (doble clic en el cliente)`, "error"); dibujar(); return false; }
+    if (lugares.some((x) => x.n === hilo && !(antes && mismoLugar(x.lugar, antes)))) { mensaje(`El hilo ${hilo} de ${nombre} ya está conectado a otro lugar`, "error"); dibujar(); return false; }
     antesDeCambiar();
-    if (antes) retirarCliente(antes);                               // it moves: it is not left in two places
-    fijarCliente(destino, k);
+    if (antes) retirarCliente(antes);
+    fijarCliente(destino, k, hilo);
     st.seleccion = [destino.hilo != null ? { tipo: "hilo", id: destino.hilo } : { tipo: "splitter", id: destino.splitter }];
     dibujar();
-    mensaje(`${textoCliente(k) || k.id_servicio} ${antes ? "movido" : "asignado"} a ${textoLugar(destino)}`, "ok");
+    mensaje(`${nombre}${hilos > 1 ? ` (hilo ${hilo})` : ""} ${antes ? "movido" : "asignado"} a ${textoLugar(destino)}`, "ok");
     return true;
   }
 
@@ -1291,7 +1432,7 @@
     if (!st.puedeEditar) return;
     const menu = $("mu-menu"), cl = clienteEn(lugar);
     if (!cl) return;
-    menu.innerHTML = `<li data-mu-cl-editar="1">Cambiar el cliente…</li><li data-mu-cl-quitar="1">Quitar el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})</li>`;
+    menu.innerHTML = `<li data-mu-cl-editar="1">Cambiar el cliente o sus hilos…</li><li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>`;
     menu.dataset.lugar = JSON.stringify(lugar);
     menu.style.left = `${evt.clientX}px`;
     menu.style.top = `${evt.clientY}px`;
@@ -1434,7 +1575,7 @@
   function cambiosParaGuardar() {
     const salida = { posiciones: st.cables.filter((c) => c.movido).map((c) => ({ cable_id: c.id, x: Math.round(c.x), y: Math.round(c.y),
                                                                                   version: c.pos_version ?? null })),
-                     splitters: [], conectores: [], conexiones: [], hilos: [...st.hilos.values()], hilo_clientes: [...st.hiloClientes.values()],
+                     splitters: [], conectores: [], conexiones: [], hilos: [...st.hilos.values()], hilo_clientes: [...st.hiloClientes.values()], clientes_mufa: [...st.clientesMufa.values()],
                      puerto_clientes: [...st.puertoClientes.values()].filter((x) => x.quitar ? st.splitters.has(x.splitter) : (st.splitters.get(x.splitter) || { salidas: 0 }).salidas >= x.numero), notas: [] };
     st.sucios.forEach((k) => {
       const [tabla, ...resto] = k.split(":");
@@ -1573,10 +1714,41 @@
     $("mu-hc-form").elements.manual.addEventListener("change", () => { modoManualCliente(); if ($("mu-hc-form").elements.manual.checked) $("mu-hc-form").elements.codigo.focus(); });
     $("mu-hc-form").elements.conocido.addEventListener("change", (e) => {          // a client of the list fills the three boxes
       const k = e.target.value === "" ? null : st.hiloCliente.conocidos[Number(e.target.value)];
-      if (!k) { st.hiloCliente.elemento = null; ["codigo", "nombre", "servicio"].forEach((n) => { $("mu-hc-form").elements[n].value = ""; }); return; }
+      if (!k) { st.hiloCliente.elemento = null; ["codigo", "nombre", "servicio"].forEach((n) => { $("mu-hc-form").elements[n].value = ""; }); sugerirHilos(null); return; }
       const f = $("mu-hc-form");
       f.elements.codigo.value = k.codigo_cliente; f.elements.nombre.value = k.nombre; f.elements.servicio.value = k.id_servicio;
       st.hiloCliente.elemento = k.elemento_id;
+      st.hiloCliente.buscado = false;
+      sugerirHilos(k);
+    });
+    // search of a client in the whole network: the one picked fills the three boxes, as one of the list does
+    let esperaBusqueda = null;
+    $("mu-hc-form").elements.buscar.addEventListener("input", (e) => {
+      clearTimeout(esperaBusqueda);
+      const texto = e.target.value.trim(), lista = $("mu-hc-form").elements.encontrado;
+      if (texto.length < 2) { lista.hidden = true; lista.innerHTML = ""; return; }
+      esperaBusqueda = setTimeout(async () => {
+        const r = await Redes.llamar("buscar_clientes", { texto });
+        if (e.target.value.trim() !== texto) return;                              // they kept typing: this answer is old
+        const clientes = r && r.ok ? r.clientes || [] : [];
+        st.hiloCliente.encontrados = clientes;
+        lista.innerHTML = clientes.length
+          ? clientes.map((k, i) => `<option value="${i}">${esc([k.codigo_cliente, k.nombre, k.id_servicio].filter(Boolean).join(" · "))}${k.mufa ? ` — en ${esc(k.mufa)}` : ""}</option>`).join("")
+          : `<option disabled>Ningún cliente coincide</option>`;
+        lista.hidden = false;
+      }, 250);
+    });
+    $("mu-hc-form").elements.encontrado.addEventListener("change", (e) => {
+      const k = (st.hiloCliente.encontrados || [])[Number(e.target.value)];
+      if (!k) return;
+      const f = $("mu-hc-form");
+      f.elements.manual.checked = false; modoManualCliente();
+      f.elements.conocido.value = "";
+      f.elements.codigo.value = k.codigo_cliente; f.elements.nombre.value = k.nombre; f.elements.servicio.value = k.id_servicio;
+      st.hiloCliente.elemento = k.elemento_id || null;
+      st.hiloCliente.buscado = true;
+      sugerirHilos(k);
+      $("mu-hc-error").textContent = "";
     });
     $("mu-visio").addEventListener("click", verVisio);
     $("mu-validar").addEventListener("click", validar);

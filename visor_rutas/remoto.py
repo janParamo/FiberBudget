@@ -36,7 +36,7 @@ SIN_CONEXION = ("No se pudo conectar con el servidor de presupuestos. Verifique 
 # threw the rest away), and the tunnel of ngrok cuts the bursts of new connections (SSLError): only MAX_SIMULTANEAS go at a time and the connections are kept and reused.
 MAX_SIMULTANEAS = 5
 CONEXIONES_GUARDADAS = 8
-LECTURAS_REDES = frozenset({"estado", "lugares", "lugar", "cambios_kmz", "estilos_kmz", "capa_importados_kmz", "buscar_elementos", "mufa_existente", "proyectos", "proyecto",
+LECTURAS_REDES = frozenset({"estado", "lugares", "lugar", "cambios_kmz", "estilos_kmz", "capa_importados_kmz", "buscar_elementos", "buscar_clientes", "mufa_existente", "proyectos", "proyecto",
                             "usuarios", "mufa", "red_proyecto", "diagramas", "problemas", "pendientes", "campo_puntos", "campo_ubicaciones", "campo_jornadas", "lienzo_zonas", "lienzo"})
 PREFIJO_ARCHIVO = "remoto:"       # resultado["archivo"] in remote mode: "remoto:<id>"
 RE_ID = re.compile(r"^[^\\/:*?\"<>|\x00-\x1f]{1,200}$")
