@@ -115,7 +115,7 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
         "SELECT id, nombre, salidas, relacion, conector, x, y, propiedades, fuente, confianza, version FROM redes.splitters "
         "WHERE mufa_id = %s AND borrado_en IS NULL ORDER BY id", (m["id"],)).fetchall()]
     clientes = [dict(f) for f in con.execute(
-        "SELECT codigo_cliente, nombre, id_servicio, elemento_id, hilos, x, y, fuente FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL "
+        "SELECT codigo_cliente, nombre, id_servicio, elemento_id, hilos, x, y, largo, fuente FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL "
         "ORDER BY codigo_cliente NULLS LAST, nombre", (m["id"],)).fetchall()]
     conectores = [dict(k) for k in con.execute(
         "SELECT id, nombre, tipo, x, y, version FROM redes.conectores WHERE mufa_id = %s AND borrado_en IS NULL ORDER BY id",
@@ -248,6 +248,10 @@ def _guardar_cliente_mufa(con: Any, actor: dict[str, Any], mid: int, d: dict[str
     valores: dict[str, Any] = {"hilos": _hilo_cliente(d.get("hilos"), quien, "número de hilos del cliente")}
     if d.get("x") is not None and d.get("y") is not None:
         valores["x"], valores["y"] = _numero(d["x"], quien, "x"), _numero(d["y"], quien, "y")
+    largo = _numero(d["largo"], quien, "largo") if d.get("largo") is not None else None          # a client with one fibre: the length of its straight line (None: automatic)
+    if largo is not None and not 10 <= largo <= 3000:
+        raise DatosInvalidos({quien: "el largo de la línea va de 10 a 3000"})
+    valores["largo"] = largo
     if previo is None:
         fila = repositorio.insertar(con, "mufa_clientes", {"mufa_id": mid, "codigo_cliente": codigo, "nombre": nombre, "id_servicio": servicio,
                                                            **valores, "fuente": "usuario", "confianza": "verificada"}, actor["id"])

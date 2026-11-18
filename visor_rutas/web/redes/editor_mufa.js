@@ -351,9 +351,11 @@
   // A client with ONE fibre (the default) is drawn as always: the house icon with its code, joined by a straight line to its fibre or splitter output.
   // A client with several fibres is drawn ONCE as a small card (like a very small mufa): the house icon, its code, and one little circle for each of its fibres. Each fibre of the client is joined by a line to the place where it arrives: a fibre of the mufa's cables or an output of a
   // splitter. So one client can be on different places (its fibre 1 on a fibre of the mufa, its fibre 2 on a splitter output: the tap of a client to another).
-  // Either one can be dragged anywhere to tidy the drawing (its position is saved). A card: a circle dragged onto another fibre or output moves that fibre of the client
-  // there. A single icon: dropped right on another fibre or output it moves there (a ring shows where); anywhere else it just stays.
+  // A card can be dragged anywhere (its position is saved); a circle of it dragged onto another fibre or output moves that fibre of the client there.
+  // A single icon only slides along its straight line (to stretch it; the length is saved) and always stays on the side away from the cable box; the ones on neighbouring
+  // fibres go in cascade by themselves, each one longer than the one before.
   const TARJ_CAB = 28, TARJ_FILA = 16, TARJ_ANCHO = 86, TARJ_SOLA = 38;
+  const LARGO_SOLO = 44, PASO_CASCADA = 34;           // single client: shortest line, and how much longer each neighbour's line is
 
   /** Every place that has a client: [{k, lugar, clave (key of the port), n (fibre of the client)}]. */
   function lugaresConCliente() {
@@ -377,7 +379,7 @@
     const clave = claveCliente(k);
     const base = st.clientesMufa.get(clave) || (st.datos.clientes || []).find((c) => claveCliente(c) === clave) || {};
     const usados = lugaresDeCliente(k).reduce((m, x) => Math.max(m, x.n), 1);
-    return { hilos: Math.max(Number(base.hilos) || 1, usados), x: base.x ?? null, y: base.y ?? null };
+    return { hilos: Math.max(Number(base.hilos) || 1, usados), x: base.x ?? null, y: base.y ?? null, largo: base.largo ?? null };
   }
   function guardarInfoCliente(k, cambios) {
     const info = infoCliente(k);
@@ -406,13 +408,24 @@
       return g;
     }).filter((g) => g.primero).sort((a, b) => a.primero.y - b.primero.y);
     const libre = new Map();                                                      // column -> y from which the next automatic card fits
+    const ultimoSolo = new Map();                                                 // side and column of cables -> the last single client drawn there (y, length)
     lista.forEach((g) => {
       const info = infoCliente(g.k), multi = info.hilos > 1, lado = g.primero.salida;      // the card goes to the side the fibre faces
       const ancho = multi ? TARJ_ANCHO : TARJ_SOLA, alto = multi ? TARJ_CAB + info.hilos * TARJ_FILA + 6 : 46;
       const dyPuerto = (n) => (multi ? TARJ_CAB + (n - 1) * TARJ_FILA + 8 : 18);
       let x = info.x, y = info.y;
-      if (x == null || y == null) {
-        x = multi ? (lado > 0 ? g.primero.x + 74 : g.primero.x - 74 - ancho) : g.primero.x + lado * 44 - ancho / 2;          // a single icon: 44 px from the fibre, as always
+      if (!multi) {
+        // one fibre: always a straight horizontal line that leaves the fibre on the side away from the cable box. Its length is what the user left (stretching the icon),
+        // else automatic: the clients of neighbouring fibres go in cascade, each one longer than the one before, so they do not pile up
+        const col = `${lado}|${Math.round(g.primero.x / 60)}`, previo = ultimoSolo.get(col);
+        let largo = info.largo;
+        if (largo == null) largo = previo && Math.abs(g.primero.y - previo.y) < 36 ? Math.max(LARGO_SOLO, previo.largo + PASO_CASCADA) : LARGO_SOLO;
+        ultimoSolo.set(col, { y: g.primero.y, largo });
+        g.largo = largo;
+        x = g.primero.x + lado * largo - ancho / 2;
+        y = g.primero.y - 18;
+      } else if (x == null || y == null) {
+        x = lado > 0 ? g.primero.x + 74 : g.primero.x - 74 - ancho;
         y = g.primero.y - dyPuerto(g.lugares[0].n);
         const col = Math.round(x / 50), minimo = libre.get(col) ?? -Infinity;
         if (y < minimo) y = minimo;
@@ -453,21 +466,23 @@
       tarjeta.on("dragstart", (e) => { e.cancelBubble = true; tooltip(null); st.stage.draggable(false); antesDeCambiar(); });
       tarjeta.on("dragmove", (e) => {                                                          // the lines follow; the cable or splitter must not move with it
         e.cancelBubble = true;
-        if (!multi) marcarDestino(puertoClienteCercano(puntoLienzo(), 12));
+        if (!multi) {                                                                          // one fibre: it only slides along its line (stretching it), always straight and away from the box
+          const p0 = posicion(gr.lugares[0].clave);
+          if (p0) {
+            const cx = lado > 0 ? Math.max(p0.x + 26, tarjeta.x() + ancho / 2) : Math.min(p0.x - 26, tarjeta.x() + ancho / 2);
+            tarjeta.position({ x: cx - ancho / 2, y: p0.y - 18 });
+          }
+        }
         dibujarConexiones();
       });
       tarjeta.on("dragend", (e) => {
         e.cancelBubble = true;
         st.stage.draggable(true);
-        const destino = multi ? null : puertoClienteCercano(puntoLienzo(), 12);
-        if (!multi) marcarDestino(null);
-        const propio = gr.lugares[0];
-        if (destino && !mismoLugar(destino.lugar, propio.lugar)) {                              // a single icon dropped right on another fibre or output moves there
-          st.pilas.deshacer.pop();                                                              // asignarCliente makes its own undo step
-          setTimeout(() => asignarCliente(destino.lugar, k, propio.lugar, 1), 0);
-          return;
+        if (multi) guardarInfoCliente(k, { x: Math.round(tarjeta.x()), y: Math.round(tarjeta.y()) });     // a card stays where it was left
+        else {
+          const p0 = posicion(gr.lugares[0].clave);
+          if (p0) guardarInfoCliente(k, { largo: Math.max(10, Math.round(lado * (tarjeta.x() + ancho / 2 - p0.x))) });            // a single icon: the length it was stretched to
         }
-        guardarInfoCliente(k, { x: Math.round(tarjeta.x()), y: Math.round(tarjeta.y()) });     // anywhere else it stays where it was left
         gr.x = tarjeta.x(); gr.y = tarjeta.y();
         actualizarBarra();
       });
@@ -1615,20 +1630,27 @@
 
   // ------------------------------------------------------------------ mufa en continuidad (mufas de corte)
   /** The fibres written («1-12, 15») go from one cable to the other with the same number: the mufa makes those fusions and the rest are left alone. */
-  function abrirContinuidad() {
-    if (!st.puedeEditar) return;
-    if (nCambios()) { mensaje("Guarde los cambios de la mufa primero: la continuidad se aplica sobre lo guardado", "error"); return; }
-    if (st.cables.length < 2) { mensaje("La mufa necesita dos cables para poner hilos en continuidad", "error"); return; }
-    const f = $("mu-ct-form"), previa = ((st.datos.mufa.propiedades || {}).continuidad) || null;
+  async function abrirContinuidad() {
+    const f = $("mu-ct-form"), error = $("mu-ct-error");
+    // the window always opens: what stops it is said inside it (a message outside could go unseen)
+    if (st.puedeEditar && nCambios() && !(await aplicar())) return;                  // what is pending is saved first: the continuity is made on what is saved
+    const previa = ((st.datos.mufa.propiedades || {}).continuidad) || null;
+    let problema = "";
+    if (!st.puedeEditar) problema = "No tiene permiso para editar esta mufa: la continuidad solo la puede poner quien edita el proyecto.";
+    else if (st.cables.length < 2) problema = `Esta mufa tiene ${st.cables.length} cable${st.cables.length === 1 ? "" : "s"}: necesita dos cables (el que llega y el que sale) para poner hilos en continuidad.`;
     const opciones = st.cables.map((c) => `<option value="${c.id}">${esc(c.nombre)} (${c.hilos == null ? "?" : c.hilos} hilos)</option>`).join("");
     f.elements.a.innerHTML = f.elements.b.innerHTML = opciones;
-    const [a, b] = previa && previa.cables ? previa.cables : [st.cables[0].id, st.cables[1].id];
-    f.elements.a.value = String(a); f.elements.b.value = String(b);
+    if (st.cables.length >= 2) {
+      const [a, b] = previa && previa.cables ? previa.cables : [st.cables[0].id, st.cables[1].id];
+      f.elements.a.value = String(a); f.elements.b.value = String(b);
+    }
     f.elements.hilos.value = previa ? previa.pedidos || previa.hilos || "" : "";
-    $("mu-ct-quitar").hidden = !previa;
-    $("mu-ct-error").textContent = "";
+    [...f.elements].forEach((x) => { if (x.name) x.disabled = !!problema; });
+    f.querySelector("[type=submit]").disabled = !!problema;
+    $("mu-ct-quitar").hidden = !previa || !!problema;
+    error.textContent = problema;
     $("modal-mu-cont").hidden = false;
-    f.elements.hilos.focus();
+    if (!problema) f.elements.hilos.focus();
   }
 
   async function aplicarContinuidad(ev, quitar = false) {
@@ -1867,7 +1889,7 @@
     $("mu-no-fondo").addEventListener("input", (e) => { st.colorNota.fondo = e.target.value; });
     $("mu-no-texto").addEventListener("input", (e) => { st.colorNota.texto = e.target.value; });
     $("mu-no-colores-quitar").addEventListener("click", () => { st.colorNota = { fondo: null, texto: null }; $("mu-no-fondo").value = "#fff8c6"; $("mu-no-texto").value = "#222222"; });
-    $("mu-continuidad").addEventListener("click", abrirContinuidad);
+    $("mu-continuidad").addEventListener("click", () => { abrirContinuidad(); });
     $("mu-ct-form").addEventListener("submit", aplicarContinuidad);
     $("mu-ct-quitar").addEventListener("click", () => aplicarContinuidad(null, true));
     ["mu-ct-x", "mu-ct-cancelar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-cont").hidden = true; }));

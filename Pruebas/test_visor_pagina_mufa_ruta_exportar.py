@@ -43,6 +43,7 @@ async def _recorrido(mundo_):
         await p.evaluar("(%s)(%d)" % (MENU, d3["id"]))
         await p.evaluar("document.querySelector('#mu-menu li[data-mu-cliente-ruta]').click(); true")
         await p.esperar("!document.getElementById('modal-mu-rf').hidden", 10)
+        assert await p.evaluar("(() => { const r = document.querySelector('#modal-mu-rf .modal-caja').getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + 20); return !!e && !!e.closest('#modal-mu-rf'); })()") is True
         lineas = await p.evaluar("[...document.querySelectorAll('#mu-rf-lista li')].map(li => li.textContent)")
         assert len(lineas) == 3 and lineas[0].endswith("H1 del cliente fusionarlo con H3 hacia MF Dos") and lineas[2].endswith("con H3 del SPL 1/8 de MF Otra")
         assert "splitter" in await p.evaluar("document.getElementById('mu-rf-nota').textContent")

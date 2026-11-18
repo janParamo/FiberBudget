@@ -223,7 +223,7 @@ body.editando-red .abrir-lugares { top: calc(var(--alto-editor, 56px) + 10px); }
 
 /* ------------------------------------------------------------ editor de mufa (fase 4) */
 #modal-mufa { z-index: 3300; padding: 18px; }
-#modal-mu-objeto, #modal-mu-nota, #modal-mu-modelo, #modal-mu-cable, #modal-mu-hcliente { z-index: 3400; }
+#modal-mu-objeto, #modal-mu-nota, #modal-mu-modelo, #modal-mu-cable, #modal-mu-hcliente, #modal-mu-cont, #modal-mu-rf { z-index: 3400; }
 .mu-colores { font-size: 12.5px; color: var(--texto-suave); }
 .mu-leyenda i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin: 0 3px 0 6px; }
 .mu-leyenda i.punteada { border-top-style: dashed; }

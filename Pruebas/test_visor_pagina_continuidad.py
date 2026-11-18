@@ -18,6 +18,8 @@ async def _recorrido(mundo_):
         await p.esperar("window.EditorMufa._st.datos && window.EditorMufa._st.cables.length === 2", 15)
         await p.evaluar("document.getElementById('mu-continuidad').click(); true")
         assert await p.evaluar("document.getElementById('modal-mu-cont').hidden") is False
+        # and it is really on top of the mufa editor (not hidden behind it)
+        assert await p.evaluar("(() => { const r = document.getElementById('mu-ct-form').getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + 20); return !!e && !!e.closest('#modal-mu-cont'); })()") is True
         assert await p.evaluar("document.getElementById('mu-ct-form').elements.a.options.length") == 2
         # a list that does not make sense is refused in the window
         await p.evaluar("(() => { const f = document.getElementById('mu-ct-form'); f.elements.hilos.value = 'a-b'; f.requestSubmit(); return true; })()")

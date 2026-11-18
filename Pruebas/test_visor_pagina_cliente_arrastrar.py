@@ -133,3 +133,35 @@ async def _con_dos_hilos(mundo_):
 
 def test_a_client_with_two_fibres_is_one_card_with_two_lines_and_moves_freely(mundo):
     asyncio.run(_con_dos_hilos(mundo))
+
+
+async def _en_cascada(mundo_):
+    """Clients with one fibre: always a straight horizontal line away from the cable box; neighbours go in cascade (each longer than the one before); the icon only slides
+    along its line to stretch it, and the length is saved."""
+    con, admin, proy, ids = mundo_
+    hilos = {f["numero"]: f["id"] for c in mufa.leer(con, admin, mufa_id=ids["a"])["cables"] for f in c["fibras"]}
+    mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"hilo_clientes": [
+        {"hilo_id": hilos[1], "codigo_cliente": "C10001", "nombre": "Uno"}, {"hilo_id": hilos[2], "codigo_cliente": "C10002", "nombre": "Dos"},
+        {"hilo_id": hilos[3], "codigo_cliente": "C10003", "nombre": "Tres"}, {"hilo_id": hilos[9], "codigo_cliente": "C10009", "nombre": "Nueve"}]})
+    medir = """(() => { const st = window.EditorMufa._st; return [...st.tarjetas.values()].map((t) => { const p = st.puertos.get('h:' + t.lugares[0].lugar.hilo), ic = t.grupo.getAttr('icono');
+      const cx = t.grupo.x() + ic.x, cy = t.grupo.y() + ic.y, px = p.grupo.x() + p.dx, py = p.grupo.y() + p.dy; return [Math.round((cx - px) * p.salida), Math.round(cy - py)]; }); })()"""
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.EditorMufa && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.EditorMufa.abrir(%d, 'MF Uno'); true" % ids["a"])
+        await p.esperar("window.EditorMufa._st.datos && window.EditorMufa._st.tarjetas.size === 4", 15)
+        # outward (positive), on the same row as its fibre (straight), 44 then 78 then 112 for three neighbours, and 44 again for the one that is far away
+        assert await p.evaluar(medir) == [[44, 0], [78, 0], [112, 0], [44, 0]]
+        # stretching the second one: it only moves along its line (the height it is dragged to is ignored; towards the box it stops at 26)
+        await p.evaluar("""(() => { const T = [...window.EditorMufa._st.tarjetas.values()][1], t = T.grupo, sal = window.EditorMufa._st.puertos.get('h:' + T.lugares[0].lugar.hilo).salida; t.fire('dragstart'); t.position({x: t.x() + 100 * sal, y: t.y() + 70}); t.fire('dragmove'); t.fire('dragend'); return true; })()""")
+        assert (await p.evaluar(medir))[1] == [178, 0]
+        await p.evaluar("""(() => { const T = [...window.EditorMufa._st.tarjetas.values()][3], t = T.grupo, sal = window.EditorMufa._st.puertos.get('h:' + T.lugares[0].lugar.hilo).salida; t.fire('dragstart'); t.position({x: t.x() - 500 * sal, y: t.y()}); t.fire('dragmove'); t.fire('dragend'); return true; })()""")
+        assert (await p.evaluar(medir))[3] == [26, 0]                                          # never behind the cable box
+        await p.evaluar("document.getElementById('mu-aplicar').click(); true")
+        await p.esperar("window.EditorMufa._st.clientesMufa.size === 0 && document.getElementById('mu-cambios').textContent === 'Guardado'", 10)
+        fila = {f["codigo_cliente"]: f["largo"] for f in con.execute("SELECT codigo_cliente, largo FROM redes.mufa_clientes WHERE borrado_en IS NULL").fetchall()}
+        assert fila == {"C10002": 178.0, "C10009": 26.0}
+        assert await p.errores() == []
+
+
+def test_single_clients_are_straight_in_cascade_and_can_be_stretched(mundo):
+    asyncio.run(_en_cascada(mundo))
