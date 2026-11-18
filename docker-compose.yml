@@ -32,9 +32,9 @@ services:
       # El visor .exe nuevo (VisorRutas.zip + version.json): lo sube herramientas\publicar_visor.bat con scp y los visores se actualizan solos al abrirse.
       # Crear antes, con el usuario de la VM (no con sudo):  mkdir -p actualizaciones
       - ./actualizaciones:/app/actualizaciones:ro
-    # Solo escucha en la propia VM (127.0.0.1): hacia afuera se sale por ngrok (lo abre el servicio) o por el proxy HTTPS de abajo.
+    # Solo escucha en la propia VM (127.0.0.1; ESCUCHAR_EN=0.0.0.0 en el .env lo abre a la red interna, sin ngrok): hacia afuera se sale por ngrok (lo abre el servicio) o por el proxy HTTPS de abajo.
     ports:
-      - "127.0.0.1:${PUERTO:-8000}:8000"
+      - "${ESCUCHAR_EN:-127.0.0.1}:${PUERTO:-8000}:8000"
     stop_grace_period: 20s
     logging:
       driver: json-file
