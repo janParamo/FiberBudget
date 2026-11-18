@@ -60,6 +60,6 @@ def test_a_client_with_two_fibres_is_on_a_fibre_and_on_a_splitter_output_and_kee
     with pytest.raises(DatosInvalidos):
         mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"puerto_clientes": [{"splitter": sid, "numero": 1, "codigo_cliente": "C28995", "hilo_cliente": 99}]})
     # changing its fibres and moving the card updates the same row (it is not listed twice)
-    mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"clientes_mufa": [{"codigo_cliente": "C28995", "nombre": "Casa del Café", "hilos": 3, "x": 10, "y": 20}]})
+    mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"clientes_mufa": [{"codigo_cliente": "C28995", "nombre": "Casa del Café", "id_servicio": "ID3156118", "hilos": 3, "x": 10, "y": 20}]})
     clientes = [c for c in mufa.leer(con, admin, mufa_id=ids["a"])["clientes"] if c["codigo_cliente"] == "C28995"]
     assert len(clientes) == 1 and (clientes[0]["hilos"], clientes[0]["x"]) == (3, 10)

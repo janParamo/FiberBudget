@@ -1045,6 +1045,8 @@
       div.className = `mu-nota er-nota-cuerpo ql-editor${seleccionado("nota", n.id) ? " sel" : ""}`;
       div.style.width = `${n.ancho || 220}px`;
       div.innerHTML = n.html;
+      if (n.color_fondo) div.style.background = n.color_fondo;                       // the colours chosen for this note
+      if (n.color_texto) { div.style.color = n.color_texto; div.classList.add("con-color-texto"); }
       div.dataset.nota = n.id;
       caja.appendChild(div);
     });
@@ -1100,6 +1102,9 @@
     st.notaEditando = nota || null;
     st.quill.setContents([]);
     if (nota) st.quill.clipboard.dangerouslyPasteHTML(nota.html);
+    st.colorNota = { fondo: nota ? nota.color_fondo || null : null, texto: nota ? nota.color_texto || null : null };
+    $("mu-no-fondo").value = st.colorNota.fondo || "#fff8c6";
+    $("mu-no-texto").value = st.colorNota.texto || "#222222";
     Redes.estadoEn($("mu-no-estado"), "");
     $("modal-mu-nota").hidden = false;
     st.quill.focus();
@@ -1114,6 +1119,7 @@
       n = { id: nuevoId(), version: null, html: st.quill.root.innerHTML, x: c.x, y: c.y, ancho: 220 };
       st.notas.set(n.id, n);
     }
+    n.color_fondo = st.colorNota.fondo; n.color_texto = st.colorNota.texto;
     st.sucios.add(`notas:${n.id}`);
     $("modal-mu-nota").hidden = true;
     dibujar();
@@ -1296,7 +1302,9 @@
   // where a client can be: on a fibre ({hilo}) or on an output of a splitter ({splitter, numero})
   const clavePuerto = (sid, n) => `${sid}:${n}`;
   const mismoLugar = (a, b) => !!a && !!b && (a.hilo != null ? a.hilo === b.hilo : (a.hilo == null && b.hilo == null && a.splitter === b.splitter && a.numero === b.numero));
-  const claveCliente = (k) => (k.codigo_cliente ? String(k.codigo_cliente).toUpperCase() : `|${String(k.nombre || k.id_servicio || "").toLowerCase()}`);   // the code identifies it; else the name
+  // who a client is: its code and then its service ID (the same code and name with another ID is another service: both can be in the mufa); without a code, its name
+  const claveCliente = (k) => (k.codigo_cliente ? `${String(k.codigo_cliente).toUpperCase()}|${String(k.id_servicio || "").replace(/\s+/g, "").toUpperCase()}`
+    : `|${String(k.nombre || k.id_servicio || "").toLowerCase()}`);
   const lugarDe = (arg) => (arg !== null && typeof arg === "object" ? arg : { hilo: arg });
 
   /** What is saved at a place (a client with its version), or null. */
@@ -1856,6 +1864,9 @@
       sugerirHilos(k);
       $("mu-hc-error").textContent = "";
     });
+    $("mu-no-fondo").addEventListener("input", (e) => { st.colorNota.fondo = e.target.value; });
+    $("mu-no-texto").addEventListener("input", (e) => { st.colorNota.texto = e.target.value; });
+    $("mu-no-colores-quitar").addEventListener("click", () => { st.colorNota = { fondo: null, texto: null }; $("mu-no-fondo").value = "#fff8c6"; $("mu-no-texto").value = "#222222"; });
     $("mu-continuidad").addEventListener("click", abrirContinuidad);
     $("mu-ct-form").addEventListener("submit", aplicarContinuidad);
     $("mu-ct-quitar").addEventListener("click", () => aplicarContinuidad(null, true));

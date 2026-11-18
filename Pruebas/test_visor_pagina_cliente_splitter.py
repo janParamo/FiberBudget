@@ -48,3 +48,34 @@ async def _recorrido(mundo_):
 
 def test_a_client_is_assigned_to_a_splitter_output_with_the_right_click(mundo):
     asyncio.run(_recorrido(mundo))
+
+
+MENU_HILO = """(hilo) => { const st = window.EditorMufa._st;
+  const c = st.capa.find('.puerto').find((x) => x.getAttr('puerto') === 'h:' + hilo);
+  c.fire('contextmenu', {evt: new MouseEvent('contextmenu', {clientX: 300, clientY: 300, bubbles: true, cancelable: true})}); return true; }"""
+
+
+async def _mismo_codigo(mundo_):
+    """The same code and name with another service ID is another service: both can be put on fibres of the mufa (the code is checked, then the ID)."""
+    con, admin, proy, ids = mundo_
+    hilos = {f["numero"]: f["id"] for c in mufa.leer(con, admin, mufa_id=ids["a"])["cables"] for f in c["fibras"]}
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.EditorMufa && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.EditorMufa.abrir(%d, 'MF Uno'); true" % ids["a"])
+        await p.esperar("window.EditorMufa._st.datos && window.EditorMufa._st.cables.length === 1", 15)
+        for hilo, servicio in ((hilos[3], "ID530600"), (hilos[4], "ID530610"), (hilos[5], "ID530610")):
+            await p.evaluar("(%s)(%d)" % (MENU_HILO, hilo))
+            await p.evaluar("document.querySelector('#mu-menu li[data-mu-cliente]').click(); true")
+            await p.evaluar("""(() => { const f = document.getElementById('mu-hc-form'); f.elements.manual.checked = true; f.elements.manual.dispatchEvent(new Event('change'));
+              f.elements.codigo.value = 'C35307'; f.elements.nombre.value = 'David Alberto Tobar'; f.elements.servicio.value = '%s'; f.requestSubmit(); return true; })()""" % servicio)
+            await asyncio.sleep(0.3)
+        # fibres 3 and 4: two services of the same client; fibre 5 repeats the ID of fibre 4 (same service, fibre 1 of the client): refused
+        assert await p.evaluar("window.EditorMufa._st.hiloClientes.has(%d) && window.EditorMufa._st.hiloClientes.has(%d)" % (hilos[3], hilos[4])) is True
+        assert await p.evaluar("window.EditorMufa._st.hiloClientes.has(%d)" % hilos[5]) is False
+        assert "ya llega a" in await p.evaluar("document.getElementById('mu-hc-error').textContent")
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.cliente-hilo').length") == 2
+        assert await p.errores() == []
+
+
+def test_the_same_code_with_another_service_id_can_be_put_on_another_fibre(mundo):
+    asyncio.run(_mismo_codigo(mundo))

@@ -127,7 +127,7 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
                            "a": {"hilo": x["a_hilo_id"]} if x["a_hilo_id"] else _ref_puerto(con, x["a_puerto_id"]),
                            "b": {"hilo": x["b_hilo_id"]} if x["b_hilo_id"] else _ref_puerto(con, x["b_puerto_id"])})
     notas = [dict(n) for n in con.execute(
-        "SELECT id, html, x, y, ancho, version FROM redes.notas WHERE mufa_id = %s AND contexto = 'mufa' AND borrado_en IS NULL "
+        "SELECT id, html, x, y, ancho, color_fondo, color_texto, version FROM redes.notas WHERE mufa_id = %s AND contexto = 'mufa' AND borrado_en IS NULL "
         "ORDER BY id", (m["id"],)).fetchall()]
     return {"proyecto": dict(proyecto), "mufa": {**{k: m[k] for k in ("id", "tipo", "subtipo", "nombre", "codigo", "fuente", "confianza",
                                                                       "estado_migracion", "nombre_visio", "lat", "lon", "version")},
@@ -206,6 +206,16 @@ def _valores_cliente(con: Any, actor: dict[str, Any], d: dict[str, Any], quien: 
 MAX_HILOS_CLIENTE = 48
 
 
+def _color(valor: Any, quien: str) -> str | None:
+    """#rrggbb in lower case, or None (the default colour)."""
+    if valor in (None, ""):
+        return None
+    t = str(valor).strip().lower()
+    if not re.fullmatch(r"#[0-9a-f]{6}", t):
+        raise DatosInvalidos({quien: "el color va como #rrggbb"})
+    return t
+
+
 def _hilo_cliente(valor: Any, quien: str, campo: str = "hilo del cliente") -> int:
     """The number of the client's own fibre that is on this fibre / output (1 when the client has a single line)."""
     try:
@@ -229,7 +239,9 @@ def _guardar_cliente_mufa(con: Any, actor: dict[str, Any], mid: int, d: dict[str
     if codigo and not re.fullmatch(r"C\d{3,7}", codigo):
         raise DatosInvalidos({quien: "el código del cliente es una C seguida de números (por ejemplo C23839)"})
     if codigo:
-        previo = con.execute("SELECT * FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL AND codigo_cliente = %s FOR UPDATE", (mid, codigo)).fetchone()
+        # the code and then the service ID: the same code with another ID is another service
+        previo = con.execute("SELECT * FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL AND codigo_cliente = %s "
+                             "AND upper(replace(coalesce(id_servicio, ''), ' ', '')) = upper(replace(%s, ' ', '')) FOR UPDATE", (mid, codigo, servicio or "")).fetchone()
     else:
         previo = con.execute("SELECT * FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL AND codigo_cliente IS NULL AND lower(nombre) = lower(%s) FOR UPDATE",
                              (mid, nombre or servicio)).fetchone()
@@ -547,7 +559,8 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
                 ancho = max(80, min(1200, int(d.get("ancho") or 220)))
             except (TypeError, ValueError):
                 ancho = 220
-            valores = {"html": html, "x": _numero(d.get("x", 0), "Nota", "x"), "y": _numero(d.get("y", 0), "Nota", "y"), "ancho": ancho}
+            valores = {"html": html, "x": _numero(d.get("x", 0), "Nota", "x"), "y": _numero(d.get("y", 0), "Nota", "y"), "ancho": ancho,
+                       "color_fondo": _color(d.get("color_fondo"), "Nota"), "color_texto": _color(d.get("color_texto"), "Nota")}
             if _es_nuevo(d.get("id")):
                 fila = repositorio.insertar(con, "notas", {**valores, "proyecto_id": proyecto_id, "contexto": "mufa", "mufa_id": mid}, actor["id"])
                 ids[str(d["id"])] = fila["id"]

@@ -312,6 +312,10 @@ body.visio-al-lado #modal-diagrama { left: 50%; z-index: 3350; padding-left: 6px
 .mu-notas { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .mu-nota.er-nota-cuerpo.ql-editor { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: auto; cursor: move; }
 .mu-nota.sel.er-nota-cuerpo.ql-editor { outline: 3px solid #ffe600; }
+.mu-nota.con-color-texto.ql-editor * { color: inherit !important; }      /* the colour chosen for the box wins over the ones inside the text */
+.mu-no-colores { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 10px 0; font-size: 13px; }
+.mu-no-colores input[type=color] { vertical-align: middle; width: 38px; height: 26px; padding: 0; border: 1px solid var(--borde); background: none; }
+
 .mu-tooltip {
   position: absolute; z-index: 5; max-width: 380px; padding: 8px 10px; background: #fff; border: 1px solid var(--borde); border-radius: 6px;
   box-shadow: var(--sombra); font-size: 12px; line-height: 1.45; pointer-events: none;

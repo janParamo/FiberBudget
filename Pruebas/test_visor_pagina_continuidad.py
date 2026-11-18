@@ -42,3 +42,28 @@ async def _recorrido(mundo_):
 
 def test_the_written_fibres_are_put_in_continuity_from_the_editor(mundo):
     asyncio.run(_recorrido(mundo))
+
+
+async def _colores_de_nota(mundo_):
+    """A note of the mufa: the colour of its box and of its text are chosen in its window, drawn at once and saved."""
+    con, admin, proy, ids = mundo_
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.EditorMufa && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.EditorMufa.abrir(%d, 'MF Uno'); true" % ids["a"])
+        await p.esperar("window.EditorMufa._st.datos", 15)
+        await p.evaluar("document.getElementById('mu-nota').click(); true")
+        await p.esperar("!document.getElementById('modal-mu-nota').hidden", 5)
+        await p.evaluar("""(() => { window.EditorMufa._st.quill.setText('SPL SECUNDARIO'); const f = document.getElementById('mu-no-fondo'), t = document.getElementById('mu-no-texto');
+          f.value = '#1f2937'; f.dispatchEvent(new Event('input')); t.value = '#ffe600'; t.dispatchEvent(new Event('input'));
+          document.getElementById('mu-no-aceptar').click(); return true; })()""")
+        stil = await p.evaluar("(() => { const d = document.querySelector('#mu-notas .mu-nota'); return [d.style.background, d.style.color, d.classList.contains('con-color-texto')]; })()")
+        assert "31, 41, 55" in stil[0] and "255, 230, 0" in stil[1] and stil[2] is True
+        await p.evaluar("document.getElementById('mu-aplicar').click(); true")
+        await p.esperar("document.getElementById('mu-cambios').textContent === 'Guardado'", 10)
+        fila = [dict(f) for f in con.execute("SELECT color_fondo, color_texto FROM redes.notas WHERE borrado_en IS NULL").fetchall()]
+        assert fila == [{"color_fondo": "#1f2937", "color_texto": "#ffe600"}]
+        assert await p.errores() == []
+
+
+def test_the_colours_of_a_note_are_chosen_and_saved(mundo):
+    asyncio.run(_colores_de_nota(mundo))

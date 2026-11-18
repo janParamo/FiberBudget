@@ -56,3 +56,15 @@ def test_fibres_already_connected_are_respected_and_a_fibre_the_cables_do_not_ha
         continuidad.aplicar(con, admin, mufa_id=ids["b"], cable_a=c["Otro"], cable_b=c["Otro"], hilos="1")
     with pytest.raises(DatosInvalidos):
         continuidad.aplicar(con, admin, mufa_id=ids["b"], cable_a=c["Distribución"], cable_b=c["Otro"], hilos="")
+
+
+def test_a_note_keeps_the_colour_of_its_box_and_of_its_text(mundo):
+    con, admin, p, ids = mundo
+    r = mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"notas": [{"id": "n1", "html": "<p>SPL SECUNDARIO</p>", "x": 10, "y": 20, "color_fondo": "#1F2937", "color_texto": "#FFE600"}]})
+    n = r["notas"][0]
+    assert (n["color_fondo"], n["color_texto"]) == ("#1f2937", "#ffe600")
+    # back to the default colours (empty), and a wrong colour is refused
+    r = mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"notas": [{"id": n["id"], "version": n["version"], "html": "<p>SPL SECUNDARIO</p>", "x": 10, "y": 20, "color_fondo": "", "color_texto": None}]})
+    assert (r["notas"][0]["color_fondo"], r["notas"][0]["color_texto"]) == (None, None)
+    with pytest.raises(DatosInvalidos):
+        mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"notas": [{"id": "n2", "html": "<p>x</p>", "color_fondo": "rojo"}]})

@@ -23,7 +23,7 @@ COLUMNAS = {
                "origen_id", "destino_id", "vertices", "geom", "cruces", "longitud_m", "metraje",
                "configuracion_estimada", "tipo_fibra", "fuente", "confianza", "geom_fuente", "estado_migracion", "ref_visio",
                "borrado_en"},
-    "notas": {"proyecto_id", "contexto", "mufa_id", "elemento_id", "ubicacion", "x", "y", "html", "ancho", "borrado_en"},
+    "notas": {"proyecto_id", "contexto", "mufa_id", "elemento_id", "ubicacion", "x", "y", "html", "ancho", "color_fondo", "color_texto", "borrado_en"},
     "hilos": {"cable_id", "numero", "estado", "observacion", "borrado_en"},
     "splitters": {"proyecto_id", "mufa_id", "nombre", "salidas", "relacion", "conector", "x", "y", "propiedades", "fuente",
                   "confianza", "borrado_en"},
