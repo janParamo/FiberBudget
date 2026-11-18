@@ -33,6 +33,7 @@ import pdf_export
 import recalc
 import red_fibra_pg
 import routing
+import ruta_red
 from config import (NI_LAT_MAX, NI_LAT_MIN, NI_LON_MAX, NI_LON_MIN,
                     get_settings, load_rules, setup_logging)
 from excel_generator import generar_excel
@@ -597,6 +598,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     get_route = get_route or routing.get_route
     log.info("Ticket %s received (%.6f, %.6f)", req.ticket_id, req.latitude, req.longitude)
     rules = load_rules(settings.rules_path)
+    get_route = ruta_red.con_red_existente(get_route, rules)       # the routes follow the fibre lines of the KMZ when that is not longer than the streets
     # Customer equipment (MATERIALES) and the way of connecting: GPON or Metro (metro.py).
     technology, technology_source = seleccionar_tecnologia(
         req.bandwidth, req.technology, req.raw_comment, rules)

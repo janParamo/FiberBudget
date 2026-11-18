@@ -2,7 +2,7 @@
 
 GPON hangs the client from the nearest mufa and intervenes every mufa up to the splitter. Metro
 differs in two things (rule of 2026-11-17):
-  * the connection point is the nearest NODO of the Visio network (tipo NODO); the route goes from
+  * the connection point is the nearest NODO, of the Visio network (tipo NODO) or of the KMZ (folder «nodo»); the route goes from
     that node to the client along the existing poles, with new poles where there are none (the
     same pole rules as GPON);
   * only ONE mufa is intervened: the mufa nearest to the node (never the ones found along the
@@ -80,8 +80,15 @@ def resolver_nodo(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
                   ) -> tuple[db.Segment, red_fibra_pg.BusquedaVisio]:
     """(connection point = the nearest NODO, the Visio search that stands for it). Raises SinNodo."""
     nodo = nodo_mas_cercano(lat, lon, visio_con)
+    try:                                              # the KMZ has nodes the diagrams do not (Matagalpa, Jinotega...): the nearest of both
+        kmz = db.find_nearest_nodo(lat, lon)
+    except db.DatabaseError:
+        kmz = None
+        log.warning("The nodes of the KMZ could not be read; only those of the Visio network are considered")
+    if kmz is not None and (nodo is None or kmz["distancia_m"] < nodo["distancia_m"]):
+        nodo = {**kmz, "id": f"kmz{kmz['id']}", "tipo": "NODO", "propietario": None, "fuente_coord": "kmz", "zona": None, "notas": None}
     if nodo is None:
-        raise SinNodo("No se encontró un nodo de la red (tipo NODO) para llevar el cliente de Fibra Metro")
+        raise SinNodo("No se encontró un nodo de la red para llevar el cliente de Fibra Metro")
     log.info("Metro connection point: node %s at %.1f m", nodo["nombre"], nodo["distancia_m"])
     seg = db.Segment(id=f"visio:{nodo['id']}", tipo="nodo (visio)", lat=nodo["lat"], lon=nodo["lon"],
                      distance_m=nodo["distancia_m"], is_mufa=False, nombre=nodo["nombre"])

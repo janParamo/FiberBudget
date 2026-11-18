@@ -15,6 +15,20 @@ def _sin_pozos_reales(monkeypatch, request):
 
 
 @pytest.fixture(autouse=True)
+def _sin_lineas_reales(monkeypatch, request):
+    """The fibre lines that guide the routes (ruta_red) and the KMZ nodes (Metro) come from PostGIS: no test asks the real database for them.
+    Tests of those replace these."""
+    if "lineas_reales" in request.keywords:
+        return
+    try:
+        import db
+    except Exception:                                               # noqa: BLE001
+        return
+    monkeypatch.setattr(db, "find_lineas_en_caja", lambda *a, **k: [])
+    monkeypatch.setattr(db, "find_nearest_nodo", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
 def _sin_guardar_splitters(monkeypatch, request):
     """Generating a route stores the splitters it read in the redes database: no test writes to the real one (tests of that module replace this)."""
     if "guardar_splitters" in request.keywords:

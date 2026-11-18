@@ -455,6 +455,64 @@ def find_pozos_near_route(route_linestring_wkt: str, buffer_m: float) -> list[fl
     return [float(row[0]) for row in rows]
 
 
+_NODO_KMZ_SQL = """
+WITH pt AS (SELECT ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326) AS g)
+SELECT p.id, p.nombre, p.tipo, ST_Y(p.geom) AS lat, ST_X(p.geom) AS lon, ST_Distance(p.geom::geography, pt.g::geography) AS dist_m
+FROM red_puntos p, pt
+WHERE p.geom IS NOT NULL
+  AND lower(trim(p.tipo)) = ANY(%(tipos)s)
+ORDER BY p.geom <-> pt.g
+LIMIT 1
+"""
+NODO_KMZ_TIPOS = ["nodo", "nodos"]       # the folders of the KMZ with the nodes of the network (not «nodos enatrel», «nodos deshabilitados» or the mini nodos)
+
+
+def find_nearest_nodo(lat: float, lon: float) -> dict | None:
+    """The node of the KMZ (red_puntos, folder «nodo» / «nodos») nearest to a point, as {id, nombre, tipo, lat, lon, distancia_m}; None when there is none."""
+    s = get_settings()
+    try:
+        with psycopg.connect(host=s.db_host, port=s.db_port, dbname=s.db_name, user=s.db_user, password=s.db_password, connect_timeout=5) as conn:
+            row = conn.execute(_NODO_KMZ_SQL, {"lat": lat, "lon": lon, "tipos": NODO_KMZ_TIPOS}).fetchone()
+    except psycopg.Error as exc:
+        log.error("PostGIS nearest-node query failed (%s)", type(exc).__name__)
+        raise DatabaseError(str(exc)) from exc
+    if row is None:
+        return None
+    return {"id": row[0], "nombre": (row[1] or "").strip() or "Nodo", "tipo": row[2], "lat": float(row[3]), "lon": float(row[4]), "distancia_m": round(float(row[5]), 1)}
+
+
+_LINEAS_CAJA_SQL = """
+SELECT ST_AsGeoJSON(l.geom, 7)
+FROM red_lineas l
+WHERE l.geom IS NOT NULL
+  AND l.geom && ST_MakeEnvelope(%(oeste)s, %(sur)s, %(este)s, %(norte)s, 4326)
+LIMIT %(limit)s
+"""
+
+
+def find_lineas_en_caja(oeste: float, sur: float, este: float, norte: float, limit: int = 3000) -> list[list[tuple[float, float]]]:
+    """The fibre lines of the KMZ (red_lineas) that touch a box, as polylines [(lat, lon), ...] (a multiline is split into its parts)."""
+    s = get_settings()
+    try:
+        with psycopg.connect(host=s.db_host, port=s.db_port, dbname=s.db_name, user=s.db_user, password=s.db_password, connect_timeout=5) as conn:
+            rows = conn.execute(_LINEAS_CAJA_SQL, {"oeste": oeste, "sur": sur, "este": este, "norte": norte, "limit": int(limit)}).fetchall()
+    except psycopg.Error as exc:
+        log.error("PostGIS lines-in-box query failed (%s)", type(exc).__name__)
+        raise DatabaseError(str(exc)) from exc
+    import json
+    lineas: list[list[tuple[float, float]]] = []
+    for (texto,) in rows:
+        geom = json.loads(texto) if texto else None
+        if not geom:
+            continue
+        partes = geom["coordinates"] if geom["type"] == "MultiLineString" else [geom["coordinates"]] if geom["type"] == "LineString" else []
+        for parte in partes:
+            puntos = [(float(c[1]), float(c[0])) for c in parte]          # GeoJSON is (lon, lat)
+            if len(puntos) >= 2:
+                lineas.append(puntos)
+    return lineas
+
+
 _RESERVAS_SQL = """
 WITH pt AS (SELECT ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326) AS g)
 SELECT p.id, p.tipo, ST_Y(p.geom) AS lat, ST_X(p.geom) AS lon, ST_Distance(p.geom::geography, pt.g::geography) AS dist_m, p.nombre

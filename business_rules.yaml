@@ -520,6 +520,19 @@ campo:
   red_tipos: ["poste", "mufa"]
   red_lineas: false
 
+# Rutas guiadas por las líneas de fibra del KMZ (ruta_red.py): antes de tomar la ruta de calles de Google se busca el camino más corto POR las líneas que
+# ya existen (red_lineas), desde el punto de conexión, más la acometida de la línea al cliente. Si no es más larga que max_ratio veces la de Google, la
+# reemplaza (y se avisa). Las líneas se unen donde comparten un vértice o a menos de snap_m. Sin líneas cerca, o con el cliente a más de attach_client_m
+# de ellas, queda la ruta de Google. La ruta dibujada a mano nunca se cambia.
+route_guidance:
+  enabled: true
+  max_ratio: 1.10
+  snap_m: 6
+  attach_origin_m: 60
+  attach_client_m: 80
+  margin_m: 150
+  max_straight_m: 4000
+
 # Calibración de la ruta (routing.calibrar): la fibra no necesita una calle por donde pase un auto. Si la ruta de Google (en auto) es más larga que
 # detour_factor veces la línea recta (y min_extra_m más), se pide la ruta a pie (veredas y pasos) y se usa si es claramente más corta (walking_gain);
 # si el cliente está cerca (direct_max_m) y la ruta sigue siendo direct_detour_factor veces la recta, se usa la línea recta. Se avisa en el resultado.

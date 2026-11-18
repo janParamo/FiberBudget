@@ -28,6 +28,7 @@ import presupuesto
 import red_fibra_pg
 import reglas_mufas
 import routing
+import ruta_red
 from config import NI_LAT_MAX, NI_LAT_MIN, NI_LON_MAX, NI_LON_MIN
 from origen import _distance_m
 from visor_rutas import fusion, ruta_fusion_plan, splitters_diagrama
@@ -209,6 +210,7 @@ class RutaFija:
     when the nearest has no hilos) raises RouteNotFound, so the route the user drew is never replaced by another."""
 
     def __init__(self, puntos: Any):
+        self.fija = True                    # ruta_red never replaces it
         self.puntos = validar_ruta(puntos)
         self.distancia_m = sum(_distance_m(a[0], a[1], b[0], b[1]) for a, b in zip(self.puntos, self.puntos[1:]))
         self.usada = False
@@ -279,7 +281,7 @@ def calcular_ruta(lat: float, lon: float, get_route: Any = None, postes_extra: i
 
 def _calcular(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
               avisos: list[str], get_route: Any = None, postes_extra: int = 0, es_metro: bool = False) -> dict[str, Any]:
-    get_route = get_route or routing.get_route
+    get_route = ruta_red.con_red_existente(get_route or routing.get_route, rules)     # same as main._generar_presupuesto_con
     log.info("Visor: route for (%.6f, %.6f)", lat, lon)
 
     # 1) Punto de conexión (misma función que el presupuesto).
