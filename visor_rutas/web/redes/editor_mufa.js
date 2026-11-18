@@ -585,6 +585,7 @@
       g.add(new Konva.Text({ x: 62, y: y - 4.5, width: 12, align: "center", text: String(n), fontSize: 8, fill: "#fff", listening: false }));
       registrarPuerto(cs, g, 74, y, { splitter: s.id, lado: "salida", numero: n }, 1, null);
       eventosPuerto(r, cs);
+      r.on("contextmenu", (e) => { e.evt.preventDefault(); e.cancelBubble = true; menuSalida(e.evt, { splitter: s.id, numero: n }); });
     }
     const p = s.propiedades || {};
     const olt = [p.olt ? `OLT ${p.olt}` : "", p.puerto_olt || ""].filter(Boolean).join(" ");
@@ -1379,7 +1380,7 @@
     ev.preventDefault();
     const form = $("mu-hc-form"), { lugar } = st.hiloCliente;
     const codigo = form.elements.codigo.value.trim().toUpperCase(), nombre = form.elements.nombre.value.trim(), servicio = form.elements.servicio.value.trim();
-    if (!form.elements.manual.checked && form.elements.conocido.value === "" && !st.hiloCliente.buscado) { $("mu-hc-error").textContent = "Elija un cliente de la lista de esta mufa (o marque «Escribir otro cliente»)"; return; }
+    if (!form.elements.manual.checked && form.elements.conocido.value === "" && !st.hiloCliente.buscado) { $("mu-hc-error").textContent = "Elija un cliente de la lista de esta mufa, búsquelo en toda la red o marque «Crear un cliente nuevo»"; return; }
     if (!(codigo || nombre || servicio)) { $("mu-hc-error").textContent = "Escriba el código, el nombre o el ID de servicio del cliente"; return; }
     if (codigo && !/^C\d{3,7}$/.test(codigo)) { $("mu-hc-error").textContent = "El código es una C seguida de números (por ejemplo C23839)"; return; }
     const hilos = Number(form.elements.hilos.value), hilo = Number(form.elements.hilocliente.value);
@@ -1425,6 +1426,18 @@
     dibujar();
     mensaje(`${nombre}${hilos > 1 ? ` (hilo ${hilo})` : ""} ${antes ? "movido" : "asignado"} a ${textoLugar(destino)}`, "ok");
     return true;
+  }
+
+  /** Right click on an output of a splitter: put a client on it (one of the mufa, one found in the whole network, or a new one typed in the same window), change or take it off. */
+  function menuSalida(evt, lugar) {
+    if (!st.puedeEditar) return;
+    const menu = $("mu-menu"), cl = clienteEn(lugar);
+    menu.innerHTML = `<li data-mu-cl-editar="1">${cl ? "Cambiar el cliente de esta salida…" : "Asignar un cliente a esta salida…"}</li>`
+      + (cl ? `<li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>` : "");
+    menu.dataset.lugar = JSON.stringify(lugar);
+    menu.style.left = `${evt.clientX}px`;
+    menu.style.top = `${evt.clientY}px`;
+    menu.hidden = false;
   }
 
   /** Right click on a client object: change it or take it off. */
