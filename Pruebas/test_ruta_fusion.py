@@ -266,7 +266,7 @@ def test_editing_the_plan_rewrites_the_texts(entorno):
     assert nuevo["tocadas"] == 4 and nuevo["lineas"][0] == "Texto a mano del técnico" and nuevo["compartir_potencia"] is True
     assert nuevo["avisos_rojos"] == ["Ojo con la saturación"]
     assert nuevo["lineas"][1].startswith("En MF CUATRO") and "H4 hacia MF UNO CORTE fusionarlo con H12 hacia MF AEREA DOS" in nuevo["lineas"][1]
-    assert nuevo["lineas"][3].endswith("fusionarlo con H__ del SPL 1/8 (hilos por identificar)")
+    assert nuevo["lineas"][3].endswith("fusionarlo con H__ del SPL 1/8 de MF TRES (hilos por identificar)")
     # a new mufa between two, and one removed from the touched list
     pasos.insert(1, {"id": "nueva", "tipo": "nueva", "nombre": "NUEVA", "lat": 12.0, "lon": -86.0, "tocar": True, "hilo_cliente": "H2", "hilo_potencia": "H3"})
     pasos[0]["tocar"] = False

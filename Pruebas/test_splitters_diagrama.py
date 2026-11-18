@@ -155,7 +155,7 @@ def test_the_route_stops_at_the_first_secondary_with_free_ports(carpeta):
     assert [p["tocar"] for p in plan["pasos"]] == [True, True, False, False, False] and plan["tocadas"] == 2
     assert por_nombre["MF C"]["motivo"] == por_nombre["MF D"]["motivo"] == "después del splitter"
     assert any("se detiene en MF B" in a and "3 mufa(s)" in a for a in plan["avisos_rojos"]) and any("hilos libres" in a for a in plan["avisos_rojos"])
-    assert plan["lineas"][1].endswith("fusionarlo con H__ del SPL 1/8 (hilos por identificar)")                  # the last box goes into the splitter
+    assert plan["lineas"][1].endswith("fusionarlo con H__ del SPL 1/8 de MF B (hilos por identificar)")                  # the last box goes into the splitter
     # the user can mark them again (the splitter may not be usable): the plan is theirs
     editado = [dict(p) for p in plan["pasos"]]
     for p in editado:

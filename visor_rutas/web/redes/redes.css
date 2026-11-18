@@ -584,3 +584,6 @@ td.fh-flecha { text-align: center; padding: 0 6px; }
 .mu-pal-item svg { flex: 0 0 auto; }
 .mu-pal-texto { display: flex; flex-direction: column; min-width: 0; }
 .mu-pal-texto small { color: #5b6270; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mu-rf-lista { margin: 8px 0; padding-left: 22px; display: grid; gap: 8px; font-size: 13px; line-height: 1.4; user-select: text; }
+#modal-mu-rf .config-caja, #modal-mu-rf.modal .modal-caja { max-width: 720px; }

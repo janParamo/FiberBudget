@@ -2556,6 +2556,8 @@
     if (window.EditarFusion) {
       window.EditarFusion.iniciar({
         datos: () => datos, api: () => api, mensaje, repintar: renderFusion,
+        // the name of the client of the budget form, when the form is for the client of the route on the map: the strip of the workbook is filled with it
+        cliente: () => { const n = ($("f-client_name") || {}).value || ""; return datos && n.trim() && marcasParaCliente(($("f-coordenada") || {}).value) ? n.trim() : ""; },
         alCambiar: () => { capas.caminoFibra.clearLayers(); if (datos) dibujarCaminoFibra(datos); if (datos && !datos.ruta.aproximada) programarEstimacion(); },
       });
     }

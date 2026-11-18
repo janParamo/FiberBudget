@@ -5,14 +5,15 @@
  * de fusión. Se edita: tocar / no tocar (aérea y de corte no se tocan por el nombre), hilos hacia el cliente y hacia la potencia, splitter,
  * texto a mano, quitar, subir / bajar, agregar una mufa o una mufa nueva, «compartir potencia del SP» y avisos en rojo. Cada cambio pide a
  * Python los textos de nuevo (`redactar_fusion`), rehace el camino del mapa y el presupuesto aproximado (cuenta las mufas que se tocan).
- * «Exportar al Excel» agrega la franja al libro (`exportar_fusion`): cliente vacío si fue a mano, fecha de hoy, mapa opcional.
+ * «Exportar al Excel» agrega la franja al libro (`exportar_fusion`): con el nombre del cliente del presupuesto (el de la ficha, si es para esta ruta; se puede cambiar),
+ * vacío si fue a mano, fecha de hoy, mapa opcional.
  */
 (function () {
   "use strict";
 
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const ef = { ctx: null, origen: null, plan: null, editado: false, cliente: "", fecha: "", conMapa: true, estado: "", tipoEstado: "", espera: null, token: 0, exportando: false };
+  const ef = { ctx: null, origen: null, plan: null, editado: false, cliente: "", clienteEscrito: false, fecha: "", conMapa: true, estado: "", tipoEstado: "", espera: null, token: 0, exportando: false };
   const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const SPLITTERS = ["1/2", "1/4", "1/8", "1/16", "1/32"];
 
@@ -26,6 +27,13 @@
     ef.editado = false;
     ef.estado = ef.tipoEstado = "";
     ef.fecha = ef.fecha || hoy();
+    ef.clienteEscrito = false;                                  // a new route: the name comes from the budget form again
+    ef.cliente = nombreDelCliente();
+  }
+
+  /** The client of the budget form (when it is for the route on the screen), else empty. */
+  function nombreDelCliente() {
+    try { return (ef.ctx && ef.ctx.cliente && ef.ctx.cliente()) || ""; } catch (e) { return ""; }
   }
 
   const nombresTocados = () => (ef.plan && ef.editado ? new Set(ef.plan.pasos.filter((p) => p.tocar).map((p) => p.nombre)) : null);
@@ -81,7 +89,7 @@
     else if (a === "texto_manual") { paso.texto_manual = b.value.trim() && b.value.trim() !== paso.texto ? b.value.trim() : null; cambio(); }
     else if (a === "compartir") { ef.plan.compartir_potencia = b.checked; cambio(); }
     else if (a === "avisos") { ef.plan.avisos_rojos = b.value.split("\n").map((x) => x.trim()).filter(Boolean); cambio(); }
-    else if (a === "cliente") ef.cliente = b.value;
+    else if (a === "cliente") { ef.cliente = b.value; ef.clienteEscrito = true; }
     else if (a === "fecha") ef.fecha = b.value;
     else if (a === "mapa") ef.conMapa = b.checked;
   }
@@ -93,6 +101,7 @@
     ef.exportando = true;
     ef.estado = "Agregando la franja al libro de rutas de fusión…"; ef.tipoEstado = "cargando";
     pintar();
+    if (!ef.clienteEscrito && !ef.cliente.trim()) ef.cliente = nombreDelCliente();            // the form may have been filled after the route was calculated
     const opciones = { cliente: ef.cliente.trim(), fecha: ef.fecha || hoy(), con_mapa: ef.conMapa,
                        mapa: { ruta: d.ruta.puntos, conexion: { nombre: d.conexion.nombre, lat: d.conexion.lat, lon: d.conexion.lon }, cliente: d.cliente, distancia_m: d.ruta.distancia_m } };
     let r;
@@ -138,7 +147,7 @@
         ${ef.editado ? '<button type="button" class="btn btn-chico" data-ef="rehacer">Rehacer desde los diagramas</button>' : ""}</div>
       <label class="ef-linea"><input type="checkbox" data-ef="compartir" ${plan.compartir_potencia ? "checked" : ""}> Escribir «COMPARTIR POTENCIA DEL SP»</label>
       <label class="ef-linea">Avisos en rojo (uno por línea)<textarea data-ef="avisos" rows="2">${esc((plan.avisos_rojos || []).join("\n"))}</textarea></label>
-      <div class="ef-exportar"><label class="ef-linea">Cliente <input data-ef="cliente" value="${esc(ef.cliente)}" placeholder="vacío si el presupuesto fue a mano; con ticket: su nombre"></label>
+      <div class="ef-exportar"><label class="ef-linea">Cliente <input data-ef="cliente" value="${esc(ef.cliente)}" placeholder="nombre del cliente del presupuesto (vacío si fue a mano)"></label>
         <label class="ef-linea">Fecha <input type="date" data-ef="fecha" value="${esc(ef.fecha)}"></label>
         <label class="ef-linea"><input type="checkbox" data-ef="mapa" ${ef.conMapa ? "checked" : ""}> Mapa de la ruta bajo «RUTA SUGERIDA»</label>
         <button type="button" class="btn btn-primario" data-ef="exportar" ${ef.exportando || !plan.tocadas ? "disabled" : ""}>Exportar al Excel</button></div>

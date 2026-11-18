@@ -304,11 +304,14 @@
           <button id="mu-sangria" type="button" class="btn btn-chico" disabled title="Marcar la conexión elegida como sangría: el hilo sigue su camino y además alimenta a un cliente en esta mufa (se dibuja en rojo)">Sangría</button>
           <button id="mu-diagrama" type="button" class="btn btn-chico" title="Diagrama lógico de red desde esta mufa">Diagrama lógico</button>
           <button id="mu-clientes" type="button" class="btn btn-chico" title="Los clientes de esta mufa como objetos: arrástrelos hasta el hilo al que llegan" disabled>Clientes</button>
+          <button id="mu-continuidad" type="button" class="btn btn-chico" title="Mufa de corte: escriba los hilos que van en continuidad (1-12, 15…) y se conectan con el mismo número entre dos cables; los demás no se conectan">Continuidad…</button>
           <button id="mu-vista" type="button" class="btn btn-chico" title="Cambiar entre la vista de cables y la de bandejas">Ver bandejas</button>
           <button id="mu-red" type="button" class="btn btn-chico" title="Esta mufa y sus vecinas a 1 o 2 saltos; Enter o doble clic entra a otra">Red de mufas</button>
         </div>
         <div class="mu-grupo">
           <button id="mu-visio" type="button" class="btn btn-chico" title="El diagrama Visio de esta mufa al lado, para comparar">Ver Visio original</button>
+          <button id="mu-png" type="button" class="btn btn-chico" title="Guardar la mufa completa como imagen PNG">Exportar PNG</button>
+          <button id="mu-pdf" type="button" class="btn btn-chico" title="Guardar la mufa completa como documento PDF">Exportar PDF</button>
           <button id="mu-asignar-visio" type="button" class="btn btn-chico" hidden title="Elegir a mano cuál mufa del Visio es esta (cuando «Ver Visio original» no la encuentra)">Asignar Visio…</button>
           <button id="mu-validar" type="button" class="btn btn-chico" hidden>Marcar como validada</button>
           <label class="mu-colores">Color <select id="mu-colores" title="Color de las conexiones">
@@ -620,6 +623,36 @@
           <p id="mu-hc-error" class="vp-estado error" role="alert"></p>
           <div class="lz-cable-botones"><button id="mu-hc-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Asignar</button></div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-mu-cont" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-ct-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-ct-titulo">Mufa en continuidad</h2>
+        <button id="mu-ct-x" type="button" class="btn-icono" aria-label="Cerrar">✕</button></header>
+      <form id="mu-ct-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <p class="nota">En una mufa de corte los hilos pasan de un cable al otro con el mismo número. Escriba cuáles van en continuidad y se conectan solos; los que no escriba no se conectan.
+          Los hilos que ya tienen una conexión aquí se respetan.</p>
+        <label class="dg-campo dg-ancho">De este cable <select name="a"></select></label>
+        <label class="dg-campo dg-ancho">A este cable <select name="b"></select></label>
+        <label class="dg-campo dg-ancho">Hilos en continuidad <input name="hilos" maxlength="120" placeholder="1-12, 15, 20-24  (o «todos»)"></label>
+        <p id="mu-ct-error" class="vp-estado error" role="alert"></p>
+        <div class="lz-cable-botones"><button id="mu-ct-quitar" type="button" class="btn" hidden>Quitar la continuidad</button><button id="mu-ct-cancelar" type="button" class="btn">Cancelar</button>
+          <button type="submit" class="btn btn-primario">Aplicar</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-mu-rf" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-rf-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-rf-titulo">Ruta de fusión del cliente</h2>
+        <button id="mu-rf-x" type="button" class="btn-icono" aria-label="Cerrar">✕</button></header>
+      <div class="config-cuerpo">
+        <p id="mu-rf-nota" class="nota"></p>
+        <ol id="mu-rf-lista" class="mu-rf-lista"></ol>
+        <div id="mu-rf-avisos" class="vp-estado error" role="status"></div>
+        <div class="lz-cable-botones"><button id="mu-rf-copiar" type="button" class="btn">Copiar</button><button id="mu-rf-cerrar" type="button" class="btn btn-primario">Cerrar</button></div>
       </div>
     </div>
   </div>

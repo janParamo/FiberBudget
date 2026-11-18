@@ -5,7 +5,8 @@ se escribe como en el libro de rutas de fusión, **del cliente hacia la potencia
 
   - Primera caja: `En MF {NOMBRE} {lat}°, {lon}° ingresar la acometida del cliente. H1 del cliente fusionarlo con H{n} hacia MF {SIGUIENTE}`
   - Intermedia:   `En MF {NOMBRE} {lat}°, {lon}° H{a} hacia MF {ANTERIOR} fusionarlo con H{b} hacia MF {SIGUIENTE}`
-  - Con splitter: `… fusionarlo con H{n} del SPL 1/8`; mufa nueva: `instalar MF FOSC`.
+  - Con splitter: `… fusionarlo con H{n} del SPL 1/8 de MF {NOMBRE}`; mufa nueva: `instalar MF FOSC`; si no hay splitter y la fusión sigue hasta el nodo (`fin: "nodo"`,
+    cuando el cliente está en punta con la mufa): `En {NODO} … H{a} hacia MF {ANTERIOR} termina en el nodo`.
 
 Reglas de Jan (business_rules.yaml, `ruta_fusion`): una mufa **aérea** (queda suspendida en los cables) y una mufa **de corte** no se
 tocan (la fusión pasa de largo); se reconocen por el nombre ("MF FUERZA AEREA" es un lugar, no una mufa aérea: está en las excepciones);
@@ -168,7 +169,8 @@ def redactar(plan: dict[str, Any]) -> dict[str, Any]:
                       "tocar": bool(p.get("tocar", True)), "motivo": p.get("motivo") if isinstance(p.get("motivo"), str) else None,
                       "hilo_cliente": hilo(p.get("hilo_cliente")), "hilo_potencia": hilo(p.get("hilo_potencia")), "splitter": splitter,
                       "texto_manual": manual, "fuente_hilos": p.get("fuente_hilos") or "usuario", "por_nombre": bool(p.get("por_nombre")),
-                      "info_splitter": " ".join(str(p.get("info_splitter") or "").split())[:200] or None})
+                      "info_splitter": " ".join(str(p.get("info_splitter") or "").split())[:200] or None,
+                      "fin": "nodo" if p.get("fin") == "nodo" else None})
     tocados = [p for p in pasos if p["tocar"]]
     lineas = []
     for k, p in enumerate(tocados):
@@ -194,9 +196,11 @@ def _texto(p: dict[str, Any], ant: dict[str, Any] | None, sig: dict[str, Any] | 
     donde = f"En {con_mf(p['nombre'])} {_coords(p['lat'], p['lon'])}".strip()
     hacia_potencia = f"hacia {_destino(sig, plan)}"
     if p["splitter"]:
-        sale = f"con {p['hilo_potencia']} del SPL {p['splitter']}"
+        sale = f"con {p['hilo_potencia']} del SPL {p['splitter']} de {con_mf(p['nombre'])}"
     else:
         sale = f"con {p['hilo_potencia']} {hacia_potencia}"
+    if p.get("fin") == "nodo":                                  # the fibre of the client ends at the node: nothing else to fuse
+        return f"{donde} {p['hilo_cliente']} hacia {_destino(ant, plan)} termina en el nodo" if ant else f"{donde} ingresar la acometida del cliente: el hilo llega al nodo"
     if p["tipo"] == "nueva":
         donde += " instalar MF FOSC y"
     if primero:

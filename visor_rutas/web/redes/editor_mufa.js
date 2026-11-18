@@ -911,7 +911,7 @@
     const cliente = clienteDeHilo(f.id);
     menu.innerHTML = (window.Trazado ? `<li data-mu-trazar="${f.id}">Trazar este hilo (T)</li>` : "")
       + (st.puedeEditar ? `<li data-mu-cliente="${f.id}" class="${window.Trazado ? "menu-sep" : ""}">${cliente ? "Cambiar el cliente de este hilo…" : "Asignar un cliente a este hilo…"}</li>`
-        + (cliente ? `<li data-mu-cliente-quitar="${f.id}">Quitar el cliente (${esc(cliente.codigo_cliente || cliente.nombre || "")})</li>` : "") : "")
+        + (cliente ? `<li data-mu-cliente-ruta="${f.id}">Ruta de fusión de este cliente…</li><li data-mu-cliente-quitar="${f.id}">Quitar el cliente (${esc(cliente.codigo_cliente || cliente.nombre || "")})</li>` : "") : "")
       + (st.puedeEditar ? Object.entries(ESTADO).map(([k, v]) => `<li data-mu-estado="${k}" class="${k === "activo" && window.Trazado ? "menu-sep" : ""}">`
           + `${estadoHilo(f.id) === k ? "✓ " : ""}${v}</li>`).join("")
         + (conectado ? `<li data-mu-quitar="${conectado.id}" class="menu-titulo-sep">Quitar su conexión</li>` : "") : "");
@@ -1433,7 +1433,7 @@
     if (!st.puedeEditar) return;
     const menu = $("mu-menu"), cl = clienteEn(lugar);
     menu.innerHTML = `<li data-mu-cl-editar="1">${cl ? "Cambiar el cliente de esta salida…" : "Asignar un cliente a esta salida…"}</li>`
-      + (cl ? `<li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>` : "");
+      + (cl ? `<li data-mu-cl-ruta="1">Ruta de fusión de este cliente…</li><li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>` : "");
     menu.dataset.lugar = JSON.stringify(lugar);
     menu.style.left = `${evt.clientX}px`;
     menu.style.top = `${evt.clientY}px`;
@@ -1445,11 +1445,31 @@
     if (!st.puedeEditar) return;
     const menu = $("mu-menu"), cl = clienteEn(lugar);
     if (!cl) return;
-    menu.innerHTML = `<li data-mu-cl-editar="1">Cambiar el cliente o sus hilos…</li><li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>`;
+    menu.innerHTML = `<li data-mu-cl-editar="1">Cambiar el cliente o sus hilos…</li><li data-mu-cl-ruta="1">Ruta de fusión de este cliente…</li><li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>`;
     menu.dataset.lugar = JSON.stringify(lugar);
     menu.style.left = `${evt.clientX}px`;
     menu.style.top = `${evt.clientY}px`;
     menu.hidden = false;
+  }
+
+  /** The fusion route of a client according to the diagrams (what is saved): from its H1, mufa by mufa, up to the splitter it is connected to; the node when it
+   *  is at the tip of the mufa and there is no splitter on the way. */
+  async function abrirRutaFusion(lugar) {
+    if (nCambios()) { mensaje("Guarde los cambios de la mufa primero: la ruta de fusión se arma con lo guardado", "error"); return; }
+    const pedido = lugar.hilo != null ? { mufa_id: st.mufaId, hilo_id: lugar.hilo } : { mufa_id: st.mufaId, splitter_id: lugar.splitter, numero: lugar.numero };
+    if ((lugar.hilo != null ? lugar.hilo : lugar.splitter) == null || typeof (lugar.hilo != null ? lugar.hilo : lugar.splitter) !== "number") { mensaje("Guarde la mufa primero", "error"); return; }
+    const k = clienteEn(lugar);
+    const r = await Redes.llamar("ruta_fusion_cliente", pedido);
+    if (!r.ok) { mensaje(r.error, "error"); return; }
+    $("mu-rf-titulo").textContent = `Ruta de fusión${k ? ` de ${textoCliente(k)}` : ""}`;
+    $("mu-rf-nota").textContent = {
+      splitter: "Del H1 del cliente, siguiendo la fusión hasta el splitter al que está conectado.",
+      nodo: "El cliente está en punta con la mufa y no hay splitter en su camino: la fusión sigue hasta el nodo.",
+      sin_continuidad: "La fusión no llega a un splitter ni a un nodo con lo que hay en los diagramas.",
+    }[r.fin] || "";
+    $("mu-rf-lista").innerHTML = r.plan.lineas.map((t) => `<li>${esc(t)}</li>`).join("");
+    $("mu-rf-avisos").innerHTML = (r.avisos || []).map((a) => `<div>${esc(a)}</div>`).join("");
+    $("modal-mu-rf").hidden = false;
   }
 
   // the palette: the clients of this mufa as objects to drag onto a fibre
@@ -1585,6 +1605,74 @@
     await cargarMufa(otro.id);
   }
 
+  // ------------------------------------------------------------------ mufa en continuidad (mufas de corte)
+  /** The fibres written («1-12, 15») go from one cable to the other with the same number: the mufa makes those fusions and the rest are left alone. */
+  function abrirContinuidad() {
+    if (!st.puedeEditar) return;
+    if (nCambios()) { mensaje("Guarde los cambios de la mufa primero: la continuidad se aplica sobre lo guardado", "error"); return; }
+    if (st.cables.length < 2) { mensaje("La mufa necesita dos cables para poner hilos en continuidad", "error"); return; }
+    const f = $("mu-ct-form"), previa = ((st.datos.mufa.propiedades || {}).continuidad) || null;
+    const opciones = st.cables.map((c) => `<option value="${c.id}">${esc(c.nombre)} (${c.hilos == null ? "?" : c.hilos} hilos)</option>`).join("");
+    f.elements.a.innerHTML = f.elements.b.innerHTML = opciones;
+    const [a, b] = previa && previa.cables ? previa.cables : [st.cables[0].id, st.cables[1].id];
+    f.elements.a.value = String(a); f.elements.b.value = String(b);
+    f.elements.hilos.value = previa ? previa.pedidos || previa.hilos || "" : "";
+    $("mu-ct-quitar").hidden = !previa;
+    $("mu-ct-error").textContent = "";
+    $("modal-mu-cont").hidden = false;
+    f.elements.hilos.focus();
+  }
+
+  async function aplicarContinuidad(ev, quitar = false) {
+    if (ev) ev.preventDefault();
+    const f = $("mu-ct-form");
+    const r = await Redes.llamar("continuidad_mufa", { mufa_id: st.mufaId, cable_a: Number(f.elements.a.value), cable_b: Number(f.elements.b.value), hilos: f.elements.hilos.value, quitar });
+    if (!r.ok) { $("mu-ct-error").textContent = r.error; return; }
+    $("modal-mu-cont").hidden = true;
+    recargar(r);
+    const c = r.continuidad || { hilos: [], saltados: [], texto: "" };
+    mensaje(quitar ? "Continuidad quitada" : `En continuidad: hilos ${c.texto || "—"}${c.saltados.length ? ` · ya tenían conexión y se respetaron: ${c.saltados.join(", ")}` : ""}`, "ok");
+  }
+
+  // ------------------------------------------------------------------ exportar (PNG / PDF)
+  /** The whole mufa as it is drawn (cables, splitters, clients, connections) on white, without the grid, at up to 2x. Returns a PNG data URL, or null when it is empty. */
+  function imagenMufa() {
+    const rects = [st.capa, st.capaLineas].map((c) => c.getClientRect({ relativeTo: st.stage })).filter((r) => r.width > 0 || r.height > 0);
+    if (!rects.length) return null;
+    const x0 = Math.min(...rects.map((r) => r.x)), y0 = Math.min(...rects.map((r) => r.y));
+    const x1 = Math.max(...rects.map((r) => r.x + r.width)), y1 = Math.max(...rects.map((r) => r.y + r.height));
+    const margen = 30, ancho = x1 - x0 + 2 * margen, alto = y1 - y0 + 2 * margen;
+    const ratio = Math.max(0.5, Math.min(2, 14000 / Math.max(ancho, alto)));
+    const antes = { s: st.stage.scaleX(), x: st.stage.x(), y: st.stage.y(), w: st.stage.width(), h: st.stage.height() };
+    try {
+      st.stage.scale({ x: 1, y: 1 });
+      st.stage.position({ x: margen - x0, y: margen - y0 });
+      st.stage.size({ width: ancho, height: alto });
+      st.fondo.destroyChildren();                                                // no grid: white paper
+      st.fondo.add(new Konva.Rect({ x: x0 - margen, y: y0 - margen, width: ancho, height: alto, fill: "#ffffff", listening: false }));
+      st.stage.draw();
+      return st.stage.toDataURL({ pixelRatio: ratio, mimeType: "image/png" });
+    } finally {
+      st.stage.size({ width: antes.w, height: antes.h });
+      st.stage.scale({ x: antes.s, y: antes.s });
+      st.stage.position({ x: antes.x, y: antes.y });
+      pintarFondo();
+      st.stage.draw();
+      moverNotas();
+    }
+  }
+
+  async function exportar(tipo) {
+    if (!st.datos) return;
+    if (!Redes.api || !Redes.api.guardar_imagen) { mensaje("Exportar no está disponible aquí", "error"); return; }
+    const url = imagenMufa();
+    if (!url) { mensaje("La mufa está vacía: no hay qué exportar", "error"); return; }
+    mensaje(`Preparando el ${tipo.toUpperCase()}…`, "cargando");
+    const r = await Redes.api.guardar_imagen(st.datos.mufa.nombre || "Mufa", url, tipo);
+    if (r && r.ok) mensaje(`Mufa guardada en ${r.ruta}`, "ok");
+    else mensaje(r && r.cancelado ? "" : (r && r.error) || "No se pudo exportar", r && r.cancelado ? "" : "error");
+  }
+
   function cambiosParaGuardar() {
     const salida = { posiciones: st.cables.filter((c) => c.movido).map((c) => ({ cable_id: c.id, x: Math.round(c.x), y: Math.round(c.y),
                                                                                   version: c.pos_version ?? null })),
@@ -1659,7 +1747,7 @@
   // ------------------------------------------------------------------ eventos
   function teclado(e) {
     if ($("modal-mufa").hidden || !$("modal-mu-objeto").hidden || !$("modal-mu-nota").hidden || !$("modal-confirmar").hidden) return;
-    const encima = ["modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente"].filter((id) => !$(id).hidden);
+    const encima = ["modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente", "modal-mu-rf", "modal-mu-cont"].filter((id) => !$(id).hidden);
     if (encima.length) {
       if (e.key === "Escape") encima.forEach((id) => { $(id).hidden = true; });
       return;
@@ -1724,6 +1812,11 @@
     iniciarPaleta();
     $("mu-hc-form").addEventListener("submit", guardarClienteHilo);
     $("mu-hc-cancelar").addEventListener("click", () => { $("modal-mu-hcliente").hidden = true; });
+    ["mu-rf-x", "mu-rf-cerrar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-rf").hidden = true; }));
+    $("mu-rf-copiar").addEventListener("click", async () => {
+      const texto = [...$("mu-rf-lista").children].map((li, i) => `${i + 1}. ${li.textContent}`).join("\n");
+      try { await navigator.clipboard.writeText(texto); mensaje("Ruta de fusión copiada", "ok"); } catch (e) { mensaje("No se pudo copiar: seleccione el texto y cópielo", "error"); }
+    });
     $("mu-hc-form").elements.manual.addEventListener("change", () => { modoManualCliente(); if ($("mu-hc-form").elements.manual.checked) $("mu-hc-form").elements.codigo.focus(); });
     $("mu-hc-form").elements.conocido.addEventListener("change", (e) => {          // a client of the list fills the three boxes
       const k = e.target.value === "" ? null : st.hiloCliente.conocidos[Number(e.target.value)];
@@ -1763,6 +1856,12 @@
       sugerirHilos(k);
       $("mu-hc-error").textContent = "";
     });
+    $("mu-continuidad").addEventListener("click", abrirContinuidad);
+    $("mu-ct-form").addEventListener("submit", aplicarContinuidad);
+    $("mu-ct-quitar").addEventListener("click", () => aplicarContinuidad(null, true));
+    ["mu-ct-x", "mu-ct-cancelar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-cont").hidden = true; }));
+    $("mu-png").addEventListener("click", () => exportar("png"));
+    $("mu-pdf").addEventListener("click", () => exportar("pdf"));
     $("mu-visio").addEventListener("click", verVisio);
     $("mu-validar").addEventListener("click", validar);
     conectarAsignarVisio();
@@ -1781,9 +1880,9 @@
     $("mu-menu").addEventListener("click", (e) => {
       const li = e.target.closest("li");
       if (!li) return;
-      if (li.dataset.muClEditar || li.dataset.muClQuitar) {
+      if (li.dataset.muClEditar || li.dataset.muClQuitar || li.dataset.muClRuta) {
         const lugar = JSON.parse($("mu-menu").dataset.lugar);
-        if (li.dataset.muClEditar) abrirClienteHilo(lugar); else quitarClienteHilo(lugar);
+        if (li.dataset.muClRuta) abrirRutaFusion(lugar); else if (li.dataset.muClEditar) abrirClienteHilo(lugar); else quitarClienteHilo(lugar);
         ocultarMenu();
         return;
       }
@@ -1791,6 +1890,7 @@
       if (li.dataset.muTrazar) trazarHilo(hilo);
       if (li.dataset.muEstado) cambiarEstado(hilo, li.dataset.muEstado);
       if (li.dataset.muCliente) abrirClienteHilo(hilo);
+      if (li.dataset.muClienteRuta) abrirRutaFusion({ hilo });
       if (li.dataset.muClienteQuitar) quitarClienteHilo(hilo);
       if (li.dataset.muQuitar) { st.seleccion = [{ tipo: "conexion", id: /^n\d+$/.test(li.dataset.muQuitar) ? li.dataset.muQuitar : Number(li.dataset.muQuitar) }]; eliminarSeleccion(); }
       ocultarMenu();
