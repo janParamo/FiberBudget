@@ -43,7 +43,7 @@
   // ------------------------------------------------------------------ estado, deshacer
   function instantanea() {
     return JSON.stringify({
-      cables: st.cables.map((c) => ({ id: c.id, x: c.x, y: c.y, movido: c.movido })),
+      cables: st.cables.map((c) => ({ id: c.id, x: c.x, y: c.y, movido: c.movido, espejo: !!c.espejo })),
       splitters: [...st.splitters.values()], conectores: [...st.conectores.values()], conexiones: [...st.conexiones.values()],
       notas: [...st.notas.values()], hilos: [...st.hilos.entries()], hiloClientes: [...st.hiloClientes.entries()], puertoClientes: [...st.puertoClientes.entries()], clientesMufa: [...st.clientesMufa.entries()],
       borrados: Object.fromEntries(Object.entries(st.borrados).map(([k, v]) => [k, [...v]])), sucios: [...st.sucios], temporal: st.temporal,
@@ -245,8 +245,32 @@
     return p ? { x: p.grupo.x() + p.dx, y: p.grupo.y() + p.dy, salida: p.salida } : null;
   };
 
+  /** Which side the connection points of the cable are on: by default those of the cables that arrive are on the right of the box and those of the ones that leave
+   *  on the left (`izq`: labels on the left, points on the right); the person can pass them to the other side (`espejo`) to connect them with the fibres of other mufas. */
+  const izqDe = (c) => (c.lado === "entrada") !== !!c.espejo;
+
+  /** The button of a cable box that passes its connection points to the other side. */
+  function botonEspejo(g, c, derecha) {
+    const b = new Konva.Group({ x: derecha - 26, y: 53, name: "espejo" });
+    b.add(new Konva.Rect({ width: 22, height: 18, fill: "#eef3ff", stroke: "#9db8ea", cornerRadius: 4 }));
+    b.add(new Konva.Text({ x: 0, y: 2, width: 22, align: "center", text: "⇄", fontSize: 13, fill: "#1e429f", listening: false }));
+    b.on("click tap", (e) => { e.cancelBubble = true; invertirLado(c); });
+    b.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tooltip("Pasar los puntos de conexión de este cable al otro lado de la caja"); });
+    b.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
+    g.add(b);
+  }
+
+  function invertirLado(c) {
+    if (!st.puedeEditar) return;
+    antesDeCambiar();
+    c.espejo = !c.espejo;
+    c.movido = true;                                                // it is saved with the position of the cable
+    dibujar();
+    actualizarBarra();
+  }
+
   function dibujarCable(c) {
-    const izq = c.lado === "entrada";
+    const izq = izqDe(c);
     const g = new Konva.Group({ x: c.x, y: c.y, draggable: st.puedeEditar, name: "cable" });
     g.setAttr("obj", { tipo: "cable", id: c.id });
     const alto = altoCable(c);
@@ -268,6 +292,7 @@
       lineaTipo.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
     }
     g.add(lineaTipo);
+    if (st.puedeEditar) botonEspejo(g, c, (izq ? -6 : -14) + ANCHO_ETIQUETA + 74);
     // button under the body of the cable: one click goes to the mufa at its other end (the connection made in the zone schema)
     const caja = new Konva.Group({ x: etiquetaX, y: alto - 34, name: "destino" });
     const flecha = izq ? `← Ir a ${c.otro.nombre}` : `→ Ir a ${c.otro.nombre}`;
@@ -657,11 +682,23 @@
     return "#6b7280";
   }
 
-  /** Orthogonal path; `carril` shifts the vertical segment so parallel connections do not overlap. */
+  /** The frames of the cables as they are now ([x0, y0, x1, y1]): a line must not go through them (it would disappear behind the box). */
+  function marcosDeCables() {
+    return st.cables.map((c) => { const x0 = c.x + (izqDe(c) ? -6 : -14); return [x0, c.y - 6, x0 + ANCHO_ETIQUETA + 74, c.y + altoCable(c)]; });
+  }
+
+  /** Orthogonal path; `carril` shifts the vertical segment so parallel connections do not overlap. The vertical segment is kept out of the frames of the cables:
+   *  when the middle falls inside one it goes round, at the side of the frame that is nearer. */
   function ruta(p1, p2, carril = 0) {
     const a = { x: p1.x + p1.salida * 22, y: p1.y }, b = { x: p2.x + p2.salida * 22, y: p2.y };
     // ports facing the same side: go around on the outside; otherwise turn halfway
-    const mx = (p1.salida === p2.salida ? (p1.salida > 0 ? Math.max(a.x, b.x) : Math.min(a.x, b.x)) : (a.x + b.x) / 2) + carril * 7;
+    let mx = (p1.salida === p2.salida ? (p1.salida > 0 ? Math.max(a.x, b.x) : Math.min(a.x, b.x)) : (a.x + b.x) / 2) + carril * 7;
+    const y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y), marcos = (st.marcos || []).filter((m) => m[1] < y1 && m[3] > y0);
+    for (let vuelta = 0; vuelta < 6; vuelta++) {
+      const dentro = marcos.find((m) => mx > m[0] - 6 && mx < m[2] + 6);
+      if (!dentro) break;
+      mx = Math.abs(mx - (dentro[0] - 14)) <= Math.abs(mx - (dentro[2] + 14)) ? dentro[0] - 14 - Math.abs(carril) * 3 : dentro[2] + 14 + Math.abs(carril) * 3;
+    }
     return [p1.x, p1.y, a.x, a.y, mx, a.y, mx, b.y, b.x, b.y, p2.x, p2.y];
   }
 
@@ -677,6 +714,7 @@
 
   function dibujarConexiones() {
     st.capaLineas.destroyChildren();
+    st.marcos = marcosDeCables();
     let i = 0;
     const usos = new Map();                                      // fibre key -> ends already drawn
     const punta = (ref) => {
@@ -1237,9 +1275,13 @@
     buscarVisio(caja.value);
   }
 
-  async function guardarVisio(nodoId, nombre, sinVisio = false) {
-    const r = await Redes.llamar("asignar_visio", { mufa_id: st.mufaId, nodo_id: nodoId, nombre_visio: nombre, sin_visio: sinVisio });
-    if (!r.ok) { $("mu-visio-error").textContent = r.error; return; }
+  async function guardarVisio(nodoId, nombre, sinVisio = false, forzar = false) {
+    const r = await Redes.llamar("asignar_visio", { mufa_id: st.mufaId, nodo_id: nodoId, nombre_visio: nombre, sin_visio: sinVisio, forzar });
+    if (!r.ok && r.errores && r.errores.visio_ocupado) {            // another mufa already uses that Visio mufa (several share a name and a pole): ask before using it twice
+      if (await Redes.confirmar(`${r.errores.visio_ocupado}. ¿Asignarla igual?`, "Asignar igual")) await guardarVisio(nodoId, nombre, sinVisio, true);
+      return;
+    }
+    if (!r.ok) { $("mu-visio-error").textContent = (r.errores ? Object.values(r.errores).join(" · ") : r.error); return; }
     $("modal-mu-visio").hidden = true;
     recargar(r);
     mensaje(nodoId ? `${r.mufa.nombre}: asignada a la mufa «${nombre}» del Visio` : sinVisio ? `${r.mufa.nombre}: marcada como sin diagrama Visio` : `${r.mufa.nombre}: se quitó la asignación del Visio`, "ok");
@@ -1705,7 +1747,7 @@
 
   function cambiosParaGuardar() {
     const salida = { posiciones: st.cables.filter((c) => c.movido).map((c) => ({ cable_id: c.id, x: Math.round(c.x), y: Math.round(c.y),
-                                                                                  version: c.pos_version ?? null })),
+                                                                                  version: c.pos_version ?? null, espejo: !!c.espejo })),
                      splitters: [], conectores: [], conexiones: [], hilos: [...st.hilos.values()], hilo_clientes: [...st.hiloClientes.values()], clientes_mufa: [...st.clientesMufa.values()],
                      puerto_clientes: [...st.puertoClientes.values()].filter((x) => x.quitar ? st.splitters.has(x.splitter) : (st.splitters.get(x.splitter) || { salidas: 0 }).salidas >= x.numero), notas: [] };
     st.sucios.forEach((k) => {
@@ -1954,7 +1996,7 @@
   document.addEventListener("DOMContentLoaded", conectar);
   if (document.readyState !== "loading") conectar();
 
-  window.EditorMufa = { abrir, cerrar, aplicar, abrirAparte, trazarHilo, _st: st, _seleccionar: seleccionar,
+  window.EditorMufa = { abrir, cerrar, aplicar, abrirAparte, trazarHilo, _st: st, _ruta: ruta, _seleccionar: seleccionar,
     /** automated checks: connect two port keys as if dragged with the mouse */
     _conectar(desde, hasta) {
       if (!st.puertos.get(desde) || !st.puertos.get(hasta)) return false;

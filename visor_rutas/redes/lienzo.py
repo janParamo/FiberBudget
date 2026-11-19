@@ -177,7 +177,10 @@ def lienzo(con: Any, actor: dict[str, Any], *, proyecto_id: int, lienzo_id: int 
     lz = _lienzo_de(con, actor, p["id"], editar, lienzo_id)
     lienzos = [dict(f) for f in con.execute(f"SELECT {_COLUMNAS} FROM redes.lienzos WHERE proyecto_id = %s AND borrado_en IS NULL ORDER BY id", (p["id"],)).fetchall()]
     elementos = [dict(f) for f in con.execute(
-        "SELECT id, tipo, subtipo, nombre, codigo, ST_Y(ubicacion::geometry) AS lat, ST_X(ubicacion::geometry) AS lon, ubicacion_fuente, estado_migracion "
+        "SELECT id, tipo, subtipo, nombre, codigo, ST_Y(ubicacion::geometry) AS lat, ST_X(ubicacion::geometry) AS lon, ubicacion_fuente, estado_migracion, fuente, "
+        " ref_visio ->> 'nodo_id' AS nodo_visio, ref_visio ->> 'nombre_visio' AS nombre_visio, coalesce((ref_visio ->> 'sin_visio')::boolean, false) AS sin_visio, "
+        " (fuente = 'usuario' AND tipo = 'mufa' AND creado_en > coalesce((SELECT max(coalesce(l.actualizado_en, l.creado_en)) FROM redes.lienzos l "
+        "   WHERE l.proyecto_id = elementos.proyecto_id AND l.borrado_en IS NULL), '-infinity'::timestamptz)) AS nueva "
         "FROM redes.elementos WHERE proyecto_id = %s AND borrado_en IS NULL AND tipo = ANY(%s) ORDER BY lower(nombre), id", (p["id"], list(TIPOS))).fetchall()]
     en_kmz = coincidencias_kmz(elementos, cambios=_cambios_puntos(con))
     for e in elementos:
@@ -396,6 +399,78 @@ def mufas_kmz(con: Any, actor: dict[str, Any], *, proyecto_id: int, kmz: Any = N
             cercana = {"id": e["id"], "nombre": e["nombre"], "distancia_m": round(d, 1)}
         nuevas.append({"kmz_id": k["id"], "nombre": k["nombre"], "categoria": (k.get("categoria") or "").lower(), "lat": float(k["lat"]), "lon": float(k["lon"]), "cercana": cercana})
     return {"nuevas": nuevas, "nombres_cambiados": sorted(renombradas, key=lambda r: (_plano(r["nombre"]), r["elemento_id"])), "en_zona": len(elementos), "en_kmz": len(puntos), "proyecto_id": p["id"]}
+
+
+def _datos_visio(nodo_visio: Any, nombre_visio: Any) -> tuple[int | None, str]:
+    try:
+        nodo = None if nodo_visio in (None, "") else int(nodo_visio)
+    except (TypeError, ValueError):
+        raise DatosInvalidos({"nodo_visio": "mufa del Visio no válida"}) from None
+    nombre = " ".join(str(nombre_visio or "").split())[:160]
+    if nodo is not None and not nombre:
+        raise DatosInvalidos({"nombre_visio": "falta el nombre de la mufa del Visio"})
+    return nodo, nombre
+
+
+def crear_mufa(con: Any, actor: dict[str, Any], *, proyecto_id: int, nombre: str, lat: Any, lon: Any, nodo_visio: Any = None, nombre_visio: Any = None,
+               nombres: str | None = None, sin_visio: bool = False, forzar: bool = False) -> dict[str, Any]:
+    """A mufa made by hand in the zone (the KMZ does not always have the ones the Visio draws): its name and its place, and optionally the Visio mufa (its node, so
+    «Ver Visio original» opens the right diagram). `nombres`: «visio» gives the mufa the name of the Visio mufa; «mufa» keeps its own name as the Visio name too.
+    Several mufas may share a name and a pole: a Visio node already used by another mufa is refused unless `forzar`. {"elemento": {...}, "avisos": [...]}."""
+    from visor_rutas.redes import mufas_existentes
+    from visor_rutas.redes.elementos import punto
+    p = _editable(con, actor, proyecto_id)
+    limpio = " ".join(str(nombre or "").split())[:160]
+    ubicacion = punto(lat, lon)
+    if not limpio:
+        raise DatosInvalidos({"nombre": "Escriba el nombre de la mufa"})
+    if ubicacion is None:
+        raise DatosInvalidos({"coordenada": "Escriba la coordenada de la mufa (latitud, longitud)"})
+    nodo, visio = _datos_visio(nodo_visio, nombre_visio)
+    avisos: list[str] = []
+    if nodo is not None:
+        mufas_existentes.exigir_visio_libre(con, nodo, None, bool(forzar))
+        if nombres == "visio":
+            limpio = visio
+        elif nombres == "mufa":
+            visio = limpio
+    ref_visio = {"nodo_id": nodo, "nombre_visio": visio} if nodo is not None else ({"sin_visio": True} if sin_visio else None)
+    cerca = con.execute(
+        "SELECT id, nombre FROM redes.elementos WHERE proyecto_id = %s AND borrado_en IS NULL AND tipo = 'mufa' AND ubicacion IS NOT NULL "
+        "AND ST_DWithin(ubicacion::geography, ST_GeomFromEWKT(%s)::geography, 5) ORDER BY id LIMIT 3", (p["id"], ubicacion)).fetchall()
+    if cerca:
+        avisos.append("Ya hay mufa(s) en ese mismo poste: " + ", ".join(f"«{c['nombre']}»" for c in cerca) + " (se creó igual: pueden ser varias en un poste)")
+    with con.transaction():
+        valores: dict[str, Any] = {"proyecto_id": p["id"], "tipo": "mufa", "subtipo": "empalme", "nombre": limpio, "ubicacion": ubicacion, "ubicacion_fuente": "real",
+                                   "fuente": "usuario", "confianza": "alta", "estado_migracion": "editada"}
+        if ref_visio:
+            valores["ref_visio"] = Jsonb(ref_visio)
+        fila = repositorio.insertar(con, "elementos", valores, actor["id"])
+        repositorio.registrar(con, actor["id"], "elemento", fila["id"], "crear", {"nombre": [None, limpio], "origen": [None, "creada en el esquema de zona"],
+                                                                                 "diagrama_visio": [None, visio or None]}, proyecto_id=p["id"])
+    return {"elemento": {"id": fila["id"], "nombre": limpio, "version": fila["version"]}, "avisos": avisos}
+
+
+def vincular_visio(con: Any, actor: dict[str, Any], *, proyecto_id: int, elemento_id: int, nodo_visio: Any = None, nombre_visio: Any = None,
+                   nombres: str | None = None, sin_visio: bool = False, forzar: bool = False) -> dict[str, Any]:
+    """Links a mufa of the zone to a Visio mufa (or takes the link off: no node), from the schema. `nombres`: «visio» renames the mufa with the Visio name; «mufa»
+    uses the name of the mufa as the Visio name. A Visio node that another mufa already uses is refused unless `forzar`. {"elemento": {...}}."""
+    from visor_rutas.redes import mufas_existentes
+    p = _editable(con, actor, proyecto_id)
+    fila = con.execute("SELECT id, nombre, version, tipo FROM redes.elementos WHERE id = %s AND borrado_en IS NULL AND proyecto_id = %s", (int(elemento_id), p["id"])).fetchone()
+    if fila is None or fila["tipo"] not in TIPOS:
+        raise DatosInvalidos({"mufa": "La mufa no es de esta zona"})
+    nodo, visio = _datos_visio(nodo_visio, nombre_visio)
+    if nodo is not None and nombres == "mufa":
+        visio = fila["nombre"]
+    mufas_existentes.asignar_visio(con, actor, mufa_id=fila["id"], nodo_id=nodo, nombre_visio=visio, sin_visio=sin_visio, forzar=forzar)
+    nombre = fila["nombre"]
+    if nodo is not None and nombres == "visio" and visio and visio != fila["nombre"]:
+        actual = con.execute("SELECT version FROM redes.elementos WHERE id = %s", (fila["id"],)).fetchone()["version"]
+        with con.transaction():
+            nombre = _poner_nombre(con, actor, p["id"], fila["id"], visio, int(actual))["nombre"]
+    version = con.execute("SELECT version FROM redes.elementos WHERE id = %s", (fila["id"],)).fetchone()["version"]
+    return {"elemento": {"id": fila["id"], "nombre": nombre, "version": version, "nombre_visio": visio or None}}
 
 
 def _poner_nombre(con: Any, actor: dict[str, Any], proyecto_id: int, elemento_id: int, nombre: str, version: int, kmz_id: int | None = None) -> dict[str, Any]:

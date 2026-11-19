@@ -77,8 +77,8 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
     if not proyectos.puede_ver(con, actor, m["proyecto_id"]):
         raise SinPermiso("No tiene acceso a este proyecto")
     proyecto = con.execute("SELECT id, codigo, nombre FROM redes.proyectos WHERE id = %s", (m["proyecto_id"],)).fetchone()
-    posiciones = {f["cable_id"]: (f["x"], f["y"], f["version"]) for f in con.execute(
-        "SELECT cable_id, x, y, version FROM redes.mufa_cables WHERE mufa_id = %s", (m["id"],)).fetchall()}
+    posiciones = {f["cable_id"]: (f["x"], f["y"], f["version"], bool(f["espejo"])) for f in con.execute(
+        "SELECT cable_id, x, y, version, espejo FROM redes.mufa_cables WHERE mufa_id = %s", (m["id"],)).fetchall()}
     cables = []
     for c in con.execute(
             "SELECT c.*, o.nombre AS o_nombre, o.tipo AS o_tipo, o.subtipo AS o_subtipo, d.nombre AS d_nombre, d.tipo AS d_tipo, "
@@ -96,14 +96,14 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
                              "WHERE cable_id = %s AND borrado_en IS NULL ORDER BY numero", (c["id"],)).fetchall():
             fibras.append({**h, "lejos": _describir_extremo(con, h["id"], otro_id) if c[pre + "tipo"] in ("mufa", "nodo", "odf") else None,
                            "cliente": clientes_hilo.get(h["id"])})                      # the client that is on this fibre by itself (None: no one)
-        x, y, pos_version = posiciones.get(c["id"], (None, None, None))
+        x, y, pos_version, espejo = posiciones.get(c["id"], (None, None, None, False))
         cables.append({"id": c["id"], "nombre": c["nombre"], "clase": c["clase"], "tipo": c["tipo"], "hilos": c["hilos"],
                        "hilos_por_buffer": c["hilos_por_buffer"], "color": c["color"], "longitud_m": float(c["longitud_m"]),
                        "metraje": c["metraje"], "lado": "entrada" if llega else "salida", "version": c["version"],
                        "origen": {"id": c["origen_id"], "nombre": c["o_nombre"], "tipo": c["o_tipo"], "subtipo": c["o_subtipo"]},
                        "destino": {"id": c["destino_id"], "nombre": c["d_nombre"], "tipo": c["d_tipo"], "subtipo": c["d_subtipo"]},
                        "otro": {"id": otro_id, "nombre": c[pre + "nombre"], "tipo": c[pre + "tipo"], "subtipo": c[pre + "subtipo"]},
-                       "x": x, "y": y, "pos_version": pos_version, "fibras": fibras})
+                       "x": x, "y": y, "pos_version": pos_version, "espejo": espejo, "fibras": fibras})
     servicios: dict[int, dict[int, dict[str, Any]]] = {}
     for f in con.execute(
             "SELECT p.splitter_id, p.numero, x.version, x.codigo_cliente, x.nombre, x.id_servicio, x.elemento_id, x.hilo_cliente, x.fuente FROM redes.puerto_servicios x "
@@ -308,15 +308,16 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
             if cid not in cables_aqui:
                 continue
             x, y = _numero(p.get("x"), "Cable", "x"), _numero(p.get("y"), "Cable", "y")
+            espejo = bool(p.get("espejo"))                                            # the connection points of the cable on the other side of its box
             fila = con.execute("SELECT version FROM redes.mufa_cables WHERE mufa_id = %s AND cable_id = %s FOR UPDATE", (mid, cid)).fetchone()
             if fila is None:
-                con.execute("INSERT INTO redes.mufa_cables (mufa_id, cable_id, x, y) VALUES (%s, %s, %s, %s)", (mid, cid, x, y))
+                con.execute("INSERT INTO redes.mufa_cables (mufa_id, cable_id, x, y, espejo) VALUES (%s, %s, %s, %s, %s)", (mid, cid, x, y, espejo))
                 continue
             if p.get("version") is None or int(p["version"]) != fila["version"]:
                 nombre = con.execute("SELECT nombre FROM redes.cables WHERE id = %s", (cid,)).fetchone()["nombre"]
                 raise ConflictoVersion(f"Otro usuario movió el cable {nombre} en esta mufa mientras usted editaba. Recargue la mufa.")
-            con.execute("UPDATE redes.mufa_cables SET x = %s, y = %s, version = version + 1 WHERE mufa_id = %s AND cable_id = %s",
-                        (x, y, mid, cid))
+            con.execute("UPDATE redes.mufa_cables SET x = %s, y = %s, espejo = %s, version = version + 1 WHERE mufa_id = %s AND cable_id = %s",
+                        (x, y, espejo, mid, cid))
         # 2) splitters and connectors (create / edit / delete with their connections)
         for tabla, entidad in (("splitters", "splitter"), ("conectores", "conector")):
             for d in lista(tabla):

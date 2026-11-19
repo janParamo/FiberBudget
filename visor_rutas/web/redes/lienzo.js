@@ -45,6 +45,8 @@
     "lz-kmz": "M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10zM12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "lz-validar-todo": "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM8 12l3 3 5-6",
     "lz-fuente": "M13 3 5 13h6l-1 8 8-10h-6z", "lz-conectar": "M7 12h10M5 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM23 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
     "lz-renombrar-mufa": "M4 20h4L19 9l-4-4L4 16zM13 7l4 4", "lz-quitar": "M4 4h16v16H4zM8 12h8", "lz-eliminar-cable": "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6",
+    "lz-mufa-nueva": "M12 8v8M8 12h8M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+    "lz-visio": "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
     "lz-hilos": "M3 6h5l8 12h5M3 18h5l8-12h5", "lz-geo": "M12 2v4M12 18v4M2 12h4M18 12h4M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
     "lz-deshacer": "M8 7 4 11l4 4M4 11h11a5 5 0 0 1 0 10h-3", "lz-rehacer": "M16 7l4 4-4 4M20 11H9a5 5 0 0 0 0 10h3",
   };
@@ -122,6 +124,27 @@
     dibujar();
     if (!conservarVista) ajustar();
     info();
+    colocarNuevas();
+  }
+
+  /** The mufas made by hand (in this schema or on the map) after the schema was last saved are put by themselves where their coordinate says. */
+  function colocarNuevas() {
+    if (!puedeEditar()) return;
+    const nuevas = [...st.elementos.values()].filter((e) => e.nueva && !st.pos.has(e.id));
+    if (!nuevas.length) return;
+    setTimeout(() => {
+      nuevas.forEach((e) => { if (!st.pos.has(e.id)) ponerPorCoordenada(e.id); });
+      mensaje(nuevas.length === 1 ? `«${nuevas[0].nombre}» (hecha a mano) se colocó en el esquema según su coordenada` : `${nuevas.length} mufas hechas a mano se colocaron en el esquema según su coordenada`, "ok");
+    }, 0);
+  }
+
+  /** Puts a mufa where its coordinate says (never over another box), whatever the layout chosen; at the centre of the view when it has no coordinate. */
+  function ponerPorCoordenada(id) {
+    const e = st.elementos.get(id);
+    if (!e) return;
+    const real = posicionReal(e);
+    const b = $("lz-konva").getBoundingClientRect();
+    poner(id, real || aLienzo(b.left + b.width / 2, b.top + b.height / 2));
   }
 
   // ------------------------------------------------------------------ posiciones por coordenadas reales
@@ -638,6 +661,7 @@
     botonesHistoria();
     $("lz-quitar").disabled = !((varias || (s && s.tipo === "caja")) && puedeEditar());
     $("lz-renombrar-mufa").disabled = !(s && s.tipo === "caja" && puedeEditar());
+    $("lz-visio").disabled = !(s && s.tipo === "caja" && puedeEditar());
     $("lz-eliminar-cable").disabled = !(s && s.tipo === "cable" && puedeEditar());
     $("lz-abrir-a").hidden = $("lz-abrir-b").hidden = !(s && s.tipo === "cable");
     $("lz-hilos").hidden = !(s && s.tipo === "caja");
@@ -1013,6 +1037,130 @@
     mensaje(`«${nombre}» creado: es la fuente de la red de la zona`, "ok");
   }
 
+  // ------------------------------------------------------------------ una mufa hecha a mano / vincular una mufa con la del Visio
+  const distanciaM = (a, b) => {
+    if (!a || !b || a.lat == null || b.lat == null) return null;
+    const rad = Math.PI / 180, dLa = (b.lat - a.lat) * rad, dLo = (b.lon - a.lon) * rad;
+    const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLo / 2) ** 2;
+    return 2 * 6371000 * Math.asin(Math.sqrt(h));
+  };
+  const textoDistancia = (d) => (d == null ? "—" : d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`);
+  const MUY_LEJOS_M = 300;                                       // a Visio mufa farther than this from the mufa is asked about before it is assigned
+
+  function puntoDelFormulario() {
+    const m = st.mufaForm, e = m && m.elemento;
+    if (e && e.lat != null) return { lat: e.lat, lon: e.lon };
+    const c = window.Coordenadas ? window.Coordenadas.interpretar($("lz-mufa-form").elements.coordenada.value) : null;
+    return c && c.estado === "ok" ? { lat: c.lat, lon: c.lon } : null;
+  }
+
+  function abrirMufaForm(modo) {
+    if (!puedeEditar()) return;
+    let e = null;
+    if (modo === "vincular") {
+      const s = st.seleccion;
+      e = s && s.tipo === "caja" ? st.elementos.get(s.id) : null;
+      if (!e) { mensaje("Elija primero una mufa del esquema", "error"); return; }
+    }
+    const f = $("lz-mufa-form"), c = centroZona();
+    st.mufaForm = { modo, elemento: e, visio: e && e.nodo_visio ? { id: Number(e.nodo_visio), nombre: e.nombre_visio || "", d: null } : null, resultados: [] };
+    $("lz-mufa-titulo").textContent = modo === "crear" ? "Nueva mufa" : `Vincular «${e.nombre}» con el Visio`;
+    f.elements.nombre.value = e ? e.nombre : "";
+    f.elements.nombre.readOnly = !!e;
+    f.elements.coordenada.value = e ? (e.lat != null ? `${e.lat.toFixed(6)}, ${e.lon.toFixed(6)}` : "") : (c ? `${c.lat.toFixed(6)}, ${c.lon.toFixed(6)}` : "");
+    f.elements.coordenada.readOnly = !!e;
+    f.elements.nombres.value = "";
+    f.elements.sinvisio.checked = !!(e && e.sin_visio);
+    f.elements.buscar.value = e ? (e.nombre_visio || e.nombre) : "";
+    $("lz-mufa-error").textContent = "";
+    $("lz-mufa-lista").innerHTML = "";
+    $("lz-mufa-quitar").hidden = !(e && (e.nodo_visio || e.sin_visio));
+    marcarVisioElegida();
+    $("modal-lz-mufa").hidden = false;
+    (e ? f.elements.buscar : f.elements.nombre).focus();
+    if (f.elements.buscar.value) buscarVisioZona(f.elements.buscar.value);
+  }
+
+  function marcarVisioElegida() {
+    const v = st.mufaForm.visio;
+    $("lz-mufa-elegida").textContent = v ? `Elegida: «${v.nombre || v.id}»${v.d != null ? ` · a ${textoDistancia(v.d)} de la mufa` : ""}` : "Todavía no eligió la mufa del Visio.";
+  }
+
+  async function buscarVisioZona(texto) {
+    const f = $("lz-mufa-form"), lista = $("lz-mufa-lista"), t = String(texto || "").trim();
+    if (t.length < 2) { lista.innerHTML = ""; return; }
+    if (!window.visor || !window.visor.buscarMufasVisio) { $("lz-mufa-error").textContent = "La búsqueda del Visio no está disponible aquí"; return; }
+    const punto = puntoDelFormulario();
+    const [r, cerca] = await Promise.all([window.visor.buscarMufasVisio(t),
+      punto && window.visor.buscarMufasVisioCerca ? window.visor.buscarMufasVisioCerca(punto.lat, punto.lon, 500) : { ok: true, resultados: [] }]);
+    if (f.elements.buscar.value.trim() !== t) return;                                     // another search was typed meanwhile
+    if (!r.ok) { $("lz-mufa-error").textContent = r.error; return; }
+    $("lz-mufa-error").textContent = "";
+    const vistos = new Set(r.resultados.map((x) => x.id));
+    const todas = [...r.resultados, ...(cerca.ok ? cerca.resultados.filter((x) => !vistos.has(x.id)) : [])];          // by name, and the ones around the place whatever their name
+    const filas = todas.map((x) => ({ ...x, d: distanciaM(punto, x) })).sort((a, b) => (a.d ?? Infinity) - (b.d ?? Infinity));
+    st.mufaForm.resultados = filas;
+    const elegida = st.mufaForm.visio ? st.mufaForm.visio.id : null;
+    const mismoNombre = new Map();
+    filas.forEach((x) => mismoNombre.set(String(x.nombre).toUpperCase(), (mismoNombre.get(String(x.nombre).toUpperCase()) || 0) + 1));
+    lista.innerHTML = filas.length ? filas.map((x, i) => `<tr class="${x.id === elegida ? "elegida" : ""}"><td><input type="radio" name="visio" value="${i}" ${x.id === elegida ? "checked" : ""} ${x.diagramas ? "" : "disabled"} aria-label="Elegir ${esc(x.nombre)}"></td>
+      <td>${esc(x.nombre)}${mismoNombre.get(String(x.nombre).toUpperCase()) > 1 ? ` <span class="nota" title="Hay varias con este nombre en el Visio">(#${x.id})</span>` : ""}</td><td>${esc(x.zona || "")}</td><td>${x.diagramas}</td>
+      <td class="${x.d != null && x.d > MUY_LEJOS_M ? "lejos" : ""}">${textoDistancia(x.d)}</td></tr>`).join("")
+      : `<tr><td colspan="5" class="nota">No hay mufas con ese nombre en el Visio</td></tr>`;
+  }
+
+  function elegirVisioZona(i) {
+    const x = st.mufaForm.resultados[i];
+    if (!x) return;
+    st.mufaForm.visio = { id: x.id, nombre: x.nombre, d: x.d };
+    $("lz-mufa-form").elements.sinvisio.checked = false;
+    document.querySelectorAll("#lz-mufa-lista tr").forEach((tr, k) => tr.classList.toggle("elegida", k === i));
+    marcarVisioElegida();
+  }
+
+  async function guardarMufaForm(ev, forzar = false) {
+    if (ev) ev.preventDefault();
+    const m = st.mufaForm, f = $("lz-mufa-form"), error = (t) => { $("lz-mufa-error").textContent = t; };
+    const v = m.visio, nombres = f.elements.nombres.value || null;
+    let c = null;
+    if (m.modo === "crear") {
+      if (!f.elements.nombre.value.trim()) { error("Escriba el nombre de la mufa"); return; }
+      c = window.Coordenadas ? window.Coordenadas.interpretar(f.elements.coordenada.value) : { estado: "error", mensaje: "No hay lector de coordenadas" };
+      if (c.estado === "invertida") { error("La latitud y la longitud parecen invertidas (escriba primero la latitud)"); return; }
+      if (c.estado !== "ok") { error(c.mensaje || "Escriba la coordenada de la mufa (latitud, longitud)"); return; }
+    }
+    if (nombres && !v) { error("Para igualar los nombres elija primero la mufa del Visio"); return; }
+    if (m.modo === "vincular" && !v && !f.elements.sinvisio.checked) { error("Elija la mufa del Visio (o marque que no tiene diagrama)"); return; }
+    if (v && v.d != null && v.d > MUY_LEJOS_M && !forzar && !(await Redes.confirmar(`La mufa del Visio «${v.nombre}» está a ${textoDistancia(v.d)} de esta mufa. Si hay varias con ese nombre, puede ser otra. ¿Asignarla igual?`, "Asignar"))) return;
+    const datos = { proyecto_id: st.proyectoId, nodo_visio: v ? v.id : null, nombre_visio: v ? v.nombre : null, nombres, sin_visio: !v && f.elements.sinvisio.checked, forzar };
+    const r = m.modo === "crear" ? await Redes.llamar("crear_mufa_zona", { ...datos, nombre: f.elements.nombre.value.trim(), lat: c.lat, lon: c.lon })
+      : await Redes.llamar("vincular_visio_zona", { ...datos, elemento_id: m.elemento.id });
+    if (!r.ok) {
+      if (r.errores && r.errores.visio_ocupado) {                                           // another mufa already uses that Visio mufa: ask before using it twice
+        if (await Redes.confirmar(`${r.errores.visio_ocupado}. ¿Asignarla igual?`, "Asignar igual")) await guardarMufaForm(null, true);
+        return;
+      }
+      error((r.errores ? Object.values(r.errores).join(" · ") : r.error) || "No se pudo guardar");
+      return;
+    }
+    $("modal-lz-mufa").hidden = true;
+    await cargar(st.proyectoId, true);
+    const id = r.elemento && r.elemento.id;
+    if (m.modo === "crear" && id && st.elementos.has(id) && !st.pos.has(id)) ponerPorCoordenada(id);
+    const avisos = (r.avisos || []).join(" · ");
+    mensaje(m.modo === "crear" ? `«${r.elemento.nombre}» creada y colocada en el esquema${v ? ` (vinculada a «${v.nombre}» del Visio)` : ""}${avisos ? ` · ${avisos}` : ""}` : `«${r.elemento.nombre}»: ${v ? `vinculada a «${v.nombre}» del Visio` : "vínculo guardado"}`, "ok");
+  }
+
+  async function quitarVinculoVisio() {
+    const m = st.mufaForm;
+    if (!m || !m.elemento) return;
+    const r = await Redes.llamar("vincular_visio_zona", { proyecto_id: st.proyectoId, elemento_id: m.elemento.id, nodo_visio: null });
+    if (!r.ok) { $("lz-mufa-error").textContent = (r.errores ? Object.values(r.errores).join(" · ") : r.error) || "No se pudo quitar"; return; }
+    $("modal-lz-mufa").hidden = true;
+    await cargar(st.proyectoId, true);
+    mensaje(`«${m.elemento.nombre}»: se quitó el vínculo con el Visio`, "ok");
+  }
+
   function cerrar() {
     if (window.visor && window.visor.aparte === "esquema") { if (st.pendientes.size || st.quitar.size) guardarPosiciones(); window.visor.cerrarVentana(); return; }       // a window of its own: closing it closes the window
     $("modal-lz").hidden = true;
@@ -1023,7 +1171,7 @@
   /** The list of a <select> inside the dialogs of the schema as a menu of the page: in the window of its own the native list is drawn blank. */
   function menuPropio(ev) {
     const sel = ev.target.closest && ev.target.closest("select");
-    if (!sel || !sel.closest("#modal-lz-cable, #modal-lz-fuente, #modal-lz-kmz, #modal-fh") || sel.disabled || ev.button !== 0) return;
+    if (!sel || !sel.closest("#modal-lz-cable, #modal-lz-fuente, #modal-lz-mufa, #modal-lz-kmz, #modal-fh") || sel.disabled || ev.button !== 0) return;
     ev.preventDefault();
     const previo = document.getElementById("lz-menu-select");
     if (previo) { previo.remove(); if (previo._sel === sel) return; }
@@ -1071,6 +1219,15 @@
     $("lz-kmz-cerrar").addEventListener("click", () => { $("modal-lz-kmz").hidden = true; $("lz-kmz-error").textContent = ""; });
     $("lz-validar-todo").addEventListener("click", validarTodo);
     $("lz-fuente").addEventListener("click", pedirFuente);
+    $("lz-mufa-nueva").addEventListener("click", () => abrirMufaForm("crear"));
+    $("lz-visio").addEventListener("click", () => abrirMufaForm("vincular"));
+    $("lz-mufa-form").addEventListener("submit", (e) => guardarMufaForm(e));
+    $("lz-mufa-cancelar").addEventListener("click", () => { $("modal-lz-mufa").hidden = true; });
+    $("lz-mufa-quitar").addEventListener("click", quitarVinculoVisio);
+    $("lz-mufa-lista").addEventListener("change", (e) => { const r = e.target.closest("input[type=radio]"); if (r) elegirVisioZona(Number(r.value)); });
+    let esperaVisio = null;
+    $("lz-mufa-form").elements.buscar.addEventListener("input", (e) => { clearTimeout(esperaVisio); const t = e.target.value; esperaVisio = setTimeout(() => buscarVisioZona(t), 300); });
+    $("lz-mufa-form").elements.sinvisio.addEventListener("change", (e) => { if (e.target.checked) { st.mufaForm.visio = null; document.querySelectorAll("#lz-mufa-lista input[type=radio]").forEach((x) => { x.checked = false; }); document.querySelectorAll("#lz-mufa-lista tr").forEach((tr) => tr.classList.remove("elegida")); marcarVisioElegida(); } });
     $("lz-fuente-form").addEventListener("submit", crearFuente);
     $("lz-fuente-cancelar").addEventListener("click", () => { $("modal-lz-fuente").hidden = true; });
     $("lz-geo").addEventListener("click", acomodarPorCoordenadas);
@@ -1181,7 +1338,7 @@
       .observe($("modal-mufa"), { attributes: true, attributeFilter: ["hidden"] });
     document.addEventListener("keydown", (e) => {
       if ($("modal-lz").hidden) return;
-      const encima = ["modal-mufa", "modal-confirmar", "modal-lz-cable", "modal-lz-nombre", "modal-lz-fuente", "modal-lz-kmz", "modal-fh"].some((id) => $(id) && !$(id).hidden);
+      const encima = ["modal-mufa", "modal-confirmar", "modal-lz-cable", "modal-lz-nombre", "modal-lz-fuente", "modal-lz-mufa", "modal-lz-kmz", "modal-fh"].some((id) => $(id) && !$(id).hidden);
       if (e.key === "Escape" && !encima) { e.stopPropagation(); if (st.modo === "cable") modoCable(false); else cerrar(); return; }
       if (encima || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName || ""))) return;
       if (e.key === "F2") { e.preventDefault(); renombrarCaja(); return; }

@@ -172,6 +172,8 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "mufas_kmz_zona": lienzo.mufas_kmz,
     "aplicar_mufas_kmz_zona": lienzo.aplicar_mufas_kmz,
     "renombrar_elemento_zona": lienzo.renombrar_elemento,
+    "crear_mufa_zona": lienzo.crear_mufa,                     # a mufa made by hand in the zone: name, coordinate and (optionally) its Visio mufa
+    "vincular_visio_zona": lienzo.vincular_visio,             # link a mufa of the zone to a Visio mufa (checked: several share a name) / use one name for both
     "resumen_ruta_presupuesto": lugares_presupuesto.resumen_ruta,
     # sección 8: integridad de los datos
     "verificar_base": verificar.verificar,

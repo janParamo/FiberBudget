@@ -121,3 +121,11 @@ def test_the_phone_warns_about_an_address_without_https(mundo):
     import asyncio
     with servidor_real(main_.app) as puerto:
         asyncio.run(correr(puerto))
+
+
+def test_no_test_opens_an_ngrok_tunnel():
+    """The conftest replaces ngrok: starting the app in a test never spends the bandwidth of the real address."""
+    import asyncio
+    import ngrok
+    forwarder = asyncio.run(ngrok.forward("127.0.0.1:1", domain="x.ngrok-free.dev"))
+    assert forwarder.url() == "https://sin-tunel.invalid"

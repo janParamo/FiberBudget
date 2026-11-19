@@ -3,6 +3,29 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _sin_ngrok(monkeypatch):
+    """The real .env carries NGROK_AUTHTOKEN / NGROK_DOMAIN: a test that starts the app (its lifespan) would open the tunnel of the VM from this PC, spend its bandwidth
+    and take the address down there (ERR_NGROK_334 / 725). No test opens a tunnel: ngrok is replaced by one that does nothing."""
+    try:
+        import ngrok
+    except Exception:                                               # noqa: BLE001
+        return
+
+    class _Tunel:
+        def url(self) -> str:
+            return "https://sin-tunel.invalid"
+
+    async def _forward(*args, **kwargs):
+        return _Tunel()
+
+    async def _disconnect(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(ngrok, "forward", _forward)
+    monkeypatch.setattr(ngrok, "disconnect", _disconnect)
+
+
+@pytest.fixture(autouse=True)
 def _sin_pozos_reales(monkeypatch, request):
     """The route's wells come from PostGIS (red_puntos): no test asks the real database for them. Tests of the wells replace this."""
     if "pozos_reales" in request.keywords:

@@ -228,7 +228,24 @@ def validar_zona(con: Any, actor: dict[str, Any], *, proyecto_id: int) -> dict[s
     return {"validadas": len(pendientes), "ya_validadas": len(filas) - len(pendientes)}
 
 
-def asignar_visio(con: Any, actor: dict[str, Any], *, mufa_id: int, nodo_id: Any, nombre_visio: Any, sin_visio: bool = False) -> dict[str, Any]:
+def visio_ocupado(con: Any, nodo: int, excepto_id: int | None = None) -> list[dict[str, Any]]:
+    """The mufas (not deleted) that already point to the Visio node `nodo`: the Visio has several mufas with the same name and the same pole, so before assigning
+    one it is said whether another mufa of the network already uses it."""
+    return [dict(f) for f in con.execute(
+        "SELECT e.id, e.nombre, p.nombre AS proyecto FROM redes.elementos e JOIN redes.proyectos p ON p.id = e.proyecto_id "
+        "WHERE e.borrado_en IS NULL AND p.borrado_en IS NULL AND e.ref_visio ->> 'nodo_id' = %s AND e.id IS DISTINCT FROM %s ORDER BY e.id",
+        (str(int(nodo)), excepto_id)).fetchall()]
+
+
+def exigir_visio_libre(con: Any, nodo: int, excepto_id: int | None, forzar: bool) -> None:
+    """Refuses (error `visio_ocupado`, which the page turns into a question) when another mufa already uses that Visio node, unless `forzar`."""
+    usan = visio_ocupado(con, nodo, excepto_id)
+    if usan and not forzar:
+        cuales = ", ".join(f"«{u['nombre']}» ({u['proyecto']})" for u in usan[:3])
+        raise DatosInvalidos({"visio_ocupado": f"Esa mufa del Visio ya está asignada a {cuales}. Si hay varias con el mismo nombre, revise que sea la del diagrama correcto"})
+
+
+def asignar_visio(con: Any, actor: dict[str, Any], *, mufa_id: int, nodo_id: Any, nombre_visio: Any, sin_visio: bool = False, forzar: bool = False) -> dict[str, Any]:
     """Links the mufa to the Visio node (and so to its diagram) chosen by a person: «Ver Visio original» looks for the diagram by that node.
     For the mufas the Visio search does not find by name (renamed, created from the KMZ…). `nodo_id` None / empty removes the link; with `sin_visio` the mufa is marked as having
     NO Visio diagram (a mufa that is new in the field, drawn by hand): «Ver Visio original» no longer guesses one for it. Choosing a node, or removing, clears that mark."""
@@ -241,6 +258,8 @@ def asignar_visio(con: Any, actor: dict[str, Any], *, mufa_id: int, nodo_id: Any
     nombre = " ".join(str(nombre_visio or "").split())[:160]
     if nodo is not None and not nombre:
         raise DatosInvalidos({"nombre_visio": "falta el nombre de la mufa del Visio"})
+    if nodo is not None:
+        exigir_visio_libre(con, nodo, m["id"], bool(forzar))
     with con.transaction():
         if nodo is None and sin_visio:
             con.execute("UPDATE redes.elementos SET ref_visio = (coalesce(ref_visio, '{}'::jsonb) - 'nodo_id' - 'nombre_visio') || '{\"sin_visio\": true}'::jsonb, "

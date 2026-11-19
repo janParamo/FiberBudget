@@ -68,3 +68,14 @@ def test_a_note_keeps_the_colour_of_its_box_and_of_its_text(mundo):
     assert (r["notas"][0]["color_fondo"], r["notas"][0]["color_texto"]) == (None, None)
     with pytest.raises(DatosInvalidos):
         mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"notas": [{"id": "n2", "html": "<p>x</p>", "color_fondo": "rojo"}]})
+
+
+def test_the_side_of_the_connection_points_of_a_cable_is_kept(mundo):
+    con, admin, p, ids = mundo
+    c = mufa.leer(con, admin, mufa_id=ids["b"])["cables"][0]
+    assert c["espejo"] is False
+    r = mufa.guardar(con, admin, mufa_id=ids["b"], cambios={"posiciones": [{"cable_id": c["id"], "x": 40, "y": 30, "version": c["pos_version"], "espejo": True}]})
+    assert next(x for x in r["cables"] if x["id"] == c["id"])["espejo"] is True
+    c = next(x for x in r["cables"] if x["id"] == c["id"])
+    r = mufa.guardar(con, admin, mufa_id=ids["b"], cambios={"posiciones": [{"cable_id": c["id"], "x": 40, "y": 30, "version": c["pos_version"]}]})
+    assert next(x for x in r["cables"] if x["id"] == c["id"])["espejo"] is False                # back to the default side

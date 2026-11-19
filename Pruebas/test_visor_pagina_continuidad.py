@@ -69,3 +69,48 @@ async def _colores_de_nota(mundo_):
 
 def test_the_colours_of_a_note_are_chosen_and_saved(mundo):
     asyncio.run(_colores_de_nota(mundo))
+
+
+async def _lineas_fuera_de_las_cajas(mundo_):
+    """A connection line goes round the frame of a cable instead of passing behind it."""
+    con, admin, proy, ids = mundo_
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.EditorMufa && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.EditorMufa.abrir(%d, 'MF Dos'); true" % ids["b"])
+        await p.esperar("window.EditorMufa._st.datos && window.EditorMufa._st.cables.length === 2", 15)
+        r = await p.evaluar("""(() => { const st = window.EditorMufa._st; st.marcos = [[400, 0, 700, 500]];
+          const pts = window.EditorMufa._ruta({x: 100, y: 100, salida: 1}, {x: 1000, y: 300, salida: -1}, 0);       // the middle (x = 550) is inside the frame
+          return {mx: pts[4], recto: pts[4] === pts[6]}; })()""")
+        assert r["recto"] is True and not (394 < r["mx"] < 706)                   # the vertical segment is outside [400, 700]
+        sin = await p.evaluar("""(() => { window.EditorMufa._st.marcos = []; const pts = window.EditorMufa._ruta({x: 100, y: 100, salida: 1}, {x: 1000, y: 300, salida: -1}, 0); return pts[4]; })()""")
+        assert sin == 550                                   # with no frame in the way it turns halfway, as before
+        assert await p.errores() == []
+
+
+def test_the_connection_lines_go_round_the_frames_of_the_cables(mundo):
+    asyncio.run(_lineas_fuera_de_las_cajas(mundo))
+
+
+async def _lado_de_los_puntos(mundo_):
+    """The button of a cable box passes its connection points to the other side of the box, and that is saved."""
+    con, admin, proy, ids = mundo_
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.EditorMufa && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.EditorMufa.abrir(%d, 'MF Dos'); true" % ids["b"])
+        await p.esperar("window.EditorMufa._st.datos && window.EditorMufa._st.cables.length === 2", 15)
+        lado = "(() => { const st = window.EditorMufa._st; const c = st.cables[0]; const q = st.puertos.get('h:' + c.fibras[0].id); return [c.espejo === true, q.salida, Math.round(q.grupo.x() + q.dx - c.x)]; })()"
+        antes = await p.evaluar(lado)
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.espejo').length") == 2          # one button on each cable box
+        await p.evaluar("(() => { window.EditorMufa._st.capa.find('.espejo')[0].fire('click', {evt: new MouseEvent('click')}); return true; })()")
+        despues = await p.evaluar(lado)
+        assert despues[0] is True and despues[1] == -antes[1]                                      # the ports face the other way: the points are on the other side
+        assert despues[2] != antes[2]
+        await p.evaluar("document.getElementById('mu-aplicar').click(); true")
+        await p.esperar("document.getElementById('mu-cambios').textContent === 'Guardado'", 10)
+        assert await p.evaluar(lado) == despues                                                     # still so after saving and reading again
+        assert [f["espejo"] for f in con.execute("SELECT espejo FROM redes.mufa_cables WHERE mufa_id = %s", (ids["b"],)).fetchall()].count(True) == 1
+        assert await p.errores() == []
+
+
+def test_the_connection_points_of_a_cable_are_passed_to_the_other_side(mundo):
+    asyncio.run(_lado_de_los_puntos(mundo))
