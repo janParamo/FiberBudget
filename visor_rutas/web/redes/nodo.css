@@ -1,0 +1,37 @@
+/* El nodo: ODF como mosaicos de puertos, OLT y la tabla de los hilos de una OLT. */
+.nd-modal { z-index: 3400; }
+.nd-caja { width: min(1180px, 96vw); max-height: 94vh; display: flex; flex-direction: column; }
+.nd-modal.maximizado .nd-caja { width: 100vw; max-height: 100vh; height: 100vh; border-radius: 0; }
+.nd-cuerpo { padding: 12px 16px 18px; overflow: auto; display: grid; gap: 18px; }
+.nd-cuerpo[hidden] { display: none; }
+.nd-seccion { display: grid; gap: 10px; }
+.nd-encabezado { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.nd-encabezado h3 { margin: 0; font-size: 16px; }
+.nd-encabezado .nota { flex: 1; min-width: 220px; }
+.nd-odfs { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; }
+.nd-odf, .nd-olt { border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; background: var(--fondo-tarjeta, rgba(127, 127, 127, 0.06)); display: grid; gap: 8px; }
+.nd-odf > header, .nd-olt > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nd-odf > header div, .nd-olt > header div { display: grid; }
+.nd-odf small, .nd-olt small { color: var(--texto-suave, #5b6270); font-size: 12px; }
+.nd-mosaico { display: grid; grid-template-columns: repeat(var(--nd-cols, 12), minmax(30px, 1fr)); gap: 4px; }
+.nd-baldosa { appearance: none; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 36px; padding: 2px; border-radius: 6px; border: 2px solid; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; line-height: 1.05; }
+.nd-baldosa small { font-size: 9px; font-weight: 500; color: inherit; opacity: 0.9; }
+.nd-baldosa.libre { background: #dff5e5; border-color: #2e9d4a; color: #14532d; }
+.nd-baldosa.ocupada { background: #dbe8ff; border-color: #1f6feb; color: #1e3a8a; }
+.nd-baldosa:hover { filter: brightness(0.94); outline: 2px solid #ffe600; }
+.nd-olts { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.nd-barra { height: 8px; border-radius: 4px; background: rgba(127, 127, 127, 0.25); overflow: hidden; }
+.nd-barra i { display: block; height: 100%; background: #1f6feb; }
+.nd-tabla-caja { max-height: 62vh; overflow: auto; border: 1px solid var(--borde); border-radius: 8px; }
+.nd-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nd-tabla th, .nd-tabla td { padding: 6px 10px; border-bottom: 1px solid var(--borde); text-align: left; }
+.nd-tabla thead th { position: sticky; top: 0; background: var(--fondo, #fff); z-index: 1; }
+.nd-tabla tr.libre td { opacity: 0.75; }
+.nd-tabla tr.ocupada { background: rgba(31, 111, 235, 0.08); }
+.nd-grupo { border: 1px solid var(--borde); border-radius: 8px; padding: 6px 10px 10px; margin: 8px 0; display: grid; gap: 6px; }
+.nd-grupo legend { font-weight: 600; padding: 0 6px; }
+#modal-nd-elem, #modal-nd-enlace { z-index: 3500; }
+body.tema-oscuro .nd-baldosa.libre { background: #123524; color: #bff0cc; }
+body.tema-oscuro .nd-baldosa.ocupada { background: #10284f; color: #cfe0ff; }
+.nd-visio { color: #8e5ad7 !important; font-weight: 600; }
+.nd-cables { opacity: 0.85; line-height: 1.35; }

@@ -1,0 +1,58 @@
+/* Cinta de opciones (estilo Excel): pestañas, grupos con su nombre debajo y botones grandes con icono. Los iconos son máscaras por id: el texto del botón puede cambiar. */
+.rb-pestanas { display: flex; gap: 2px; padding: 4px 12px 0; border-bottom: 1px solid var(--borde); background: #eef1f5; overflow-x: auto; }
+.rb-pestana { appearance: none; border: 1px solid transparent; border-bottom: none; background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 6px 6px 0 0; cursor: pointer; }
+.rb-pestana:hover { background: rgba(31, 111, 235, 0.08); }
+.rb-pestana.activa { background: #f6f8fa; border-color: var(--borde); font-weight: 600; position: relative; top: 1px; }
+.rb-cinta.mu-barra { display: block; padding: 0; }
+.rb-panel { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 0; padding: 6px 8px; min-height: 86px; overflow-x: auto; }
+.rb-panel[hidden] { display: none; }
+.rb-grupo { display: flex; flex-direction: column; justify-content: space-between; padding: 0 10px; border-right: 1px solid var(--borde); }
+.rb-grupo[hidden] { display: none; }
+.rb-botones { display: flex; align-items: flex-start; gap: 2px; flex: 1; }
+.rb-etiqueta { text-align: center; font-size: 11px; color: var(--texto-suave, #5b6270); padding-top: 4px; white-space: nowrap; }
+.rb-botones .rb-btn { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; min-width: 58px; max-width: 92px; height: 62px; padding: 4px 6px; font-size: 11.5px; line-height: 1.15; text-align: center; white-space: normal; }
+.rb-btn::before { content: ''; display: block; width: 24px; height: 24px; background: currentColor; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
+.rb-btn.rb-sin-ico::before { display: none; }
+.rb-btn:disabled { opacity: 0.45; }
+.rb-botones .btn-icono.rb-btn { min-width: 34px; height: 34px; }
+.rb-campo { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; align-self: center; }
+.rb-campo select { height: 28px; }
+.rb-botones.rb-apilado { flex-direction: column; align-items: stretch; }
+body.tema-oscuro .rb-pestanas { background: #141c24; }
+body.tema-oscuro .rb-pestana.activa { background: #19232d; }
+#mu-splitter { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12h6M9 12l9-7v14zM18 5v14'/></svg>"); }
+#mu-conector { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12h5M16 12h5M8 8h8v8H8z'/></svg>"); }
+#mu-nota { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M5 3h14v18l-4-3H5zM8 8h8M8 12h6'/></svg>"); }
+#mu-eliminar { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6'/></svg>"); }
+#mu-deshacer { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M8 7 4 11l4 4M4 11h11a5 5 0 0 1 0 10h-3'/></svg>"); }
+#mu-rehacer { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M16 7l4 4-4 4M20 11H9a5 5 0 0 0 0 10h3'/></svg>"); }
+#mu-ordenar { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 5h16M4 12h16M4 19h16M8 3v4M16 10v4M10 17v4'/></svg>"); }
+#mu-trazar { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12h4l2-6 4 12 2-6h6'/></svg>"); }
+#mu-sangria { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12h18M12 12v8M9 17l3 3 3-3'/></svg>"); }
+#mu-clientes { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 11l8-7 8 7v9H4zM10 20v-6h4v6'/></svg>"); }
+#mu-continuidad { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 8h18M3 16h18M7 4v16M17 4v16'/></svg>"); }
+#mu-vista { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 5h18v14H3zM3 10h18M9 10v9'/></svg>"); }
+#mu-red { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5a2 2 0 1 0 0 .1M5 19a2 2 0 1 0 0 .1M19 19a2 2 0 1 0 0 .1M12 7v5l-6 5M12 12l6 5'/></svg>"); }
+#mu-diagrama { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4h6v5H4zM14 4h6v5h-6zM9 15h6v5H9zM7 9v3h10V9M12 12v3'/></svg>"); }
+#mu-visio { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'/></svg>"); }
+#mu-asignar-visio { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1'/></svg>"); }
+#mu-validar { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM8 12l3 3 5-6'/></svg>"); }
+#mu-png { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M16 9h.01'/></svg>"); }
+#mu-pdf { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M6 3h9l4 4v14H6zM14 3v5h5M9 14h6M9 17h4'/></svg>"); }
+#mu-aparte { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4h11v11H4zM9 9h11v11H9z'/></svg>"); }
+#mu-acometida, #mu-acometida-b { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 12h5M16 12h5M8 8h8v8H8zM12 3v3M12 18v3'/></svg>"); }
+#mu-baja { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 8l8 8M16 8l-8 8'/></svg>"); }
+.rb-leyenda { gap: 2px; font-size: 11px; }
+.rb-leyenda-fila { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.lg { display: inline-block; width: 26px; height: 0; border-top: 3px solid; }
+.lg-sangria { border-color: #e11d1d; } .lg-secundario { border-top-style: dashed; border-color: #8e24aa; } .lg-primario { border-color: #d4a017; }
+.lg-libre { width: 12px; height: 12px; border: 3px solid #29b6f6; border-radius: 50%; margin: 0 7px; } .lg-baja { width: 12px; height: 12px; border: 2px solid #29b6f6; background: #d6f0ff; border-radius: 50%; margin: 0 7px; }
+#modal-mu-aco-nueva, #modal-mu-aco { z-index: 3400; }
+#mu-nodo { --ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01M12 7h5M12 17h5'/></svg>"); }
+
+/* La cinta del esquema de zona: sus botones ya traen su icono (lienzo.js los pone), aquí solo se ordenan en vertical. */
+.rb-botones .rb-lz { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; min-width: 58px; max-width: 96px; height: 62px; padding: 4px 6px; font-size: 11.5px; line-height: 1.15; text-align: center; white-space: normal; }
+.rb-botones .rb-lz svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.rb-botones .rb-lz:disabled { opacity: 0.45; }
+.rb-botones .rb-lz[hidden] { display: none; }
+.rb-botones > .lz-zona-caja, .rb-botones > .lz-coord { align-self: center; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 11.5px; margin: 0 6px; }

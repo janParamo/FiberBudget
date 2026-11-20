@@ -102,3 +102,25 @@ def test_a_reader_cannot_set_a_client_on_a_fibre(mundo):
     with pytest.raises(db.SinPermiso):
         mufa.guardar(con, ana, mufa_id=ids["a"], cambios={"hilo_clientes": [{"hilo_id": h1["id"], "nombre": "X"}]})
     assert mufa.leer(con, ana, mufa_id=ids["a"])["cables"]                                           # but she sees the mufa
+
+
+def test_a_fibre_can_have_a_client_on_its_segment_and_another_at_its_end(mundo):
+    """As the Visio draws it: an arrow from the client to the fibre (its segment), without replacing the client at the end of the fibre (where it goes to the client)."""
+    con, admin, p, ids = mundo
+    h = _hilo(con, admin, ids["a"], "Distribución", 4)
+    r = mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"hilo_clientes": [
+        {"hilo_id": h["id"], "codigo_cliente": "C28300", "nombre": "Inversiones Germanas", "id_servicio": "ID296230", "segmento": True},
+        {"hilo_id": h["id"], "codigo_cliente": "C12345", "nombre": "Casa Pérez"}]})
+    f = next(x for c in r["cables"] if c["nombre"] == "Distribución" for x in c["fibras"] if x["numero"] == 4)
+    assert f["cliente_segmento"]["codigo_cliente"] == "C28300" and f["cliente"]["codigo_cliente"] == "C12345"       # one of each class, none replaced
+    # the other end of the cable sees the same
+    g = _hilo(con, admin, ids["b"], "Distribución", 4)
+    assert g["cliente_segmento"]["codigo_cliente"] == "C28300" and g["cliente"]["codigo_cliente"] == "C12345"
+    # changing the one of the segment (with its version) does not touch the end one; taking it off leaves the other
+    r = mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"hilo_clientes": [
+        {"hilo_id": h["id"], "segmento": True, "codigo_cliente": "C28300", "nombre": "Inversiones Germanas SA", "version": f["cliente_segmento"]["version"]}]})
+    f = next(x for c in r["cables"] if c["nombre"] == "Distribución" for x in c["fibras"] if x["numero"] == 4)
+    assert f["cliente_segmento"]["nombre"] == "Inversiones Germanas SA" and f["cliente"]["nombre"] == "Casa Pérez"
+    r = mufa.guardar(con, admin, mufa_id=ids["a"], cambios={"hilo_clientes": [{"hilo_id": h["id"], "segmento": True, "quitar": True, "version": f["cliente_segmento"]["version"]}]})
+    f = next(x for c in r["cables"] if c["nombre"] == "Distribución" for x in c["fibras"] if x["numero"] == 4)
+    assert f["cliente_segmento"] is None and f["cliente"]["codigo_cliente"] == "C12345"

@@ -89,13 +89,17 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
         otro_id = c["origen_id"] if llega else c["destino_id"]
         pre = "o_" if llega else "d_"
         fibras = []
-        clientes_hilo = {f["hilo_id"]: {k: f[k] for k in ("id", "version", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "hilo_cliente", "fuente")} for f in con.execute(
-            "SELECT s.id, s.version, s.hilo_id, s.codigo_cliente, s.nombre, s.id_servicio, s.elemento_id, s.hilo_cliente, s.fuente FROM redes.hilo_servicios s "
-            "JOIN redes.hilos h ON h.id = s.hilo_id WHERE h.cable_id = %s AND s.borrado_en IS NULL", (c["id"],)).fetchall()}
+        clientes_hilo: dict[int, dict[str, Any]] = {}                # the client at the end of the fibre (where it goes to the client)
+        clientes_segmento: dict[int, dict[str, Any]] = {}            # the client on the segment of the fibre (as the Visio draws it: an arrow from the client to the fibre)
+        for f in con.execute(
+                "SELECT s.id, s.version, s.hilo_id, s.codigo_cliente, s.nombre, s.id_servicio, s.elemento_id, s.hilo_cliente, s.segmento, s.fuente FROM redes.hilo_servicios s "
+                "JOIN redes.hilos h ON h.id = s.hilo_id WHERE h.cable_id = %s AND s.borrado_en IS NULL", (c["id"],)).fetchall():
+            (clientes_segmento if f["segmento"] else clientes_hilo)[f["hilo_id"]] = {k: f[k] for k in ("id", "version", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "hilo_cliente", "fuente")}
         for h in con.execute("SELECT id, numero, buffer, color, color_buffer, estado, observacion, version FROM redes.hilos "
                              "WHERE cable_id = %s AND borrado_en IS NULL ORDER BY numero", (c["id"],)).fetchall():
             fibras.append({**h, "lejos": _describir_extremo(con, h["id"], otro_id) if c[pre + "tipo"] in ("mufa", "nodo", "odf") else None,
-                           "cliente": clientes_hilo.get(h["id"])})                      # the client that is on this fibre by itself (None: no one)
+                           "cliente": clientes_hilo.get(h["id"]),                       # the client that is on this fibre by itself (None: no one)
+                           "cliente_segmento": clientes_segmento.get(h["id"])})
         x, y, pos_version, espejo = posiciones.get(c["id"], (None, None, None, False))
         cables.append({"id": c["id"], "nombre": c["nombre"], "clase": c["clase"], "tipo": c["tipo"], "hilos": c["hilos"],
                        "hilos_por_buffer": c["hilos_por_buffer"], "color": c["color"], "longitud_m": float(c["longitud_m"]),
@@ -115,7 +119,7 @@ def leer(con: Any, actor: dict[str, Any], *, mufa_id: int) -> dict[str, Any]:
         "SELECT id, nombre, salidas, relacion, conector, x, y, propiedades, fuente, confianza, version FROM redes.splitters "
         "WHERE mufa_id = %s AND borrado_en IS NULL ORDER BY id", (m["id"],)).fetchall()]
     clientes = [dict(f) for f in con.execute(
-        "SELECT codigo_cliente, nombre, id_servicio, elemento_id, hilos, x, y, largo, fuente FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL "
+        "SELECT codigo_cliente, nombre, id_servicio, elemento_id, hilos, x, y, largo, baja, fuente FROM redes.mufa_clientes WHERE mufa_id = %s AND borrado_en IS NULL "
         "ORDER BY codigo_cliente NULLS LAST, nombre", (m["id"],)).fetchall()]
     conectores = [dict(k) for k in con.execute(
         "SELECT id, nombre, tipo, x, y, version FROM redes.conectores WHERE mufa_id = %s AND borrado_en IS NULL ORDER BY id",
@@ -252,6 +256,7 @@ def _guardar_cliente_mufa(con: Any, actor: dict[str, Any], mid: int, d: dict[str
     if largo is not None and not 10 <= largo <= 3000:
         raise DatosInvalidos({quien: "el largo de la línea va de 10 a 3000"})
     valores["largo"] = largo
+    valores["baja"] = bool(d.get("baja"))                                           # the client was taken off (drawn in light blue)
     if previo is None:
         fila = repositorio.insertar(con, "mufa_clientes", {"mufa_id": mid, "codigo_cliente": codigo, "nombre": nombre, "id_servicio": servicio,
                                                            **valores, "fuente": "usuario", "confianza": "verificada"}, actor["id"])
@@ -494,8 +499,9 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
             actual_hilo = con.execute("SELECT h.id, h.numero, h.cable_id, h.borrado_en FROM redes.hilos h WHERE h.id = %s", (int(d.get("hilo_id") or 0),)).fetchone()
             if actual_hilo is None or actual_hilo["borrado_en"] is not None or actual_hilo["cable_id"] not in cables_aqui:
                 raise DatosInvalidos({"hilo": "el hilo no es de un cable de esta mufa"})
-            quien = f"Hilo {actual_hilo['numero']}"
-            previo = con.execute("SELECT * FROM redes.hilo_servicios WHERE hilo_id = %s AND borrado_en IS NULL FOR UPDATE", (actual_hilo["id"],)).fetchone()
+            segmento = bool(d.get("segmento"))                                        # on the segment of the fibre, or at its end (each fibre can have one of each)
+            quien = f"Hilo {actual_hilo['numero']}{' (segmento)' if segmento else ''}"
+            previo = con.execute("SELECT * FROM redes.hilo_servicios WHERE hilo_id = %s AND segmento = %s AND borrado_en IS NULL FOR UPDATE", (actual_hilo["id"], segmento)).fetchone()
             if d.get("quitar"):
                 if previo is not None:
                     ahora = con.execute("SELECT now() AS n").fetchone()["n"]
@@ -506,7 +512,7 @@ def guardar(con: Any, actor: dict[str, Any], *, mufa_id: int, cambios: dict[str,
             valores = _valores_cliente(con, actor, d, quien, proyecto_id)
             codigo, nombre, servicio = valores["codigo_cliente"], valores["nombre"], valores["id_servicio"]
             if previo is None:
-                fila = repositorio.insertar(con, "hilo_servicios", {**valores, "hilo_id": actual_hilo["id"], "fuente": "usuario", "confianza": "verificada"}, actor["id"])
+                fila = repositorio.insertar(con, "hilo_servicios", {**valores, "hilo_id": actual_hilo["id"], "segmento": segmento, "fuente": "usuario", "confianza": "verificada"}, actor["id"])
                 repositorio.registrar(con, actor["id"], "hilo_servicio", fila["id"], "crear", {"cliente": [None, codigo or nombre or servicio], "hilo": [None, actual_hilo["numero"]]},
                                       proyecto_id=proyecto_id)
             else:

@@ -14,7 +14,7 @@ from typing import Any, Callable
 import psycopg
 
 from visor_rutas.redes import (actualizar_red, actualizar_visio, incorporar_kmz, bandejas, campo, db, diagrama, lienzo, lugares, lugares_presupuesto, importar_kmz, kmz_cambios, kmz_estilos, lugares_kmz, masivas_red, lugares_red, migracion_tablero, migrar, mufa, mufas_existentes, pendientes, planificacion, problemas,
-                               proyectos, red, respaldo, ruta_hilos, continuidad, splitters, trazado, usuarios, verificar)
+                               proyectos, red, respaldo, ruta_hilos, continuidad, acometidas, nodo, splitters, trazado, usuarios, verificar)
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,15 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     # fase 4: editor de mufa
     "mufa": mufa.leer,
     "guardar_mufa": mufa.guardar,
+    "nodo": nodo.leer,                                        # a node as a physical place: its ODFs (ports as tiles), its OLTs and how they connect
+    "convertir_visio_nodo": nodo.convertir_visio,             # administrators: the ODFs and OLTs of the Visio into the structure of their node
+    "guardar_odf_nodo": nodo.guardar_odf,
+    "guardar_olt_nodo": nodo.guardar_olt,
+    "guardar_enlace_nodo": nodo.guardar_enlace,
+    "crear_acometida": acometidas.crear,                      # a new cable (2…96 fibres) from the mufa, drawn as a small card
+    "acometida_mufas": acometidas.mufas_para_conectar,
+    "actualizar_acometida": acometidas.actualizar,
+    "eliminar_acometida": acometidas.eliminar,
     "continuidad_mufa": continuidad.aplicar,                  # mufa de corte: the fibres written (1-12, 15…) go from one cable to the other with the same number
     # migración Visio, fase 4: modelo de la mufa y bandejas
     "guardar_modelo_mufa": bandejas.guardar_modelo,
@@ -185,7 +194,7 @@ PERMITIDOS_TECNICO = {"estado"}
 PERMITIDOS_GUEST = {"estado", "buscar_elementos", "mufa_existente", "estilos_kmz", "cambios_kmz", "capa_importados_kmz"}
 # prueba: read only in everything (it tests the endpoints without risk): these are the methods that only read.
 SOLO_LECTURA = {"estado", "usuarios", "historial_usuario", "proyectos", "proyecto", "historial_proyecto", "usuarios_asignables", "geocodificar", "red_proyecto", "mufa", "mufa_existente",
-                "red_de_mufas", "buscar_elementos", "buscar_clientes", "ruta_fusion_cliente", "tablero_migracion", "correcciones_migracion", "exportar_correcciones", "trazar_hilo", "diagramas", "problemas", "problema",
+                "red_de_mufas", "buscar_elementos", "buscar_clientes", "ruta_fusion_cliente", "acometida_mufas", "nodo", "tablero_migracion", "correcciones_migracion", "exportar_correcciones", "trazar_hilo", "diagramas", "problemas", "problema",
                 "foto_problema", "historial_problema", "referencias_proyecto", "pendientes", "historial_pendiente", "respaldos", "lugares", "lugar", "adjunto_lugar", "compartidos_lugares",
                 "exportar_lugares_kmz", "cambios_kmz", "importaciones_kmz", "importacion_kmz", "mapa_importacion_kmz", "capa_importados_kmz", "estilos_kmz", "estado_actualizar_red",
                 "visio_estado", "visio_progreso", "comparar_red_presupuesto", "splitters_de_diagrama", "campo_puntos", "campo_jornadas", "campo_ubicaciones", "campo_foto", "campo_trazos",

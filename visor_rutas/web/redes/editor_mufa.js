@@ -45,7 +45,7 @@
     return JSON.stringify({
       cables: st.cables.map((c) => ({ id: c.id, x: c.x, y: c.y, movido: c.movido, espejo: !!c.espejo })),
       splitters: [...st.splitters.values()], conectores: [...st.conectores.values()], conexiones: [...st.conexiones.values()],
-      notas: [...st.notas.values()], hilos: [...st.hilos.entries()], hiloClientes: [...st.hiloClientes.entries()], puertoClientes: [...st.puertoClientes.entries()], clientesMufa: [...st.clientesMufa.entries()],
+      notas: [...st.notas.values()], hilos: [...st.hilos.entries()], hiloClientes: [...st.hiloClientes.entries()], hiloSegmento: [...st.hiloSegmento.entries()], puertoClientes: [...st.puertoClientes.entries()], clientesMufa: [...st.clientesMufa.entries()],
       borrados: Object.fromEntries(Object.entries(st.borrados).map(([k, v]) => [k, [...v]])), sucios: [...st.sucios], temporal: st.temporal,
     });
   }
@@ -58,6 +58,7 @@
     st.notas = new Map(s.notas.map((x) => [x.id, x]));
     st.hilos = new Map(s.hilos);
     st.hiloClientes = new Map(s.hiloClientes || []);
+    st.hiloSegmento = new Map(s.hiloSegmento || []);
     st.puertoClientes = new Map(s.puertoClientes || []);
     st.clientesMufa = new Map(s.clientesMufa || []);
     st.borrados = Object.fromEntries(Object.entries(s.borrados).map(([k, v]) => [k, new Map(v)]));
@@ -71,11 +72,27 @@
   }
   function deshacer() { if (!st.pilas.deshacer.length) return; st.pilas.rehacer.push(instantanea()); restaurar(st.pilas.deshacer.pop()); st.seleccion = []; dibujar(); }
   function rehacer() { if (!st.pilas.rehacer.length) return; st.pilas.deshacer.push(instantanea()); restaurar(st.pilas.rehacer.pop()); st.seleccion = []; dibujar(); }
-  const nCambios = () => st.sucios.size + st.hilos.size + st.hiloClientes.size + st.puertoClientes.size + st.clientesMufa.size + Object.values(st.borrados).reduce((n, m) => n + m.size, 0)
+  const nCambios = () => st.sucios.size + st.hilos.size + st.hiloClientes.size + st.hiloSegmento.size + st.puertoClientes.size + st.clientesMufa.size + Object.values(st.borrados).reduce((n, m) => n + m.size, 0)
     + st.cables.filter((c) => c.movido).length;
+
+  /** The client of the fibre chosen (the one at its end, else the one on its segment), or null. */
+  function clienteElegido() {
+    const s = st.seleccion.length === 1 && st.seleccion[0].tipo === "hilo" ? st.seleccion[0] : null;
+    return s ? clienteDeHilo(s.id) || clienteDeSegmento(s.id) : null;
+  }
+  function alternarBaja(k = clienteElegido()) {
+    if (!k || !st.puedeEditar) return;
+    antesDeCambiar();
+    const baja = !infoCliente(k).baja;
+    guardarInfoCliente(k, { baja });
+    dibujar();
+    mensaje(`${textoCliente(k) || k.id_servicio}: ${baja ? "dado de baja (se ve en celeste)" : "reactivado"}`, "ok");
+  }
 
   function actualizarBarra() {
     const n = nCambios();
+    const elegido = clienteElegido();
+    if ($("mu-baja")) { $("mu-baja").disabled = !elegido || !st.puedeEditar; $("mu-baja").textContent = elegido && infoCliente(elegido).baja ? "Reactivar" : "Dar de baja"; }
     $("mu-cambios").textContent = n ? `${n} cambio${n === 1 ? "" : "s"} sin guardar` : "Guardado";
     $("mu-cambios").classList.toggle("pendiente", !!n);
     $("mu-aplicar").disabled = !n || !st.puedeEditar;
@@ -116,10 +133,17 @@
     if (pendiente) return pendiente.quitar ? null : pendiente;
     return (fibraPorId(id)[1] || {}).cliente || null;
   }
+  /** The client on the SEGMENT of this fibre (as the Visio draws it: an arrow from the client to the fibre number): what waits to be saved, else what is saved. */
+  function clienteDeSegmento(id) {
+    const pendiente = st.hiloSegmento.get(id);
+    if (pendiente) return pendiente.quitar ? null : pendiente;
+    return (fibraPorId(id)[1] || {}).cliente_segmento || null;
+  }
   const textoCliente = (c) => (c ? [c.codigo_cliente, c.nombre].filter(Boolean).join(" · ") : "");
 
   function cargar(r) {
     st.datos = r;
+    if ($("mu-grupo-nodo")) $("mu-grupo-nodo").hidden = r.mufa.tipo !== "nodo";                    // a node: its ODFs and OLTs
     st.puedeEditar = !!r.mufa.puede_editar;
     st.cables = r.cables.map((c) => ({ ...c, movido: false }));
     st.splitters = new Map(r.splitters.map((s) => [s.id, { ...s }]));
@@ -128,6 +152,7 @@
     st.notas = new Map(r.notas.map((n) => [n.id, n]));
     st.hilos = new Map();
     st.hiloClientes = new Map();
+    st.hiloSegmento = new Map();                      // clients put on the segment of a fibre (key: the fibre) that wait to be saved
     st.puertoClientes = new Map();
     st.clientesMufa = new Map();                      // clients whose fibres / position changed and wait to be saved (key: claveCliente)
     st.borrados = { splitters: new Map(), conectores: new Map(), conexiones: new Map(), notas: new Map() };
@@ -248,6 +273,9 @@
   /** Which side the connection points of the cable are on: by default those of the cables that arrive are on the right of the box and those of the ones that leave
    *  on the left (`izq`: labels on the left, points on the right); the person can pass them to the other side (`espejo`) to connect them with the fibres of other mufas. */
   const izqDe = (c) => (c.lado === "entrada") !== !!c.espejo;
+  const ANCHO_ACO = 150;
+  const esAco = (c) => c.clase === "acometida";
+  const anchoMarco = (c) => (esAco(c) ? ANCHO_ACO : ANCHO_ETIQUETA + 74);
 
   /** The button of a cable box that passes its connection points to the other side. */
   function botonEspejo(g, c, derecha) {
@@ -269,18 +297,34 @@
     actualizarBarra();
   }
 
+  /** The head of the card of an acometida: its sign (a cable with a plug), «Acometida» and its name. */
+  function cabeceraAcometida(g, c, izq) {
+    const x0 = izq ? 2 : -6;
+    const signo = new Konva.Group({ x: x0 + 14, y: 16, listening: false });
+    signo.add(new Konva.Circle({ radius: 13, fill: "#d8f3e0", stroke: "#2e9d4a", strokeWidth: 2 }));
+    signo.add(new Konva.Line({ points: [-8, 0, -3, 0], stroke: "#14532d", strokeWidth: 2, lineCap: "round" }));
+    signo.add(new Konva.Rect({ x: -3, y: -5, width: 7, height: 10, fill: "#fff", stroke: "#14532d", strokeWidth: 1.5, cornerRadius: 2 }));
+    signo.add(new Konva.Line({ points: [4, -2.5, 8, -2.5, 4, 2.5, 8, 2.5], stroke: "#14532d", strokeWidth: 1.5, lineCap: "round" }));
+    g.add(signo);
+    g.add(new Konva.Text({ x: x0 + 34, y: 2, width: ANCHO_ACO - 50, text: "Acometida", fontSize: 13, fontStyle: "bold", fill: "#14532d", listening: false }));
+    g.add(new Konva.Text({ x: x0 + 34, y: 19, width: ANCHO_ACO - 50, text: c.nombre, fontSize: 10.5, fill: "#1d2128", wrap: "none", ellipsis: true, name: "cabecera" }));
+    g.add(new Konva.Text({ x: x0, y: 52, width: ANCHO_ACO - 14, text: `${c.hilos ?? "?"} hilos · ${c.tipo}${st.puedeEditar ? " · doble clic: abrir" : ""}`, fontSize: 10, fill: "#5b6270", name: "cabecera" }));
+  }
+
   function dibujarCable(c) {
     const izq = izqDe(c);
     const g = new Konva.Group({ x: c.x, y: c.y, draggable: st.puedeEditar, name: "cable" });
     g.setAttr("obj", { tipo: "cable", id: c.id });
     const alto = altoCable(c);
-    const barraX = izq ? ANCHO_ETIQUETA : 46;
-    const circuloX = izq ? ANCHO_ETIQUETA + 10 + 30 : 8;
+    const aco = esAco(c);                                               // an acometida: a small card with its fibres, like a client with several fibres
+    const barraX = aco ? (izq ? 70 : 46) : (izq ? ANCHO_ETIQUETA : 46);
+    const circuloX = aco ? (izq ? 110 : 8) : (izq ? ANCHO_ETIQUETA + 10 + 30 : 8);
     const etiquetaX = izq ? 0 : 60;
-    g.add(new Konva.Rect({ x: izq ? -6 : -14, y: -6, width: ANCHO_ETIQUETA + 74, height: alto + 6, fill: "#fff", stroke: "#cfd6e0",
-                           cornerRadius: 6, shadowColor: "#000", shadowOpacity: 0.08, shadowBlur: 6, name: "marco" }));
+    g.add(new Konva.Rect({ x: izq ? -6 : -14, y: -6, width: anchoMarco(c), height: alto + 6, fill: aco ? "#f3fbf5" : "#fff", stroke: aco ? "#2e9d4a" : "#cfd6e0",
+                           strokeWidth: aco ? 1.6 : 1, cornerRadius: 6, shadowColor: "#000", shadowOpacity: 0.08, shadowBlur: 6, name: "marco" }));
+    if (aco) cabeceraAcometida(g, c, izq);
     const encabezado = `${c.nombre} | ${c.origen.nombre} | ${c.destino.nombre} | ${c.hilos ?? "?"}`;
-    g.add(new Konva.Text({ x: etiquetaX, y: 0, width: ANCHO_ETIQUETA - 10, text: encabezado, fontSize: 14, fontStyle: "bold",
+    if (!aco) g.add(new Konva.Text({ x: etiquetaX, y: 0, width: ANCHO_ETIQUETA - 10, text: encabezado, fontSize: 14, fontStyle: "bold",
                            fill: "#1d2128", wrap: "word", ellipsis: true, height: 54, lineHeight: 1.2, name: "cabecera" }));
     const tipo = (c.hilos == null ? `${c.tipo} · hilos desconocidos` : `${c.tipo} · ${c.hilos} hilos (${c.hilos_por_buffer}/buffer)`)
       + (st.puedeEditar ? "  ✎" : "");
@@ -291,21 +335,31 @@
       lineaTipo.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tooltip("Cambiar la configuración del cable"); });
       lineaTipo.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
     }
-    g.add(lineaTipo);
-    if (st.puedeEditar) botonEspejo(g, c, (izq ? -6 : -14) + ANCHO_ETIQUETA + 74);
+    if (!aco) g.add(lineaTipo);
+    if (st.puedeEditar) botonEspejo(g, c, (izq ? -6 : -14) + anchoMarco(c));
     // button under the body of the cable: one click goes to the mufa at its other end (the connection made in the zone schema)
     const caja = new Konva.Group({ x: etiquetaX, y: alto - 34, name: "destino" });
     const flecha = izq ? `← Ir a ${c.otro.nombre}` : `→ Ir a ${c.otro.nombre}`;
     const navegable = ["mufa", "nodo", "odf"].includes(c.otro.tipo);
+    if (aco) {                                                          // an acometida: «Abrir» (name, connect to a mufa, delete) instead of «Ir a»
+      const ab = new Konva.Group({ x: izq ? 0 : 0, y: alto - 34, name: "destino" });
+      ab.add(new Konva.Rect({ width: ANCHO_ACO - 30, height: 26, fill: "#e6f6ea", stroke: "#2e9d4a", cornerRadius: 4 }));
+      ab.add(new Konva.Text({ x: 6, y: 7, width: ANCHO_ACO - 42, text: navegable ? `→ ${c.otro.nombre}` : "Abrir la acometida", fontSize: 12, fill: "#14532d", ellipsis: true, wrap: "none" }));
+      ab.on("click tap", (e) => { e.cancelBubble = true; if (navegable) navegar(c.otro); else abrirAcometida(c); });
+      ab.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tooltip(navegable ? `Clic: ir a ${esc(c.otro.nombre)}` : "Clic: abrir la acometida (nombre, conectarla a una mufa, eliminarla)"); });
+      ab.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
+      g.add(ab);
+    }
     caja.add(new Konva.Rect({ width: ANCHO_ETIQUETA - 14, height: 26, fill: navegable ? "#e7f0ff" : "#f1f3f6", stroke: navegable ? "#1f6feb" : "#cfd6e0",
                               cornerRadius: 4 }));
     caja.add(new Konva.Text({ x: 6, y: 7, width: ANCHO_ETIQUETA - 24, text: flecha, fontSize: 12, fill: navegable ? "#1e429f" : "#5b6270",
                               ellipsis: true, wrap: "none" }));
-    caja.on("click tap", (e) => { e.cancelBubble = true; if (navegable) navegar(c.otro); else seleccionar({ tipo: "cable", id: c.id }); });
+    if (!aco) caja.on("click tap", (e) => { e.cancelBubble = true; if (navegable) navegar(c.otro); else seleccionar({ tipo: "cable", id: c.id }); });
     caja.on("mouseenter", () => { st.stage.container().style.cursor = navegable ? "pointer" : "default";
                                   tooltip(navegable ? `Clic: ir a ${esc(c.otro.nombre)} (${izq ? "desde donde llega este cable" : "hacia donde va este cable"})` : `${esc(c.otro.nombre)} (${esc(c.otro.tipo)})`); });
     caja.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
-    g.add(caja);
+    if (!aco) g.add(caja);
+    if (aco) g.on("dblclick dbltap", (e) => { if (e.target.name() !== "puerto" && st.puedeEditar) abrirAcometida(c); });
     // buffers and fibres
     let y = CABECERA;
     for (let b = 0; b * c.hilos_por_buffer < (c.hilos || 0); b++) {
@@ -330,20 +384,42 @@
     st.capa.add(g);
   }
 
+  /** The client on the SEGMENT of a fibre, as the Visio draws it (an arrow from the client to the number of the fibre): a small house on the line of the fibre with its code
+   *  over it. The client at the END of the fibre (where it goes to the client) is the other kind and keeps being drawn after the circle. */
+  function marcaDeSegmento(g, f, mx, cy) {
+    const k = clienteDeSegmento(f.id);
+    if (!k) return;
+    const marca = new Konva.Group({ x: mx, y: cy, name: "cliente-segmento" });
+    const baja = infoCliente(k).baja;
+    marca.add(new Konva.Circle({ radius: 7, fill: baja ? "#d6f0ff" : "#d8f3e0", stroke: baja ? COLOR_BAJA : "#2e9d4a", strokeWidth: 1.5 }));
+    marca.add(new Konva.Line({ points: [-3.6, 3.6, -3.6, -0.4, 0, -4, 3.6, -0.4, 3.6, 3.6], closed: true, fill: "#fff", stroke: "#14532d", strokeWidth: 0.9, lineJoin: "round", listening: false }));
+    marca.add(new Konva.Text({ x: -22, y: -18, width: 44, align: "center", text: k.codigo_cliente || (k.nombre || k.id_servicio || "").slice(0, 8), fontSize: 8, fontStyle: "bold", fill: "#14532d", listening: false }));
+    const lugar = { hilo: f.id, segmento: true };
+    marca.on("click", (e) => { e.cancelBubble = true; seleccionar({ tipo: "hilo", id: f.id }); });
+    marca.on("dblclick dbltap", (e) => { e.cancelBubble = true; if (st.puedeEditar) abrirClienteHilo(lugar); });
+    marca.on("contextmenu", (e) => { e.evt.preventDefault(); e.cancelBubble = true; seleccionar({ tipo: "hilo", id: f.id }); const [c, fb] = fibraPorId(f.id); menuHilo(e.evt, fb); });
+    marca.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; tooltip(`<div class="mu-tt-titulo">Cliente en el segmento del hilo</div><div><b>${esc(textoCliente(k))}</b>${k.id_servicio ? ` · ${esc(k.id_servicio)}` : ""}</div>${st.puedeEditar ? '<div class="mu-tt-sec">Doble clic: cambiarlo · clic derecho: quitarlo</div>' : ""}`); });
+    marca.on("mouseleave", () => { st.stage.container().style.cursor = ""; tooltip(null); });
+    g.add(marca);
+  }
+
   function dibujarFibra(g, c, f, barraX, cx, cy, izq) {
     const idx = colorHilo(c, f.numero);
     const estado = estadoHilo(f.id);
     const desde = izq ? barraX + 10 : barraX, hasta = izq ? cx - 8 : cx + 8;
     g.add(new Konva.Line({ points: [desde, cy, hasta, cy], stroke: TIA[idx], strokeWidth: 3, dash: estado === "oscura" ? [4, 3] : null,
                            opacity: estado === "oscura" ? 0.5 : 1 }));
+    // free at the tip: not connected here, with no client on it and nothing connected at the far end: a light-blue ring
+    const libre = estado === "activo" && !ocupado(`h:${f.id}`) && !clienteDeHilo(f.id) && !clienteDeSegmento(f.id) && !(f.lejos && !/sin conectar/i.test(f.lejos));
     const circulo = new Konva.Circle({
       x: cx, y: cy, radius: 8, fill: estado === "oscura" ? "#d4d7dc" : TIA[idx],
-      stroke: estado === "baja" ? "#e53935" : estado === "reservado" ? "#1f6feb" : estado === "danado" ? "#b00020" : "#333",
-      strokeWidth: ["baja", "reservado", "danado"].includes(estado) ? 3 : 1, dash: estado === "baja" ? [3, 2] : null, name: "puerto",
+      stroke: estado === "baja" ? "#e53935" : estado === "reservado" ? "#1f6feb" : estado === "danado" ? "#b00020" : libre ? COLOR_LIBRE : "#333",
+      strokeWidth: ["baja", "reservado", "danado"].includes(estado) || libre ? 3 : 1, dash: estado === "baja" ? [3, 2] : null, name: "puerto",
     });
     const clave = `h:${f.id}`;
     circulo.setAttr("puerto", clave);
     g.add(circulo);
+    marcaDeSegmento(g, f, (desde + hasta) / 2, cy);
     g.add(new Konva.Text({ x: cx - 8, y: cy - 5, width: 16, align: "center", text: String(f.numero), fontSize: 9, listening: false,
                            fill: OSCUROS.has(idx) && estado !== "oscura" ? "#fff" : "#111" }));
     if (estado === "danado") g.add(new Konva.Line({ points: [cx - 5, cy - 5, cx + 5, cy + 5, cx, cy, cx + 5, cy - 5, cx - 5, cy + 5],
@@ -369,7 +445,7 @@
     circulo.on("contextmenu", (e) => { e.evt.preventDefault(); e.cancelBubble = true; seleccionar({ tipo: "hilo", id: f.id }); menuHilo(e.evt, f); });
     circulo.on("mouseenter", () => tooltip(htmlFibra(c, f)));
     circulo.on("mouseleave", () => tooltip(null));
-    cajaDestinoHilo(g, c, f, cy, izq, idx);
+    if (!esAco(c)) cajaDestinoHilo(g, c, f, cy, izq, idx);
   }
 
   // ------------------------------------------------------------------ clientes: tarjetas con sus hilos
@@ -404,7 +480,7 @@
     const clave = claveCliente(k);
     const base = st.clientesMufa.get(clave) || (st.datos.clientes || []).find((c) => claveCliente(c) === clave) || {};
     const usados = lugaresDeCliente(k).reduce((m, x) => Math.max(m, x.n), 1);
-    return { hilos: Math.max(Number(base.hilos) || 1, usados), x: base.x ?? null, y: base.y ?? null, largo: base.largo ?? null };
+    return { hilos: Math.max(Number(base.hilos) || 1, usados), x: base.x ?? null, y: base.y ?? null, largo: base.largo ?? null, baja: !!base.baja };
   }
   function guardarInfoCliente(k, cambios) {
     const info = infoCliente(k);
@@ -473,11 +549,12 @@
     // the house icon of the client (the same as always, smaller on a card with several fibres)
     const k2 = multi ? 0.72 : 0.82, cx = multi ? (lado > 0 ? 20 : ancho - 20) : ancho / 2, cy = multi ? 16 : 18;
     const icono = new Konva.Group({ x: cx, y: cy, scaleX: k2, scaleY: k2, listening: false });
-    icono.add(new Konva.Circle({ radius: 15, fill: "#d8f3e0", stroke: "#2e9d4a", strokeWidth: 2 }));
-    icono.add(new Konva.Line({ points: [-8, 8, -8, -1, 0, -9, 8, -1, 8, 8], closed: true, fill: "#ffffff", stroke: "#14532d", strokeWidth: 1.6, lineJoin: "round" }));
-    icono.add(new Konva.Rect({ x: -2.5, y: 2, width: 5, height: 6, fill: "#2e9d4a" }));
+    const baja = info.baja;                                                                  // taken off: the same house in light blue
+    icono.add(new Konva.Circle({ radius: 15, fill: baja ? "#d6f0ff" : "#d8f3e0", stroke: baja ? COLOR_BAJA : "#2e9d4a", strokeWidth: 2 }));
+    icono.add(new Konva.Line({ points: [-8, 8, -8, -1, 0, -9, 8, -1, 8, 8], closed: true, fill: "#ffffff", stroke: baja ? "#0b6a9b" : "#14532d", strokeWidth: 1.6, lineJoin: "round" }));
+    icono.add(new Konva.Rect({ x: -2.5, y: 2, width: 5, height: 6, fill: baja ? COLOR_BAJA : "#2e9d4a" }));
     tarjeta.add(icono);
-    const texto = k.codigo_cliente || (k.nombre || k.id_servicio || "").slice(0, 10);
+    const texto = (k.codigo_cliente || (k.nombre || k.id_servicio || "").slice(0, 10)) + (info.baja ? " (baja)" : "");
     if (multi) tarjeta.add(new Konva.Text({ x: lado > 0 ? 34 : 4, y: 10, width: ancho - 38, text: texto, fontSize: 9.5, fontStyle: "bold", fill: "#14532d", wrap: "none", ellipsis: true, listening: false,
                                             align: lado > 0 ? "left" : "right" }));
     else tarjeta.add(new Konva.Text({ x: -22, y: 33, width: ancho + 44, text: texto, fontSize: 10, fontStyle: "bold", fill: "#14532d", align: "center", listening: false }));
@@ -666,6 +743,18 @@
 
   // ------------------------------------------------------------------ conexiones
   const COLOR_SANGRIA = "#e11d1d";
+  const COLOR_LIBRE = "#29b6f6", COLOR_BAJA = "#29b6f6", COLOR_SECUNDARIO = "#8e24aa", COLOR_PRIMARIO = "#d4a017";
+
+  /** The kind of splitter a connection goes to, by its name («SPL 1/8 SECUNDARIO»): «secundario», «primario» or null. */
+  function claseSplitter(x) {
+    for (const ref of [x.a, x.b]) {
+      if (ref.splitter == null) continue;
+      const sp = st.splitters.get(ref.splitter), texto = `${(sp && sp.nombre) || ""} ${((sp && sp.propiedades) || {}).texto_visio || ""}`;
+      if (/SECUNDARI/i.test(texto)) return "secundario";
+      if (/PRIMARI|PRINCIPAL/i.test(texto)) return "primario";
+    }
+    return null;
+  }
   const claveDe = (ref) => (ref.hilo != null ? `h:${ref.hilo}` : ref.splitter != null ? `s:${ref.splitter}:${ref.lado}:${ref.numero || 1}`
     : `k:${ref.conector}:${ref.lado}`);
 
@@ -684,7 +773,7 @@
 
   /** The frames of the cables as they are now ([x0, y0, x1, y1]): a line must not go through them (it would disappear behind the box). */
   function marcosDeCables() {
-    return st.cables.map((c) => { const x0 = c.x + (izqDe(c) ? -6 : -14); return [x0, c.y - 6, x0 + ANCHO_ETIQUETA + 74, c.y + altoCable(c)]; });
+    return st.cables.map((c) => { const x0 = c.x + (izqDe(c) ? -6 : -14); return [x0, c.y - 6, x0 + anchoMarco(c), c.y + altoCable(c)]; });
   }
 
   /** Orthogonal path; `carril` shifts the vertical segment so parallel connections do not overlap. The vertical segment is kept out of the frames of the cables:
@@ -733,9 +822,10 @@
       const oscura = [x.a, x.b].some((r) => r.hilo != null && estadoHilo(r.hilo) !== "activo");
       const brillo = sel ? "#1f6feb" : traza ? "#ffd400" : null;
       const porFuente = st.colorPor === "fuente", fuente = x.fuente || "usuario";      // no source: drawn in the editor before the migration
-      const linea = new Konva.Line({ points: ruta(p1, p2, carril), stroke: x.sangria ? COLOR_SANGRIA : porFuente ? COLOR_FUENTE[fuente] || COLOR_FUENTE.estimado : colorConexion(x),
+      const clase = !x.sangria && !porFuente ? claseSplitter(x) : null;                // purple dashed: a secondary splitter; gold: a primary one (red: a tap)
+      const linea = new Konva.Line({ points: ruta(p1, p2, carril), stroke: x.sangria ? COLOR_SANGRIA : clase === "secundario" ? COLOR_SECUNDARIO : clase === "primario" ? COLOR_PRIMARIO : porFuente ? COLOR_FUENTE[fuente] || COLOR_FUENTE.estimado : colorConexion(x),
                                      strokeWidth: sel || traza ? 5 : x.sangria ? 4 : 3, lineJoin: "round", hitStrokeWidth: 12,
-                                     dash: oscura ? [8, 5] : porFuente && fuente === "estimado" ? [5, 4] : null, shadowColor: brillo, shadowBlur: brillo ? 10 : 0,
+                                     dash: oscura || clase === "secundario" ? [8, 5] : porFuente && fuente === "estimado" ? [5, 4] : null, shadowColor: brillo, shadowBlur: brillo ? 10 : 0,
                                      shadowOpacity: brillo ? 1 : 0, opacity: trazado() && !traza && !sel ? 0.3 : 1 });
       linea.on("click", (e) => { e.cancelBubble = true; seleccionar({ tipo: "conexion", id: x.id }, e.evt.ctrlKey); });
       const origen = (FUENTE[x.fuente] ? `<div class="nota">Dato: ${FUENTE[x.fuente]}${x.confianza ? ` · confianza ${esc(x.confianza)}` : ""}</div>` : "")
@@ -901,6 +991,7 @@
     return `<div class="mu-tt-titulo"><span class="mu-tt-punto" style="background:${TIA[idx]}"></span>${esc(c.nombre)} · hilo ${f.numero}</div>
       <div>Color <b>${TIA_NOMBRE[idx]}</b> · buffer ${buffer + 1} (${TIA_NOMBRE[buffer % 12]})</div>
       <div>Estado: <b>${esc(ESTADO[estadoHilo(f.id)])}</b>${f.observacion ? ` · ${esc(f.observacion)}` : ""}</div>
+      ${clienteDeSegmento(f.id) ? `<div>Cliente en el segmento: <b>${esc(textoCliente(clienteDeSegmento(f.id)))}</b>${clienteDeSegmento(f.id).id_servicio ? ` · ${esc(clienteDeSegmento(f.id).id_servicio)}` : ""}</div>` : ""}
       ${clienteDeHilo(f.id) ? `<div>Cliente: <b>${esc(textoCliente(clienteDeHilo(f.id)))}</b>${clienteDeHilo(f.id).id_servicio ? ` · ${esc(clienteDeHilo(f.id).id_servicio)}` : ""}</div>` : ""}
       <div class="mu-tt-sec">Conectado en cada extremo:</div>
       <div>› Aquí (${esc(st.datos.mufa.nombre)}): ${otro ? esc(describir(otro)) : "sin conectar"}</div>
@@ -961,10 +1052,12 @@
   function menuHilo(evt, f) {
     const menu = $("mu-menu");
     const conectado = ocupado(`h:${f.id}`);
-    const cliente = clienteDeHilo(f.id);
+    const cliente = clienteDeHilo(f.id), segmento = clienteDeSegmento(f.id);
     menu.innerHTML = (window.Trazado ? `<li data-mu-trazar="${f.id}">Trazar este hilo (T)</li>` : "")
-      + (st.puedeEditar ? `<li data-mu-cliente="${f.id}" class="${window.Trazado ? "menu-sep" : ""}">${cliente ? "Cambiar el cliente de este hilo…" : "Asignar un cliente a este hilo…"}</li>`
+      + (st.puedeEditar ? `<li data-mu-cliente="${f.id}" class="${window.Trazado ? "menu-sep" : ""}">${cliente ? "Cambiar el cliente del extremo de este hilo…" : "Asignar un cliente al extremo de este hilo…"}</li>`
         + (cliente ? `<li data-mu-cliente-ruta="${f.id}">Ruta de fusión de este cliente…</li><li data-mu-cliente-quitar="${f.id}">Quitar el cliente (${esc(cliente.codigo_cliente || cliente.nombre || "")})</li>` : "") : "")
+      + (st.puedeEditar ? `<li data-mu-segmento="${f.id}">${segmento ? "Cambiar el cliente del segmento del hilo…" : "Asignar un cliente al segmento del hilo…"}</li>`
+        + (segmento ? `<li data-mu-segmento-quitar="${f.id}">Quitar el cliente del segmento (${esc(segmento.codigo_cliente || segmento.nombre || "")})</li>` : "") : "")
       + (st.puedeEditar ? Object.entries(ESTADO).map(([k, v]) => `<li data-mu-estado="${k}" class="${k === "activo" && window.Trazado ? "menu-sep" : ""}">`
           + `${estadoHilo(f.id) === k ? "✓ " : ""}${v}</li>`).join("")
         + (conectado ? `<li data-mu-quitar="${conectado.id}" class="menu-titulo-sep">Quitar su conexión</li>` : "") : "");
@@ -1366,17 +1459,20 @@
 
   /** What is saved at a place (a client with its version), or null. */
   function guardadoEn(l) {
+    if (l.hilo != null && l.segmento) return (fibraPorId(l.hilo)[1] || {}).cliente_segmento || null;
     if (l.hilo != null) return (fibraPorId(l.hilo)[1] || {}).cliente || null;
     return ((st.splitters.get(l.splitter) || {}).servicios || {})[l.numero] || null;
   }
   /** The client that is at a place now: what is waiting to be saved, else what is saved; null when there is none. */
   function clienteEn(l) {
+    if (l.hilo != null && l.segmento) return clienteDeSegmento(l.hilo);
     if (l.hilo != null) return clienteDeHilo(l.hilo);
     const pendiente = st.puertoClientes.get(clavePuerto(l.splitter, l.numero));
     if (pendiente) return pendiente.quitar ? null : pendiente;
     return guardadoEn(l);
   }
   function textoLugar(l) {
+    if (l.hilo != null && l.segmento) { const [c, f] = fibraPorId(l.hilo); return f ? `segmento del hilo ${f.numero} de ${c.nombre}` : "el segmento de un hilo"; }
     if (l.hilo != null) { const [c, f] = fibraPorId(l.hilo); return f ? `hilo ${f.numero} de ${c.nombre}` : "un hilo"; }
     const sp = st.splitters.get(l.splitter);
     return `salida ${l.numero} de ${sp ? sp.nombre : "un splitter"}`;
@@ -1384,12 +1480,13 @@
   function fijarCliente(l, k, n = 1) {
     const g = guardadoEn(l), version = g && g.version != null ? g.version : undefined;
     const datos = { codigo_cliente: k.codigo_cliente || "", nombre: k.nombre || "", id_servicio: k.id_servicio || "", elemento_id: k.elemento_id || null, hilo_cliente: n, version };
-    if (l.hilo != null) st.hiloClientes.set(l.hilo, { hilo_id: l.hilo, ...datos });
+    if (l.hilo != null && l.segmento) st.hiloSegmento.set(l.hilo, { hilo_id: l.hilo, ...datos });
+    else if (l.hilo != null) st.hiloClientes.set(l.hilo, { hilo_id: l.hilo, ...datos });
     else st.puertoClientes.set(clavePuerto(l.splitter, l.numero), { splitter: l.splitter, numero: l.numero, ...datos });
   }
   function retirarCliente(l) {
     const g = guardadoEn(l);
-    const mapa = l.hilo != null ? st.hiloClientes : st.puertoClientes, clave = l.hilo != null ? l.hilo : clavePuerto(l.splitter, l.numero);
+    const mapa = l.hilo != null ? (l.segmento ? st.hiloSegmento : st.hiloClientes) : st.puertoClientes, clave = l.hilo != null ? l.hilo : clavePuerto(l.splitter, l.numero);
     if (g) mapa.set(clave, l.hilo != null ? { hilo_id: l.hilo, quitar: true, version: g.version } : { splitter: l.splitter, numero: l.numero, quitar: true, version: g.version });
     else mapa.delete(clave);                                        // it was only waiting to be saved
   }
@@ -1405,6 +1502,7 @@
     // where each known client already is (the fibres and splitter outputs of this mufa), so a client is not put twice by mistake
     const donde = (k) => { const l = lugarDeCliente(k); return l ? textoLugar(l) : null; };
     $("mu-hc-titulo").textContent = `Cliente del ${textoLugar(lugar)}`;
+    form.querySelector(".vp-fila").hidden = !!lugar.segmento;                         // a client on the segment of a fibre has no fibres of its own to count
     form.elements.conocido.innerHTML = (conocidos.length ? `<option value="">— Elija un cliente de ${esc(st.datos.mufa.nombre)} —</option>` : `<option value="">Esta mufa no tiene clientes en su lista</option>`)
       + conocidos.map((k, i) => `<option value="${i}">${esc(textoCliente(k) || k.id_servicio)}${k.id_servicio ? ` · ${esc(k.id_servicio)}` : ""}${donde(k) ? ` — ya está en ${esc(donde(k))}` : ""}</option>`).join("");
     const indice = actual ? conocidos.findIndex((k) => claveCliente(k) === claveCliente(actual)) : -1;
@@ -1448,6 +1546,13 @@
     if (!form.elements.manual.checked && form.elements.conocido.value === "" && !st.hiloCliente.buscado) { $("mu-hc-error").textContent = "Elija un cliente de la lista de esta mufa, búsquelo en toda la red o marque «Crear un cliente nuevo»"; return; }
     if (!(codigo || nombre || servicio)) { $("mu-hc-error").textContent = "Escriba el código, el nombre o el ID de servicio del cliente"; return; }
     if (codigo && !/^C\d{3,7}$/.test(codigo)) { $("mu-hc-error").textContent = "El código es una C seguida de números (por ejemplo C23839)"; return; }
+    if (lugar.segmento) {                                                              // on the segment of the fibre: the client as it is, no fibres to count
+      antesDeCambiar();
+      fijarCliente(lugar, { codigo_cliente: codigo, nombre, id_servicio: servicio, elemento_id: st.hiloCliente.elemento || null }, 1);
+      $("modal-mu-hcliente").hidden = true;
+      dibujar();
+      return;
+    }
     const hilos = Number(form.elements.hilos.value), hilo = Number(form.elements.hilocliente.value);
     if (!Number.isInteger(hilos) || hilos < 1 || hilos > 48) { $("mu-hc-error").textContent = "Los hilos del cliente van de 1 a 48"; return; }
     if (!Number.isInteger(hilo) || hilo < 1 || hilo > hilos) { $("mu-hc-error").textContent = `El hilo del cliente en este lugar va de 1 a ${hilos}`; return; }
@@ -1498,7 +1603,7 @@
     if (!st.puedeEditar) return;
     const menu = $("mu-menu"), cl = clienteEn(lugar);
     menu.innerHTML = `<li data-mu-cl-editar="1">${cl ? "Cambiar el cliente de esta salida…" : "Asignar un cliente a esta salida…"}</li>`
-      + (cl ? `<li data-mu-cl-ruta="1">Ruta de fusión de este cliente…</li><li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>` : "");
+      + (cl ? `<li data-mu-cl-ruta="1">Ruta de fusión de este cliente…</li><li data-mu-cl-baja="1">${infoCliente(cl).baja ? "Reactivar al cliente" : "Dar de baja al cliente"}</li><li data-mu-cl-quitar="1">Quitar ${infoCliente(cl).hilos > 1 ? `este hilo del cliente (${esc(cl.codigo_cliente || cl.nombre || "")}, H${cl.hilo_cliente || 1})` : `el cliente (${esc(cl.codigo_cliente || cl.nombre || "")})`}</li>` : "");
     menu.dataset.lugar = JSON.stringify(lugar);
     menu.style.left = `${evt.clientX}px`;
     menu.style.top = `${evt.clientY}px`;
@@ -1670,6 +1775,63 @@
     await cargarMufa(otro.id);
   }
 
+  // ------------------------------------------------------------------ acometidas (cables nuevos que salen de la mufa)
+  async function abrirAcometidaNueva() {
+    if (!st.puedeEditar) return;
+    if (nCambios() && !(await aplicar())) return;                                  // the acometida is made on what is saved
+    const f = $("mu-an-form");
+    f.elements.nombre.value = "";
+    f.elements.hilos.value = "2";
+    $("mu-an-error").textContent = "";
+    $("modal-mu-aco-nueva").hidden = false;
+    f.elements.nombre.focus();
+  }
+
+  async function crearAcometida(ev) {
+    ev.preventDefault();
+    const f = $("mu-an-form");
+    const r = await Redes.llamar("crear_acometida", { mufa_id: st.mufaId, nombre: f.elements.nombre.value, hilos: Number(f.elements.hilos.value) });
+    if (!r.ok) { $("mu-an-error").textContent = (r.errores ? Object.values(r.errores).join(" · ") : r.error); return; }
+    $("modal-mu-aco-nueva").hidden = true;
+    recargar(r);
+    mensaje(`${r.acometida.nombre}: acometida de ${r.acometida.hilos} hilos creada. Clic derecho en un hilo para asignarle un cliente; arrastre de un hilo a otro para conectarlo`, "ok");
+  }
+
+  async function abrirAcometida(c) {
+    if (!st.puedeEditar) return;
+    if (nCambios() && !(await aplicar())) return;
+    const cable = st.cables.find((x) => x.id === c.id) || c, f = $("mu-ac-form");
+    st.acometida = cable;
+    $("mu-ac-titulo").textContent = `Acometida ${cable.nombre}`;
+    $("mu-ac-info").textContent = `${cable.hilos ?? "?"} hilos · ${cable.tipo} · el otro extremo ${["mufa", "nodo", "odf"].includes(cable.otro.tipo) ? `está conectado a ${cable.otro.nombre}` : "todavía no está conectado a una mufa"}.`;
+    f.elements.nombre.value = cable.nombre;
+    f.elements.destino.innerHTML = `<option value="">${["mufa", "nodo", "odf"].includes(cable.otro.tipo) ? "— Dejarlo como está —" : "— Sin conectar —"}</option>`;
+    $("mu-ac-error").textContent = "";
+    $("modal-mu-aco").hidden = false;
+    const r = await Redes.llamar("acometida_mufas", { mufa_id: st.mufaId });
+    if (r.ok) f.elements.destino.innerHTML += r.mufas.map((m) => `<option value="${m.id}">${esc(m.nombre)}${m.distancia_m != null ? ` · a ${m.distancia_m < 1000 ? `${Math.round(m.distancia_m)} m` : `${(m.distancia_m / 1000).toFixed(1)} km`}` : ""}</option>`).join("");
+  }
+
+  async function guardarAcometida(ev) {
+    ev.preventDefault();
+    const f = $("mu-ac-form"), c = st.acometida;
+    const r = await Redes.llamar("actualizar_acometida", { mufa_id: st.mufaId, cable_id: c.id, nombre: f.elements.nombre.value, destino_mufa_id: f.elements.destino.value || null });
+    if (!r.ok) { $("mu-ac-error").textContent = (r.errores ? Object.values(r.errores).join(" · ") : r.error); return; }
+    $("modal-mu-aco").hidden = true;
+    recargar(r);
+    mensaje(f.elements.destino.value ? "Acometida conectada a la mufa elegida" : "Acometida guardada", "ok");
+  }
+
+  async function eliminarAcometida() {
+    const c = st.acometida;
+    if (!c || !(await Redes.confirmar(`¿Eliminar la acometida «${c.nombre}»? Se borran sus conexiones y los clientes que tiene en sus hilos.`, "Eliminar"))) return;
+    const r = await Redes.llamar("eliminar_acometida", { mufa_id: st.mufaId, cable_id: c.id });
+    if (!r.ok) { $("mu-ac-error").textContent = (r.errores ? Object.values(r.errores).join(" · ") : r.error); return; }
+    $("modal-mu-aco").hidden = true;
+    recargar(r);
+    mensaje("Acometida eliminada", "ok");
+  }
+
   // ------------------------------------------------------------------ mufa en continuidad (mufas de corte)
   /** The fibres written («1-12, 15») go from one cable to the other with the same number: the mufa makes those fusions and the rest are left alone. */
   async function abrirContinuidad() {
@@ -1748,7 +1910,7 @@
   function cambiosParaGuardar() {
     const salida = { posiciones: st.cables.filter((c) => c.movido).map((c) => ({ cable_id: c.id, x: Math.round(c.x), y: Math.round(c.y),
                                                                                   version: c.pos_version ?? null, espejo: !!c.espejo })),
-                     splitters: [], conectores: [], conexiones: [], hilos: [...st.hilos.values()], hilo_clientes: [...st.hiloClientes.values()], clientes_mufa: [...st.clientesMufa.values()],
+                     splitters: [], conectores: [], conexiones: [], hilos: [...st.hilos.values()], hilo_clientes: [...st.hiloClientes.values(), ...[...st.hiloSegmento.values()].map((x) => ({ ...x, segmento: true }))], clientes_mufa: [...st.clientesMufa.values()],
                      puerto_clientes: [...st.puertoClientes.values()].filter((x) => x.quitar ? st.splitters.has(x.splitter) : (st.splitters.get(x.splitter) || { salidas: 0 }).salidas >= x.numero), notas: [] };
     st.sucios.forEach((k) => {
       const [tabla, ...resto] = k.split(":");
@@ -1819,7 +1981,7 @@
   // ------------------------------------------------------------------ eventos
   function teclado(e) {
     if ($("modal-mufa").hidden || !$("modal-mu-objeto").hidden || !$("modal-mu-nota").hidden || !$("modal-confirmar").hidden) return;
-    const encima = ["modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente", "modal-mu-rf", "modal-mu-cont"].filter((id) => !$(id).hidden);
+    const encima = ["modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente", "modal-mu-rf", "modal-mu-cont", "modal-mu-aco-nueva", "modal-mu-aco"].filter((id) => !$(id).hidden);
     if (encima.length) {
       if (e.key === "Escape") encima.forEach((id) => { $(id).hidden = true; });
       return;
@@ -1932,6 +2094,23 @@
     $("mu-no-texto").addEventListener("input", (e) => { st.colorNota.texto = e.target.value; });
     $("mu-no-colores-quitar").addEventListener("click", () => { st.colorNota = { fondo: null, texto: null }; $("mu-no-fondo").value = "#fff8c6"; $("mu-no-texto").value = "#222222"; });
     $("mu-continuidad").addEventListener("click", () => { abrirContinuidad(); });
+    $("mu-nodo").addEventListener("click", () => { if (window.Nodo) window.Nodo.abrir(st.mufaId); });
+    ["mu-acometida", "mu-acometida-b"].forEach((id) => $(id).addEventListener("click", () => { abrirAcometidaNueva(); }));
+    $("mu-an-form").addEventListener("submit", crearAcometida);
+    ["mu-an-x", "mu-an-cancelar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-aco-nueva").hidden = true; }));
+    $("mu-ac-form").addEventListener("submit", guardarAcometida);
+    $("mu-ac-eliminar").addEventListener("click", eliminarAcometida);
+    ["mu-ac-x", "mu-ac-cerrar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-aco").hidden = true; }));
+    $("mu-baja").addEventListener("click", () => alternarBaja());
+    // the ribbon: the tab chosen shows its panel (and is remembered)
+    const ribbon = $("modal-mufa");
+    const verPestana = (k) => {
+      ribbon.querySelectorAll("[data-rb-pestana]").forEach((x) => { const on = x.dataset.rbPestana === k; x.classList.toggle("activa", on); x.setAttribute("aria-selected", on ? "true" : "false"); });
+      ribbon.querySelectorAll("[data-rb-panel]").forEach((x) => { x.hidden = x.dataset.rbPanel !== k; });
+      try { localStorage.setItem("mufa-pestana", k); } catch (e) { /* not remembered */ }
+    };
+    ribbon.querySelectorAll("[data-rb-pestana]").forEach((x) => x.addEventListener("click", () => verPestana(x.dataset.rbPestana)));
+    try { const k = localStorage.getItem("mufa-pestana"); if (k && ribbon.querySelector(`[data-rb-panel="${k}"]`)) verPestana(k); } catch (e) { /* the first tab */ }
     $("mu-ct-form").addEventListener("submit", aplicarContinuidad);
     $("mu-ct-quitar").addEventListener("click", () => aplicarContinuidad(null, true));
     ["mu-ct-x", "mu-ct-cancelar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-cont").hidden = true; }));
@@ -1955,6 +2134,7 @@
     $("mu-menu").addEventListener("click", (e) => {
       const li = e.target.closest("li");
       if (!li) return;
+      if (li.dataset.muClBaja) { alternarBaja(clienteEn(JSON.parse($("mu-menu").dataset.lugar))); ocultarMenu(); return; }
       if (li.dataset.muClEditar || li.dataset.muClQuitar || li.dataset.muClRuta) {
         const lugar = JSON.parse($("mu-menu").dataset.lugar);
         if (li.dataset.muClRuta) abrirRutaFusion(lugar); else if (li.dataset.muClEditar) abrirClienteHilo(lugar); else quitarClienteHilo(lugar);
@@ -1965,6 +2145,8 @@
       if (li.dataset.muTrazar) trazarHilo(hilo);
       if (li.dataset.muEstado) cambiarEstado(hilo, li.dataset.muEstado);
       if (li.dataset.muCliente) abrirClienteHilo(hilo);
+      if (li.dataset.muSegmento) abrirClienteHilo({ hilo, segmento: true });
+      if (li.dataset.muSegmentoQuitar) quitarClienteHilo({ hilo, segmento: true });
       if (li.dataset.muClienteRuta) abrirRutaFusion({ hilo });
       if (li.dataset.muClienteQuitar) quitarClienteHilo(hilo);
       if (li.dataset.muQuitar) { st.seleccion = [{ tipo: "conexion", id: /^n\d+$/.test(li.dataset.muQuitar) ? li.dataset.muQuitar : Number(li.dataset.muQuitar) }]; eliminarSeleccion(); }

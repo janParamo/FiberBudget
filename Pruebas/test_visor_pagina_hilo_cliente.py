@@ -126,3 +126,39 @@ async def _lista_de_la_mufa(mundo_):
 
 def test_only_the_clients_of_the_mufa_are_offered_for_its_fibres(mundo):
     asyncio.run(_lista_de_la_mufa(mundo))
+
+
+async def _segmento(mundo_):
+    """Right click on a fibre → «Asignar un cliente al segmento del hilo…»: the client is drawn on the line of the fibre and the one at its end stays."""
+    con, admin, proy, ids = mundo_
+    hilo3 = next(f for c in mufa.leer(con, admin, mufa_id=ids["a"])["cables"] for f in c["fibras"] if f["numero"] == 3)["id"]
+    async with pagina_edge(1366, 768, api=crear_api_prueba(con)) as p:
+        await p.esperar("window.EditorMufa && window.Redes && window.Redes.disponible", 30)
+        await p.evaluar("window.EditorMufa.abrir(%d, 'MF Uno'); true" % ids["a"])
+        await p.esperar("window.EditorMufa._st.datos && window.EditorMufa._st.cables.length === 1", 15)
+        # the client at the end of the fibre (as always) and another one on its segment
+        await _elegir(p, "data-mu-cliente", hilo3)
+        await p.evaluar("""(() => { const f = document.getElementById('mu-hc-form'); f.elements.manual.checked = true; f.elements.manual.dispatchEvent(new Event('change'));
+          f.elements.codigo.value = 'C12345'; f.elements.nombre.value = 'Casa Final'; f.requestSubmit(); return true; })()""")
+        await _elegir(p, "data-mu-segmento", hilo3)
+        await p.esperar("!document.getElementById('modal-mu-hcliente').hidden", 5)
+        assert "segmento" in await p.evaluar("document.getElementById('mu-hc-titulo').textContent")
+        assert await p.evaluar("document.querySelector('#mu-hc-form .vp-fila').hidden") is True          # no fibres of its own to count here
+        await p.evaluar("""(() => { const f = document.getElementById('mu-hc-form'); f.elements.manual.checked = true; f.elements.manual.dispatchEvent(new Event('change'));
+          f.elements.codigo.value = 'C28300'; f.elements.nombre.value = 'Inversiones Germanas'; f.elements.servicio.value = 'ID296230'; f.requestSubmit(); return true; })()""")
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.cliente-segmento').length") == 1
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.cliente-hilo').length") == 1           # the one at the end is still its own icon
+        await p.evaluar("document.getElementById('mu-aplicar').click(); true")
+        await p.esperar("window.EditorMufa._st.hiloSegmento.size === 0 && document.getElementById('mu-cambios').textContent === 'Guardado'", 10)
+        fila = sorted((f["codigo_cliente"], f["segmento"]) for f in con.execute("SELECT codigo_cliente, segmento FROM redes.hilo_servicios WHERE hilo_id = %s AND borrado_en IS NULL", (hilo3,)).fetchall())
+        assert fila == [("C12345", False), ("C28300", True)]
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.cliente-segmento').length") == 1
+        # taken off from the menu
+        await p.evaluar("(%s)(%d)" % (MENU, hilo3))
+        await p.evaluar("document.querySelector('#mu-menu li[data-mu-segmento-quitar]').click(); true")
+        assert await p.evaluar("window.EditorMufa._st.capa.find('.cliente-segmento').length") == 0
+        assert await p.errores() == []
+
+
+def test_a_client_is_put_on_the_segment_of_a_fibre_without_replacing_the_one_at_its_end(mundo):
+    asyncio.run(_segmento(mundo))

@@ -41,7 +41,7 @@
   const simboloDe = (e) => SIMBOLO[e.tipo === "mufa" ? (e.subtipo || "empalme") : e.tipo] || SIMBOLO.empalme;
   const ICONOS_BARRA = {                                      // the icons of the buttons of the window (put when it is connected)
     "lz-nuevo": "M12 5v14M5 12h14", "lz-renombrar": "M4 20h4L19 9l-4-4L4 16zM13 7l4 4", "lz-borrar": "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6",
-    "lz-exportar": "M12 3v12M8 11l4 4 4-4M4 17v3h16v-3", "lz-recargar": "M20 11a8 8 0 1 0-2.3 6.3M20 4v7h-7",
+    "lz-exportar": "M12 3v12M8 11l4 4 4-4M4 17v3h16v-3", "lz-exp-png": "M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M16 9h.01", "lz-exp-pdf": "M6 3h9l4 4v14H6zM14 3v5h5M9 14h6M9 17h4", "lz-recargar": "M20 11a8 8 0 1 0-2.3 6.3M20 4v7h-7",
     "lz-kmz": "M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10zM12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "lz-validar-todo": "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM8 12l3 3 5-6",
     "lz-fuente": "M13 3 5 13h6l-1 8 8-10h-6z", "lz-conectar": "M7 12h10M5 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM23 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
     "lz-renombrar-mufa": "M4 20h4L19 9l-4-4L4 16zM13 7l4 4", "lz-quitar": "M4 4h16v16H4zM8 12h8", "lz-eliminar-cable": "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6",
@@ -1261,7 +1261,6 @@
       const b = $(id);
       if (!b) return;
       b.classList.add("con-icono");
-      if (["lz-renombrar", "lz-borrar", "lz-recargar"].includes(id)) { b.classList.add("solo-icono"); b.setAttribute("aria-label", b.textContent.trim()); }
       b.insertAdjacentHTML("afterbegin", `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`);
     });
     $("lz-deshacer").addEventListener("click", deshacer);
@@ -1280,10 +1279,18 @@
       window.addEventListener("mousemove", irDesdeMini); window.addEventListener("mouseup", fin);
     });
     $("lz-konva").addEventListener("mousedown", empezarBanda, true);
-    const menuExp = (ver) => { $("lz-exp-menu").hidden = !ver; $("lz-exportar").setAttribute("aria-expanded", ver ? "true" : "false"); };
-    $("lz-exportar").addEventListener("click", (e) => { e.stopPropagation(); menuExp($("lz-exp-menu").hidden); });
-    $("lz-exp-menu").addEventListener("click", (e) => { const b = e.target.closest("[data-lz-exp]"); if (b) { menuExp(false); exportar(b.dataset.lzExp); } });
-    document.addEventListener("click", () => { if (!$("lz-exp-menu").hidden) menuExp(false); });
+    $("lz-exp-png").addEventListener("click", () => exportar("png"));
+    $("lz-exp-pdf").addEventListener("click", () => exportar("pdf"));
+    // the ribbon: the tab chosen shows its panel (and is remembered)
+    const cinta = $("modal-lz");
+    const verPestana = (k) => {
+      cinta.querySelectorAll("[data-rb-pestana]").forEach((x) => { const on = x.dataset.rbPestana === k; x.classList.toggle("activa", on); x.setAttribute("aria-selected", on ? "true" : "false"); });
+      cinta.querySelectorAll("[data-rb-panel]").forEach((x) => { x.hidden = x.dataset.rbPanel !== k; });
+      GUARDA_PREF("esquema-pestana", k);
+    };
+    cinta.querySelectorAll("[data-rb-pestana]").forEach((x) => x.addEventListener("click", () => verPestana(x.dataset.rbPestana)));
+    const recordada = LEE_PREF("esquema-pestana");
+    if (recordada && cinta.querySelector(`[data-rb-panel="${recordada}"]`)) verPestana(recordada);
     $("lz-quitar").addEventListener("click", quitarSeleccion);
     $("lz-renombrar-mufa").addEventListener("click", renombrarCaja);
     $("lz-eliminar-cable").addEventListener("click", eliminarCable);
