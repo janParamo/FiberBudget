@@ -35,3 +35,17 @@ body.tema-oscuro .nd-baldosa.libre { background: #123524; color: #bff0cc; }
 body.tema-oscuro .nd-baldosa.ocupada { background: #10284f; color: #cfe0ff; }
 .nd-visio { color: #8e5ad7 !important; font-weight: 600; }
 .nd-cables { opacity: 0.85; line-height: 1.35; }
+
+.nd-odfs { grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); }
+.nd-odf-cuerpo { display: flex; align-items: flex-start; gap: 14px; }
+.nd-odf-cuerpo .nd-mosaico { flex: 1 1 auto; min-width: 0; }
+.nd-odf-foto { flex: 0 0 34%; max-width: 340px; margin: 0; }
+.nd-odf-foto img { width: 100%; max-height: 300px; object-fit: contain; border-radius: 8px; border: 1px solid var(--borde); background: #fff; cursor: zoom-in; display: block; }
+.nd-fila { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.nd-foto-vista { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; }
+.nd-foto-vista img { max-width: 220px; max-height: 160px; border-radius: 6px; border: 1px solid var(--borde); background: #fff; }
+.nd-lightbox { position: fixed; inset: 0; z-index: 3700; background: rgba(0, 0, 0, 0.82); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.nd-lightbox[hidden] { display: none; }
+.nd-lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 8px; background: #fff; }
+.nd-lightbox button { position: absolute; top: 14px; right: 18px; }
+.nota.error { color: #e5484d; }

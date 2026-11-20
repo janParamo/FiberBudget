@@ -47,7 +47,12 @@ def leer(con: Any, actor: dict[str, Any], *, nodo_id: int) -> dict[str, Any]:
     """The node with its ODFs (ports free / used), its OLTs, the links between them and the cables whose fibres can be assigned."""
     n = _nodo(con, actor, nodo_id)
     editar = proyectos.puede_editar(con, actor, n["proyecto_id"])
-    odfs = [dict(f) for f in con.execute("SELECT id, nombre, puertos, version, fuente, estimado, ref_elemento_id FROM redes.nodo_odfs WHERE nodo_id = %s AND borrado_en IS NULL ORDER BY lower(nombre), id", (n["id"],)).fetchall()]
+    odfs = [dict(f) for f in con.execute("SELECT id, nombre, puertos, version, fuente, estimado, ref_elemento_id, columnas, filas, imagen IS NOT NULL AS tiene_imagen, imagen_version "
+                                         "FROM redes.nodo_odfs WHERE nodo_id = %s AND borrado_en IS NULL ORDER BY lower(nombre), id", (n["id"],)).fetchall()]
+    for o in odfs:                                    # how the ports are laid out: the one the person set, else 12 columns (or fewer ports)
+        o["disposicion_propia"] = bool(o["columnas"])
+        o["columnas"] = o["columnas"] or min(o["puertos"], COLUMNAS_POR_OMISION)
+        o["filas"] = -(-o["puertos"] // o["columnas"]) if not o["disposicion_propia"] else o["filas"]
     olts = [dict(f) for f in con.execute("SELECT id, nombre, puertos, version, fuente, estimado FROM redes.nodo_olts WHERE nodo_id = %s AND borrado_en IS NULL ORDER BY lower(nombre), id", (n["id"],)).fetchall()]
     for o in odfs:                                    # the cables the ODF has in the Visio (towards mufas): kept as they were, shown beside the ODF
         o["cables_visio"] = [{"nombre": c["nombre"], "hilos": c["hilos"], "otro": c["otro_nombre"], "otro_tipo": c["otro_tipo"]} for c in con.execute(
@@ -76,8 +81,39 @@ def leer(con: Any, actor: dict[str, Any], *, nodo_id: int) -> dict[str, Any]:
     for o in olts:
         usados = [e for e in enlaces if e["olt_id"] == o["id"]]
         o["ocupados"], o["libres"] = len(usados), o["puertos"] - len(usados)
+    # the mufa where the node would be connected: the nearest one of its project that has no cable to it yet (only while the node has no cable to a mufa)
+    cercana = None
+    if n["lat"] is not None and not any(c["otro"]["tipo"] == "mufa" for c in cables):
+        f = con.execute(
+            "SELECT e.id, e.nombre, ST_Distance(e.ubicacion::geography, ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography) AS d FROM redes.elementos e "
+            "WHERE e.proyecto_id = %(p)s AND e.borrado_en IS NULL AND e.tipo = 'mufa' AND e.ubicacion IS NOT NULL ORDER BY d LIMIT 1", {"lat": n["lat"], "lon": n["lon"], "p": n["proyecto_id"]}).fetchone()
+        if f is not None:
+            cercana = {"id": f["id"], "nombre": f["nombre"], "distancia_m": round(float(f["d"]), 1)}
     return {"nodo": {"id": n["id"], "nombre": n["nombre"], "subtipo": n["subtipo"], "lat": n["lat"], "lon": n["lon"], "proyecto_id": n["proyecto_id"], "puede_editar": editar},
-            "odfs": odfs, "olts": olts, "enlaces": enlaces, "cables": cables}
+            "odfs": odfs, "olts": olts, "enlaces": enlaces, "cables": cables, "mufa_cercana": cercana}
+
+
+def conectar_mufa(con: Any, actor: dict[str, Any], *, nodo_id: int, mufa_id: int, hilos: Any = 24, nombre: Any = None) -> dict[str, Any]:
+    """Connects the node to a mufa of its project with a new cable (troncal, ADSS) of `hilos` fibres: the cable whose fibres are then assigned to the OLT ports."""
+    from visor_rutas.redes import red
+    n = _nodo(con, actor, nodo_id, editar=True)
+    m = con.execute("SELECT id, nombre, ST_Y(ubicacion) AS lat, ST_X(ubicacion) AS lon FROM redes.elementos WHERE id = %s AND proyecto_id = %s AND tipo = 'mufa' AND borrado_en IS NULL",
+                    (int(mufa_id), n["proyecto_id"])).fetchone()
+    if m is None or m["lat"] is None:
+        raise DatosInvalidos({"mufa": "Elija una mufa de este proyecto (con coordenada)"})
+    try:
+        cantidad = int(hilos)
+    except (TypeError, ValueError):
+        raise DatosInvalidos({"hilos": "los hilos son un número"}) from None
+    if cantidad not in red.HILOS or cantidad < 12:
+        raise DatosInvalidos({"hilos": "el cable puede ser de 12, 24, 48, 72, 96 o 144 hilos"})
+    if n["lat"] is None:
+        raise DatosInvalidos({"nodo": "El nodo no tiene coordenada"})
+    limpio = " ".join(str(nombre or "").split())[:160] or f"{n['nombre']} – {m['nombre']}"
+    red.guardar(con, actor, proyecto_id=n["proyecto_id"], cambios={"cables": [{
+        "id": "cab", "nombre": limpio, "clase": "troncal", "tipo": "ADSS", "hilos": cantidad, "hilos_por_buffer": 12, "origen_id": n["id"], "destino_id": m["id"],
+        "vertices": [{"lat": float(n["lat"]), "lon": float(n["lon"]), "elemento_id": n["id"]}, {"lat": float(m["lat"]), "lon": float(m["lon"]), "elemento_id": m["id"]}]}]})
+    return leer(con, actor, nodo_id=n["id"])
 
 
 # --------------------------------------------------------------------------- ODF y OLT
@@ -122,15 +158,91 @@ def _guardar(con: Any, actor: dict[str, Any], tabla: str, etiqueta: str, columna
                 raise DatosInvalidos({etiqueta: f"el puerto {usado} está en uso: no puede tener menos de {usado} puertos"})
             valores["puertos"] = nuevo
             valores["estimado"] = False
+            if tabla == "nodo_odfs" and actual["columnas"] and not _disposicion_cubre(actual["columnas"], actual["filas"], nuevo):
+                valores["columnas"] = valores["filas"] = None                       # the layout no longer fits the new number of ports: the automatic one
         if valores:
             antes, despues = repositorio.actualizar(con, tabla, actual["id"], actual["version"], valores, actor["id"])
             repositorio.registrar(con, actor["id"], tabla[:-1], actual["id"], "editar", repositorio.diferencias({k: antes[k] for k in valores}, {k: despues[k] for k in valores}), proyecto_id=n["proyecto_id"])
     return leer(con, actor, nodo_id=n["id"])
 
 
-def guardar_odf(con: Any, actor: dict[str, Any], *, nodo_id: int, odf_id: Any = None, nombre: Any = None, puertos: Any = None, eliminar: bool = False) -> dict[str, Any]:
-    """Creates an ODF of the node (name and number of ports), renames / resizes it (never below its highest port in use) or deletes it."""
-    return _guardar(con, actor, "nodo_odfs", "ODF", "odf_id", nodo_id, odf_id, nombre, puertos, bool(eliminar))
+COLUMNAS_POR_OMISION = 12
+MAX_LADO = 144
+
+
+def _disposicion_cubre(columnas: int, filas: int, puertos: int) -> bool:
+    """Columns × rows cover the ports and no row is left empty."""
+    return columnas >= 1 and filas >= 1 and columnas * filas >= puertos and (filas - 1) * columnas < puertos
+
+
+def _disposicion(columnas: Any, filas: Any, puertos: int) -> dict[str, Any]:
+    """The layout of an ODF: {columnas, filas}, or both None (the automatic one) when none is given. With only one of them the other is worked out."""
+    vacio = lambda v: v in (None, "", 0, "0")
+    if vacio(columnas) and vacio(filas):
+        return {"columnas": None, "filas": None}
+    try:
+        c = None if vacio(columnas) else int(columnas)
+        f = None if vacio(filas) else int(filas)
+    except (TypeError, ValueError):
+        raise DatosInvalidos({"ODF": "las columnas y las filas son números"}) from None
+    if c is None:
+        c = -(-puertos // f)
+    if f is None:
+        f = -(-puertos // c)
+    if not (1 <= c <= MAX_LADO and 1 <= f <= MAX_LADO):
+        raise DatosInvalidos({"ODF": f"las columnas y las filas van de 1 a {MAX_LADO}"})
+    if c * f < puertos:
+        raise DatosInvalidos({"ODF": f"{c} × {f} son {c * f} lugares: no alcanzan para los {puertos} puertos"})
+    if (f - 1) * c >= puertos:
+        raise DatosInvalidos({"ODF": f"{c} × {f} deja una fila vacía: con {c} columnas los {puertos} puertos caben en {-(-puertos // c)} filas"})
+    return {"columnas": c, "filas": f}
+
+
+def guardar_odf(con: Any, actor: dict[str, Any], *, nodo_id: int, odf_id: Any = None, nombre: Any = None, puertos: Any = None, eliminar: bool = False,
+                columnas: Any = None, filas: Any = None, imagen: Any = None, quitar_imagen: bool = False) -> dict[str, Any]:
+    """Creates an ODF of the node (name and number of ports), renames / resizes it (never below its highest port in use), changes how its ports are laid out (`columnas` × `filas`,
+    which must cover the ports; both empty or 0: the automatic layout), puts the photo of the real ODF (`imagen`: a data URL of a PNG / JPEG / WEBP / GIF of up to 2 MB) or takes it
+    off (`quitar_imagen`), or deletes it."""
+    cambia_aspecto = columnas is not None or filas is not None or bool(imagen) or bool(quitar_imagen)
+    if odf_id in (None, "", 0) or eliminar or not cambia_aspecto:
+        if odf_id in (None, "", 0) and cambia_aspecto and not eliminar:
+            r = _guardar(con, actor, "nodo_odfs", "ODF", "odf_id", nodo_id, None, nombre, puertos, False)
+            nuevo = max(r["odfs"], key=lambda o: o["id"])["id"]
+            return guardar_odf(con, actor, nodo_id=nodo_id, odf_id=nuevo, columnas=columnas, filas=filas, imagen=imagen, quitar_imagen=quitar_imagen)
+        return _guardar(con, actor, "nodo_odfs", "ODF", "odf_id", nodo_id, odf_id, nombre, puertos, bool(eliminar))
+    n = _nodo(con, actor, nodo_id, editar=True)
+    with con.transaction():
+        actual = con.execute("SELECT * FROM redes.nodo_odfs WHERE id = %s AND nodo_id = %s AND borrado_en IS NULL FOR UPDATE", (int(odf_id), n["id"])).fetchone()
+        if actual is None:
+            raise NoEncontrado("El ODF ya no existe en este nodo")
+        valores: dict[str, Any] = {}
+        if columnas is not None or filas is not None:
+            nuevo_puertos = _puertos(puertos, "ODF") if puertos not in (None, "") else actual["puertos"]
+            valores.update(_disposicion(columnas, filas, nuevo_puertos))
+        if imagen:
+            datos, tipo, _ = proyectos.procesar_imagen(imagen)
+            valores.update(imagen=datos, imagen_tipo=tipo, imagen_version=actual["imagen_version"] + 1)
+        elif quitar_imagen and actual["imagen"] is not None:
+            valores.update(imagen=None, imagen_tipo=None, imagen_version=actual["imagen_version"] + 1)
+        if valores:
+            repositorio.actualizar(con, "nodo_odfs", actual["id"], actual["version"], valores, actor["id"])
+            cambio = {k: [None, "…"] for k in ("columnas", "filas") if k in valores}
+            if "imagen" in valores:
+                cambio["foto"] = [None, "puesta" if valores["imagen"] else "quitada"]
+            repositorio.registrar(con, actor["id"], "nodo_odf", actual["id"], "editar", cambio, proyecto_id=n["proyecto_id"])
+    if nombre not in (None, "") or puertos not in (None, ""):
+        return _guardar(con, actor, "nodo_odfs", "ODF", "odf_id", nodo_id, odf_id, nombre, puertos, False)
+    return leer(con, actor, nodo_id=n["id"])
+
+
+def imagen_odf(con: Any, actor: dict[str, Any], *, odf_id: int) -> dict[str, Any]:
+    """The photo of the real ODF as a data URL (None when it has none). Read apart from `leer` so the node does not carry the pictures every time."""
+    f = con.execute("SELECT o.imagen, o.imagen_tipo, o.imagen_version, n.proyecto_id FROM redes.nodo_odfs o JOIN redes.elementos n ON n.id = o.nodo_id WHERE o.id = %s AND o.borrado_en IS NULL", (int(odf_id),)).fetchone()
+    if f is None:
+        raise NoEncontrado("El ODF ya no existe")
+    if not proyectos.puede_ver(con, actor, f["proyecto_id"]):
+        raise SinPermiso("No tiene acceso a este proyecto")
+    return {"imagen": proyectos._data_url(f["imagen"], f["imagen_tipo"]), "version": f["imagen_version"]}
 
 
 def guardar_olt(con: Any, actor: dict[str, Any], *, nodo_id: int, olt_id: Any = None, nombre: Any = None, puertos: Any = None, eliminar: bool = False) -> dict[str, Any]:

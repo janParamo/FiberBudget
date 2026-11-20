@@ -248,6 +248,7 @@
     st.cables.forEach(dibujarCable);
     st.splitters.forEach(dibujarSplitter);
     st.conectores.forEach(dibujarConector);
+    dibujarNodo();
     dibujarClientes();
     dibujarConexiones();
     dibujarNotas();
@@ -835,6 +836,7 @@
       st.capaLineas.add(linea);
     });
     lineasClientes();
+    lineasNodo();
     st.capaLineas.batchDraw();
   }
 
@@ -1697,11 +1699,13 @@
     if (!r.ok) { mensaje(r.error, "error"); return false; }
     cargar(r);
     st.mufaId = id;
+    st.nodo = null;
     document.querySelectorAll("#modal-mufa .mu-edicion").forEach((g) => { g.hidden = !st.puedeEditar; });
     pintarMigas();
     dibujar();
     ajustar();
     if (window.BandejasMufa) window.BandejasMufa.pintar();
+    cargarNodo();
     return true;
   }
 
@@ -1773,6 +1777,148 @@
     const i = st.migas.findIndex((m) => m.id === otro.id);
     st.migas = i >= 0 ? st.migas.slice(0, i + 1) : [...st.migas, { id: otro.id, nombre: otro.nombre }];
     await cargarMufa(otro.id);
+  }
+
+  // ------------------------------------------------------------------ el nodo en su lienzo: sus ODF, sus OLT y la mufa donde se conectará
+  // The node is the physical place: when it is opened its ODFs (a tile for each port) and its OLTs (a circle for each fibre, the free ones in light blue) are drawn at the left, in
+  // the order of the chain OLT → ODF → cable → mufa; the lines are the links already made. While the node has no cable to a mufa the nearest one is drawn dashed, with the button
+  // that connects it. A click on any of them opens «ODF y OLT» (redes/nodo.js), where they are edited.
+  const NODO_X_OLT = -780, NODO_X_ODF = -330, NODO_TILE = 20, NODO_PASO = 23;
+
+  async function cargarNodo() {
+    st.nodo = null;
+    if (!st.datos || st.datos.mufa.tipo !== "nodo") return;
+    const id = st.mufaId, r = await Redes.llamar("nodo", { nodo_id: id });
+    if (!r.ok || st.mufaId !== id) return;
+    st.nodo = r;
+    dibujar();
+    ajustar();
+  }
+
+  function marcoNodo(g, ancho, alto, color, discontinuo = false) {
+    g.add(new Konva.Rect({ width: ancho, height: alto, fill: "#fff", stroke: color, strokeWidth: 1.6, cornerRadius: 8, dash: discontinuo ? [7, 5] : null, shadowColor: "#000", shadowOpacity: 0.08, shadowBlur: 6, name: "marco" }));
+  }
+  const abrirNodoModal = () => { if (window.Nodo) window.Nodo.abrir(st.mufaId); };
+
+  function tarjetaOdf(o, x, y) {
+    const cols = o.columnas, filas = Math.ceil(o.puertos / cols), ancho = Math.max(170, cols * NODO_PASO + 20), alto = 48 + filas * NODO_PASO + 10;
+    const g = new Konva.Group({ x, y, name: "nodo-odf" });
+    marcoNodo(g, ancho, alto, "#2e9d4a");
+    g.add(new Konva.Text({ x: 10, y: 7, width: ancho - 20, text: o.nombre, fontSize: 13, fontStyle: "bold", fill: "#14532d", wrap: "none", ellipsis: true, listening: false }));
+    g.add(new Konva.Text({ x: 10, y: 24, width: ancho - 20, text: `ODF · ${o.puertos} puertos · ${o.libres} libres`, fontSize: 10.5, fill: "#5b6270", listening: false }));
+    for (let i = 0; i < o.puertos; i++) {
+      const n = i + 1, e = st.nodo.enlaces.find((q) => q.odf_id === o.id && q.odf_puerto === n);
+      const tx = 10 + (i % cols) * NODO_PASO, ty = 44 + Math.floor(i / cols) * NODO_PASO;
+      const baldosa = new Konva.Group({ x: tx, y: ty });
+      baldosa.add(new Konva.Rect({ width: NODO_TILE, height: NODO_TILE, cornerRadius: 4, fill: e ? "#dbe8ff" : "#dff5e5", stroke: e ? "#1f6feb" : "#2e9d4a", strokeWidth: 1.5 }));
+      baldosa.add(new Konva.Text({ width: NODO_TILE, y: 6, align: "center", text: String(n), fontSize: 8, fontStyle: "bold", fill: e ? "#1e3a8a" : "#14532d", listening: false }));
+      baldosa.on("mouseenter", () => tooltip(`<div class="mu-tt-titulo">${esc(o.nombre)} · puerto ${n}</div><div>${e ? `Ocupado: ${esc(e.olt_nombre)} (hilo ${e.olt_puerto})${e.hilo_numero ? ` · ${esc(e.cable_nombre)} hilo ${e.hilo_numero}${e.destino_nombre ? ` → ${esc(e.destino_nombre)}` : ""}` : ""}` : "Libre"}</div><div class="mu-tt-sec">Clic: abrir ODF y OLT</div>`));
+      baldosa.on("mouseleave", () => tooltip(null));
+      g.add(baldosa);
+      st.nodoPuertos.set(`odf:${o.id}:${n}`, { x: x + tx + NODO_TILE / 2, y: y + ty + NODO_TILE / 2, lado: 1, izq: x + tx, der: x + tx + NODO_TILE });
+    }
+    g.on("click tap", abrirNodoModal);
+    g.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; });
+    g.on("mouseleave", () => { st.stage.container().style.cursor = ""; });
+    st.capa.add(g);
+    return y + alto;
+  }
+
+  function tarjetaOlt(o, x, y) {
+    const cols = Math.min(o.puertos, 8), filas = Math.ceil(o.puertos / cols), paso = 24, ancho = Math.max(190, cols * paso + 24), alto = 60 + filas * paso + 8;
+    const g = new Konva.Group({ x, y, name: "nodo-olt" });
+    marcoNodo(g, ancho, alto, "#1f6feb");
+    g.add(new Konva.Text({ x: 10, y: 7, width: ancho - 20, text: o.nombre, fontSize: 13, fontStyle: "bold", fill: "#1e3a8a", wrap: "none", ellipsis: true, listening: false }));
+    g.add(new Konva.Text({ x: 10, y: 24, width: ancho - 20, text: `OLT · ${o.puertos} hilos · ${o.libres} libres`, fontSize: 10.5, fill: "#5b6270", listening: false }));
+    g.add(new Konva.Text({ x: 10, y: 38, width: ancho - 20, text: "celeste = hilo libre · azul = en uso", fontSize: 9, fill: "#8a93a1", listening: false }));
+    for (let i = 0; i < o.puertos; i++) {
+      const n = i + 1, e = st.nodo.enlaces.find((q) => q.olt_id === o.id && q.olt_puerto === n);
+      const cx = 20 + (i % cols) * paso, cy = 64 + Math.floor(i / cols) * paso;
+      const c = new Konva.Circle({ x: cx, y: cy, radius: 9, fill: e ? "#1f6feb" : "#ffffff", stroke: e ? "#0b3d91" : COLOR_LIBRE, strokeWidth: e ? 1.5 : 2.5 });
+      c.on("mouseenter", () => tooltip(`<div class="mu-tt-titulo">${esc(o.nombre)} · hilo ${n}</div><div>${e ? `En uso${e.odf_nombre ? `: ${esc(e.odf_nombre)} puerto ${e.odf_puerto}` : ""}${e.hilo_numero ? ` · ${esc(e.cable_nombre)} hilo ${e.hilo_numero}${e.destino_nombre ? ` → ${esc(e.destino_nombre)}` : ""}` : ""}` : "Libre: sin ODF ni mufa"}</div><div class="mu-tt-sec">Clic: abrir ODF y OLT</div>`));
+      c.on("mouseleave", () => tooltip(null));
+      g.add(c);
+      if (o.puertos <= 64) g.add(new Konva.Text({ x: cx - 9, y: cy - 4.5, width: 18, align: "center", text: String(n), fontSize: 8, fill: e ? "#fff" : "#0b6a9b", listening: false }));
+      st.nodoPuertos.set(`olt:${o.id}:${n}`, { x: x + cx, y: y + cy, lado: 1, der: x + cx + 9 });
+    }
+    g.on("click tap", abrirNodoModal);
+    g.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; });
+    g.on("mouseleave", () => { st.stage.container().style.cursor = ""; });
+    st.capa.add(g);
+    return y + alto;
+  }
+
+  /** The nearest mufa, dashed: «the mufa where the connection will be made», with the button that makes the cable. */
+  function tarjetaMufaNodo(m, x, y) {
+    const g = new Konva.Group({ x, y, name: "nodo-mufa" });
+    marcoNodo(g, 250, 124, "#6b7280", true);
+    g.add(new Konva.Text({ x: 12, y: 8, width: 226, text: "Mufa donde se conectará", fontSize: 11, fill: "#6b7280", listening: false }));
+    g.add(new Konva.Text({ x: 12, y: 26, width: 226, text: m.nombre, fontSize: 14, fontStyle: "bold", fill: "#b91c1c", wrap: "none", ellipsis: true, listening: false }));
+    g.add(new Konva.Text({ x: 12, y: 46, width: 226, text: `la más cercana al nodo (${m.distancia_m < 1000 ? `${Math.round(m.distancia_m)} m` : `${(m.distancia_m / 1000).toFixed(1)} km`}) · sin cable todavía`, fontSize: 10.5, fill: "#5b6270", listening: false }));
+    if (st.puedeEditar) {
+      const b = new Konva.Group({ x: 12, y: 78 });
+      b.add(new Konva.Rect({ width: 226, height: 30, fill: "#e7f0ff", stroke: "#1f6feb", cornerRadius: 5 }));
+      b.add(new Konva.Text({ x: 0, y: 9, width: 226, align: "center", text: "Conectar el nodo con un cable…", fontSize: 12, fill: "#1e429f", listening: false }));
+      b.on("click tap", (e) => { e.cancelBubble = true; pedirConexionNodo(m); });
+      b.on("mouseenter", () => { st.stage.container().style.cursor = "pointer"; });
+      b.on("mouseleave", () => { st.stage.container().style.cursor = ""; });
+      g.add(b);
+    }
+    st.capa.add(g);
+  }
+
+  function dibujarNodo() {
+    st.nodoPuertos = new Map();
+    const d = st.nodo;
+    if (!d || st.datos.mufa.tipo !== "nodo") return;
+    let yOdf = 30, yOlt = 30;
+    d.odfs.forEach((o) => { yOdf = tarjetaOdf(o, NODO_X_ODF, yOdf) + 24; });
+    d.olts.forEach((o) => { yOlt = tarjetaOlt(o, NODO_X_OLT, yOlt) + 24; });
+    if (!d.odfs.length && !d.olts.length) {
+      const g = new Konva.Group({ x: NODO_X_OLT, y: 30, name: "nodo-vacio" });
+      marcoNodo(g, 690, 70, "#9aa3ad", true);
+      g.add(new Konva.Text({ x: 14, y: 12, width: 662, text: "Este nodo todavía no tiene ODF ni OLT. Ábralos en «ODF y OLT» (pestaña Inicio) para agregarlos: aquí se verán con sus puertos y sus hilos libres.", fontSize: 12, fill: "#5b6270", lineHeight: 1.3, listening: false }));
+      g.on("click tap", abrirNodoModal);
+      st.capa.add(g);
+    }
+    if (d.mufa_cercana && !st.cables.some((c) => c.otro.tipo === "mufa")) {
+      const yCables = Math.max(30, ...st.cables.filter((c) => c.lado === "salida").map((c) => c.y + altoCable(c) + 30));
+      tarjetaMufaNodo(d.mufa_cercana, COL_DER, yCables);
+    }
+  }
+
+  /** The links of the node as lines: OLT fibre → ODF port → fibre of the cable that goes to a mufa (drawn with the connections, so they follow the cables). */
+  function lineasNodo() {
+    const d = st.nodo;
+    if (!d || !st.nodoPuertos) return;
+    const poli = (a, b, color) => {
+      const mx = (a.x + b.x) / 2;
+      st.capaLineas.add(new Konva.Line({ points: [a.x, a.y, mx, a.y, mx, b.y, b.x, b.y], stroke: color, strokeWidth: 2.5, lineJoin: "round", listening: false, name: "enlace-nodo" }));
+    };
+    d.enlaces.forEach((e) => {
+      const o = st.nodoPuertos.get(`olt:${e.olt_id}:${e.olt_puerto}`), f = e.odf_id ? st.nodoPuertos.get(`odf:${e.odf_id}:${e.odf_puerto}`) : null, c = e.hilo_id ? posicion(`h:${e.hilo_id}`) : null;
+      if (o && f) poli({ x: o.der, y: o.y }, { x: f.izq, y: f.y }, "#1f6feb");
+      const desde = f ? { x: f.der, y: f.y } : o ? { x: o.der, y: o.y } : null;
+      if (desde && c) poli(desde, c, "#2e9d4a");
+    });
+  }
+
+  function pedirConexionNodo(m) {
+    st.conexionNodo = m;
+    $("mu-nc-info").textContent = `Se conectará ${st.datos.mufa.nombre} con ${m.nombre}.`;
+    $("mu-nc-error").textContent = "";
+    $("modal-mu-nodo-cable").hidden = false;
+  }
+
+  async function conectarNodo(ev) {
+    ev.preventDefault();
+    const m = st.conexionNodo;
+    if (nCambios() && !(await aplicar())) return;
+    const r = await Redes.llamar("conectar_nodo_mufa", { nodo_id: st.mufaId, mufa_id: m.id, hilos: Number($("mu-nc-form").elements.hilos.value) });
+    if (!r.ok) { $("mu-nc-error").textContent = (r.errores ? Object.values(r.errores).join(" · ") : r.error); return; }
+    $("modal-mu-nodo-cable").hidden = true;
+    await cargarMufa(st.mufaId);
+    mensaje(`Nodo conectado a ${m.nombre}: asigne los hilos del cable a los de la OLT en «ODF y OLT»`, "ok");
   }
 
   // ------------------------------------------------------------------ acometidas (cables nuevos que salen de la mufa)
@@ -1981,7 +2127,7 @@
   // ------------------------------------------------------------------ eventos
   function teclado(e) {
     if ($("modal-mufa").hidden || !$("modal-mu-objeto").hidden || !$("modal-mu-nota").hidden || !$("modal-confirmar").hidden) return;
-    const encima = ["modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente", "modal-mu-rf", "modal-mu-cont", "modal-mu-aco-nueva", "modal-mu-aco"].filter((id) => !$(id).hidden);
+    const encima = ["modal-mu-modelo", "modal-mu-cable", "modal-mu-hcliente", "modal-mu-rf", "modal-mu-cont", "modal-mu-aco-nueva", "modal-mu-aco", "modal-mu-nodo-cable"].filter((id) => !$(id).hidden);
     if (encima.length) {
       if (e.key === "Escape") encima.forEach((id) => { $(id).hidden = true; });
       return;
@@ -2095,6 +2241,9 @@
     $("mu-no-colores-quitar").addEventListener("click", () => { st.colorNota = { fondo: null, texto: null }; $("mu-no-fondo").value = "#fff8c6"; $("mu-no-texto").value = "#222222"; });
     $("mu-continuidad").addEventListener("click", () => { abrirContinuidad(); });
     $("mu-nodo").addEventListener("click", () => { if (window.Nodo) window.Nodo.abrir(st.mufaId); });
+    $("mu-nc-form").addEventListener("submit", conectarNodo);
+    ["mu-nc-x", "mu-nc-cancelar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-nodo-cable").hidden = true; }));
+    document.addEventListener("nodo-datos", (e) => { if (st.datos && st.datos.mufa.tipo === "nodo" && e.detail && e.detail.nodo.id === st.mufaId && !$("modal-mufa").hidden) { st.nodo = e.detail; dibujar(); } });
     ["mu-acometida", "mu-acometida-b"].forEach((id) => $(id).addEventListener("click", () => { abrirAcometidaNueva(); }));
     $("mu-an-form").addEventListener("submit", crearAcometida);
     ["mu-an-x", "mu-an-cancelar"].forEach((id) => $(id).addEventListener("click", () => { $("modal-mu-aco-nueva").hidden = true; }));

@@ -618,12 +618,28 @@
       <form id="nd-elem-form" class="config-cuerpo" autocomplete="off" novalidate>
         <label class="dg-campo dg-ancho">Nombre <input name="nombre" maxlength="160"></label>
         <label class="dg-campo"><span id="nd-elem-etiqueta">Puertos</span> <input name="puertos" type="number" min="1" max="576" list="nd-puertos-sugeridos"></label>
+        <div id="nd-elem-odf">
+          <fieldset class="nd-grupo"><legend>Cómo se acomodan los puertos</legend>
+            <div class="nd-fila">
+              <label class="dg-campo">Columnas <input name="columnas" type="number" min="1" max="144"></label>
+              <label class="dg-campo">Filas <input name="filas" type="number" min="1" max="144"></label>
+              <button id="nd-elem-auto" type="button" class="btn btn-chico" title="Volver a la disposición automática (12 columnas)">Automática</button>
+            </div>
+            <p id="nd-elem-disp" class="nota" role="status"></p>
+          </fieldset>
+          <fieldset class="nd-grupo"><legend>Foto del ODF real</legend>
+            <input id="nd-elem-foto" type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Foto del ODF">
+            <div id="nd-elem-foto-vista" class="nd-foto-vista" hidden><img alt="Vista previa de la foto del ODF"><button id="nd-elem-foto-quitar" type="button" class="btn btn-chico">Quitar la foto</button></div>
+            <p class="nota">Se muestra a la derecha de los puertos. Se reduce sola para que pese poco (hasta 1400 px).</p>
+          </fieldset>
+        </div>
         <datalist id="nd-puertos-sugeridos"><option value="4"><option value="8"><option value="12"><option value="16"><option value="24"><option value="32"><option value="48"><option value="72"><option value="96"><option value="144"></datalist>
         <p id="nd-elem-error" class="vp-estado error" role="alert"></p>
         <div class="lz-cable-botones"><button id="nd-elem-eliminar" type="button" class="btn" hidden>Eliminar</button><button id="nd-elem-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Guardar</button></div>
       </form>
     </div>
   </div>
+  <div id="nd-lightbox" class="nd-lightbox" hidden role="dialog" aria-label="Foto del ODF"><img alt="Foto del ODF"><button id="nd-lightbox-x" type="button" class="btn-icono" aria-label="Cerrar">✕</button></div>
   <div id="modal-nd-enlace" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="nd-enl-titulo">
     <div class="modal-caja config-caja">
       <header class="modal-cabecera pr-cabecera"><h2 id="nd-enl-titulo">Conectar un hilo de la OLT</h2></header>
@@ -643,6 +659,18 @@
     </div>
   </div>
 
+  <div id="modal-mu-nodo-cable" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-nc-titulo">
+    <div class="modal-caja config-caja">
+      <header class="modal-cabecera pr-cabecera"><h2 id="mu-nc-titulo">Conectar el nodo a una mufa</h2><button id="mu-nc-x" type="button" class="btn-icono" aria-label="Cerrar">✕</button></header>
+      <form id="mu-nc-form" class="config-cuerpo" autocomplete="off" novalidate>
+        <p id="mu-nc-info" class="nota"></p>
+        <label class="dg-campo">Hilos del cable <select name="hilos"><option value="12">12</option><option value="24" selected>24</option><option value="48">48</option><option value="72">72</option><option value="96">96</option><option value="144">144</option></select></label>
+        <p class="nota">Se crea un cable nuevo del nodo a esa mufa. Sus hilos se asignan después a los hilos de la OLT (en «ODF y OLT»).</p>
+        <p id="mu-nc-error" class="vp-estado error" role="alert"></p>
+        <div class="lz-cable-botones"><button id="mu-nc-cancelar" type="button" class="btn">Cancelar</button><button type="submit" class="btn btn-primario">Conectar</button></div>
+      </form>
+    </div>
+  </div>
   <div id="modal-mu-aco-nueva" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mu-an-titulo">
     <div class="modal-caja config-caja">
       <header class="modal-cabecera pr-cabecera"><h2 id="mu-an-titulo">Nueva acometida</h2><button id="mu-an-x" type="button" class="btn-icono" aria-label="Cerrar">✕</button></header>

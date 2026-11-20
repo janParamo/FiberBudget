@@ -35,7 +35,7 @@ COLUMNAS = {
                      "borrado_en"},
     "mufa_bandejas": {"mufa_id", "numero", "capacidad", "splitter_id", "fuente", "borrado_en"},
     "puerto_servicios": {"puerto_id", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "hilo_cliente", "fuente", "confianza", "borrado_en"},
-    "nodo_odfs": {"nodo_id", "nombre", "puertos", "fuente", "estimado", "ref_elemento_id", "borrado_en"},
+    "nodo_odfs": {"nodo_id", "nombre", "puertos", "fuente", "estimado", "ref_elemento_id", "columnas", "filas", "imagen", "imagen_tipo", "imagen_version", "borrado_en"},
     "nodo_olts": {"nodo_id", "nombre", "puertos", "fuente", "estimado", "borrado_en"},
     "nodo_enlaces": {"nodo_id", "olt_id", "olt_puerto", "odf_id", "odf_puerto", "hilo_id", "borrado_en"},
     "hilo_servicios": {"hilo_id", "codigo_cliente", "nombre", "id_servicio", "elemento_id", "hilo_cliente", "segmento", "fuente", "confianza", "borrado_en"},

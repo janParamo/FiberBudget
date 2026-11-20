@@ -9,7 +9,8 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const nd = { datos: null, nodoId: null, olt: null, elem: null, enlace: null };
+  const nd = { datos: null, nodoId: null, olt: null, elem: null, enlace: null, imagenes: new Map() };
+  const LADO_MAX_FOTO = 1400;
   const puedeEditar = () => !!(nd.datos && nd.datos.nodo.puede_editar);
   const mensaje = (t, tipo) => { const e = $("nd-estado"); if (e) { e.textContent = t || ""; e.className = `vp-estado${tipo === "error" ? " error" : ""}`; } };
   const errores = (r) => (r.errores ? Object.values(r.errores).join(" · ") : r.error);
@@ -29,12 +30,17 @@
     const r = await Redes.llamar("nodo", { nodo_id: nd.nodoId });
     if (!r.ok) { if (window.visor && window.visor.mensaje) window.visor.mensaje(r.error, "error"); else mensaje(r.error, "error"); return false; }
     nd.datos = r;
+    avisar();
     pintar();
     return true;
   }
 
+  /** The node changed (an ODF, an OLT, a link): the drawing of the node in the mufa editor follows. */
+  function avisar() { document.dispatchEvent(new CustomEvent("nodo-datos", { detail: nd.datos })); }
+
   function aplicar(r) {
     nd.datos = r;
+    avisar();
     if (nd.olt && !r.olts.some((o) => o.id === nd.olt)) nd.olt = null;
     pintar();
   }
@@ -59,16 +65,17 @@
     $("nd-odfs-vacio").hidden = d.odfs.length > 0;
     $("nd-olts-vacio").hidden = d.olts.length > 0;
     $("nd-odfs").innerHTML = d.odfs.map((o) => {
-      const columnas = Math.min(o.puertos, 12);
+      const columnas = o.columnas;
       const baldosas = Array.from({ length: o.puertos }, (_, i) => {
         const n = i + 1, e = d.enlaces.find((x) => x.odf_id === o.id && x.odf_puerto === n);
         return `<button type="button" class="nd-baldosa ${e ? "ocupada" : "libre"}" data-nd-baldosa="${o.id}:${n}" title="${esc(e ? `Puerto ${n} · ocupado: ${infoEnlace(e)}` : `Puerto ${n} · libre`)}">${n}${e ? `<small>${esc(corto(e.olt_nombre))}</small>` : ""}</button>`;
       }).join("");
       const visio = o.fuente === "visio" ? `<small class="nd-visio">Del Visio${o.estimado ? " · puertos estimados: revíselos" : ""}</small>` : "";
       const cables = (o.cables_visio || []).length ? `<small class="nd-cables">Cables del Visio: ${o.cables_visio.map((c) => `${esc(c.nombre)}${c.hilos ? ` (${c.hilos}H)` : ""} → ${esc(c.otro)}`).join(" · ")}</small>` : "";
-      return `<article class="nd-odf" data-odf="${o.id}"><header><div><b>${esc(o.nombre)}</b><small>${o.puertos} puertos · ${o.ocupados} ocupado${o.ocupados === 1 ? "" : "s"} · ${o.libres} libre${o.libres === 1 ? "" : "s"}</small>${visio}</div>
+      return `<article class="nd-odf" data-odf="${o.id}"><header><div><b>${esc(o.nombre)}</b><small>${o.puertos} puertos (${o.columnas} × ${o.filas}) · ${o.ocupados} ocupado${o.ocupados === 1 ? "" : "s"} · ${o.libres} libre${o.libres === 1 ? "" : "s"}</small>${visio}</div>
         <button type="button" class="btn btn-chico" data-nd-edita data-nd-elem="odf:${o.id}" title="Cambiar el nombre o la cantidad de puertos, o eliminarlo">Editar</button></header>
-        <div class="nd-mosaico" style="--nd-cols:${columnas}">${baldosas}</div>${cables}</article>`;
+        <div class="nd-odf-cuerpo"><div class="nd-mosaico" style="--nd-cols:${columnas}">${baldosas}</div>
+          ${o.tiene_imagen ? `<figure class="nd-odf-foto"><img data-nd-foto="${o.id}" alt="Foto del ${esc(o.nombre)}" title="Clic para verla grande"></figure>` : ""}</div>${cables}</article>`;
     }).join("");
     $("nd-olts").innerHTML = d.olts.map((o) => {
       const conectados = [...new Set(d.enlaces.filter((e) => e.olt_id === o.id && e.odf_nombre).map((e) => e.odf_nombre))];
@@ -79,6 +86,7 @@
         <div class="nd-barra" aria-hidden="true"><i style="width:${Math.round((o.ocupados / o.puertos) * 100)}%"></i></div>
         <p class="nota">${conectados.length ? `ODF conectados: ${esc(conectados.join(", "))}` : "Sin ODF conectado"}</p></article>`;
     }).join("");
+    cargarFotos();
     $("nd-resumen").textContent = `${d.odfs.length} ODF · ${d.olts.length} OLT · ${d.enlaces.length} enlace${d.enlaces.length === 1 ? "" : "s"}`;
   }
 
@@ -96,17 +104,80 @@
     document.querySelectorAll("#modal-nodo [data-nd-edita]").forEach((b) => { b.hidden = !puedeEditar(); });
   }
 
+  // ------------------------------------------------------------------ la foto del ODF real
+  /** The photo of an ODF (apart from the node: it is big), kept by version so it is read once. */
+  async function foto(odf) {
+    const clave = `${odf.id}:${odf.imagen_version}`;
+    if (!nd.imagenes.has(clave)) {
+      const r = await Redes.llamar("nodo_imagen", { odf_id: odf.id });
+      nd.imagenes.set(clave, r.ok ? r.imagen : null);
+    }
+    return nd.imagenes.get(clave);
+  }
+
+  function cargarFotos() {
+    document.querySelectorAll("#nd-odfs img[data-nd-foto]").forEach(async (img) => {
+      const odf = nd.datos.odfs.find((o) => o.id === Number(img.dataset.ndFoto));
+      const url = odf && await foto(odf);
+      if (url && img.isConnected) img.src = url;
+    });
+  }
+
+  /** A photo chosen from the computer, made small (at most LADO_MAX_FOTO px on its long side, JPEG) so that it travels light. */
+  function reducir(archivo) {
+    return new Promise((resolver, rechazar) => {
+      const lector = new FileReader();
+      lector.onerror = () => rechazar(new Error("No se pudo leer el archivo"));
+      lector.onload = () => {
+        const img = new Image();
+        img.onerror = () => rechazar(new Error("El archivo no es una imagen"));
+        img.onload = () => {
+          const k = Math.min(1, LADO_MAX_FOTO / Math.max(img.width, img.height));
+          const c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+          const g = c.getContext("2d");
+          g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height);
+          g.drawImage(img, 0, 0, c.width, c.height);
+          resolver(c.toDataURL("image/jpeg", 0.85));
+        };
+        img.src = lector.result;
+      };
+      lector.readAsDataURL(archivo);
+    });
+  }
+
+  /** The layout the person is writing: columns × rows must cover the ports with no empty row. */
+  function textoDisposicion() {
+    const f = $("nd-elem-form"), n = Number(f.elements.puertos.value), c = Number(f.elements.columnas.value), r = Number(f.elements.filas.value);
+    const t = $("nd-elem-disp");
+    if (!n || !c || !r) { t.textContent = ""; return true; }
+    if (c * r < n) { t.textContent = `${c} × ${r} son ${c * r} lugares: no alcanzan para los ${n} puertos`; t.className = "nota error"; return false; }
+    if ((r - 1) * c >= n) { t.textContent = `${c} × ${r} deja una fila vacía: con ${c} columnas los ${n} puertos caben en ${Math.ceil(n / c)} filas`; t.className = "nota error"; return false; }
+    t.textContent = `✓ ${c} × ${r} = ${c * r} lugares para ${n} puertos`; t.className = "nota";
+    return true;
+  }
+
   // ------------------------------------------------------------------ ODF / OLT: crear, cambiar, eliminar
   function pedirElemento(tipo, id) {
     if (!puedeEditar()) return;
     const d = nd.datos, actual = id ? (tipo === "odf" ? d.odfs : d.olts).find((x) => x.id === id) : null;
-    nd.elem = { tipo, id: actual ? actual.id : null };
+    nd.elem = { tipo, id: actual ? actual.id : null, auto: false, imagen: null, quitarImagen: false, actual };
     const f = $("nd-elem-form");
     $("nd-elem-titulo").textContent = actual ? `${tipo === "odf" ? "ODF" : "OLT"} ${actual.nombre}` : tipo === "odf" ? "Nuevo ODF" : "Nueva OLT";
     f.elements.nombre.value = actual ? actual.nombre : "";
     f.elements.nombre.placeholder = tipo === "odf" ? `ODF ${d.odfs.length + 1}` : `OLT ${d.olts.length + 1}`;
     f.elements.puertos.value = actual ? actual.puertos : tipo === "odf" ? 24 : 16;
     $("nd-elem-etiqueta").textContent = tipo === "odf" ? "Puertos del ODF" : "Hilos de la OLT";
+    $("nd-elem-odf").hidden = tipo !== "odf";
+    if (tipo === "odf") {
+      const n = Number(f.elements.puertos.value), c = actual ? actual.columnas : Math.min(n, 12);
+      f.elements.columnas.value = c;
+      f.elements.filas.value = actual ? actual.filas : Math.ceil(n / c);
+      $("nd-elem-foto").value = "";
+      $("nd-elem-foto-vista").hidden = true;
+      if (actual && actual.tiene_imagen) foto(actual).then((url) => { if (url && nd.elem && nd.elem.id === actual.id && !nd.elem.quitarImagen && !nd.elem.imagen) { $("nd-elem-foto-vista").querySelector("img").src = url; $("nd-elem-foto-vista").hidden = false; } });
+      textoDisposicion();
+    }
     $("nd-elem-eliminar").hidden = !actual;
     $("nd-elem-error").textContent = "";
     $("modal-nd-elem").hidden = false;
@@ -117,6 +188,16 @@
     ev.preventDefault();
     const f = $("nd-elem-form"), e = nd.elem;
     const pedido = { nodo_id: nd.nodoId, nombre: f.elements.nombre.value, puertos: Number(f.elements.puertos.value) };
+    if (e.tipo === "odf") {                                                      // the layout only when the person changed it (or asked for the automatic one); the photo only when it changed
+      const c = Number(f.elements.columnas.value), fi = Number(f.elements.filas.value), a = e.actual;
+      if (e.auto) { pedido.columnas = 0; pedido.filas = 0; }
+      else if (!a ? (c !== Math.min(pedido.puertos, 12)) : (c !== a.columnas || fi !== a.filas || pedido.puertos !== a.puertos)) {
+        if (!textoDisposicion()) { $("nd-elem-error").textContent = $("nd-elem-disp").textContent; return; }
+        pedido.columnas = c; pedido.filas = fi;
+      }
+      if (e.imagen) pedido.imagen = e.imagen;
+      if (e.quitarImagen) pedido.quitar_imagen = true;
+    }
     const r = await Redes.llamar(e.tipo === "odf" ? "guardar_odf_nodo" : "guardar_olt_nodo", { ...pedido, ...(e.id ? { [e.tipo === "odf" ? "odf_id" : "olt_id"]: e.id } : {}) });
     if (!r.ok) { $("nd-elem-error").textContent = errores(r); return; }
     $("modal-nd-elem").hidden = true;
@@ -249,6 +330,23 @@
       else if (en) { const [olt, n] = en.dataset.ndEnlace.split(":").map(Number); pedirEnlace({ olt_id: olt, olt_puerto: n }); }
     });
     $("nd-elem-form").addEventListener("submit", guardarElemento);
+    // the layout: columns and rows follow each other so that they cover the ports; the automatic one is a button
+    const f0 = $("nd-elem-form");
+    f0.elements.columnas.addEventListener("input", () => { const n = Number(f0.elements.puertos.value), c = Number(f0.elements.columnas.value); if (n && c) f0.elements.filas.value = Math.ceil(n / c); if (nd.elem) nd.elem.auto = false; textoDisposicion(); });
+    f0.elements.filas.addEventListener("input", () => { const n = Number(f0.elements.puertos.value), r = Number(f0.elements.filas.value); if (n && r) f0.elements.columnas.value = Math.ceil(n / r); if (nd.elem) nd.elem.auto = false; textoDisposicion(); });
+    f0.elements.puertos.addEventListener("input", () => { if (nd.elem && nd.elem.tipo === "odf") { const n = Number(f0.elements.puertos.value), c = Number(f0.elements.columnas.value); if (n && c) f0.elements.filas.value = Math.ceil(n / c); textoDisposicion(); } });
+    $("nd-elem-auto").addEventListener("click", () => { const n = Number(f0.elements.puertos.value), c = Math.min(n || 12, 12); f0.elements.columnas.value = c; f0.elements.filas.value = Math.ceil((n || 12) / c); if (nd.elem) nd.elem.auto = true; textoDisposicion(); });
+    $("nd-elem-foto").addEventListener("change", async (e) => {
+      const archivo = e.target.files && e.target.files[0];
+      if (!archivo || !nd.elem) return;
+      try {
+        nd.elem.imagen = await reducir(archivo); nd.elem.quitarImagen = false;
+        $("nd-elem-foto-vista").querySelector("img").src = nd.elem.imagen; $("nd-elem-foto-vista").hidden = false; $("nd-elem-error").textContent = "";
+      } catch (x) { $("nd-elem-error").textContent = x.message; }
+    });
+    $("nd-elem-foto-quitar").addEventListener("click", () => { if (!nd.elem) return; nd.elem.imagen = null; nd.elem.quitarImagen = !!(nd.elem.actual && nd.elem.actual.tiene_imagen); $("nd-elem-foto").value = ""; $("nd-elem-foto-vista").hidden = true; });
+    $("nd-odfs").addEventListener("click", (e) => { const img = e.target.closest("img[data-nd-foto]"); if (img && img.src) { $("nd-lightbox").querySelector("img").src = img.src; $("nd-lightbox").hidden = false; } });
+    $("nd-lightbox").addEventListener("click", () => { $("nd-lightbox").hidden = true; });
     $("nd-elem-eliminar").addEventListener("click", eliminarElemento);
     $("nd-elem-cancelar").addEventListener("click", () => { $("modal-nd-elem").hidden = true; });
     $("nd-enl-form").addEventListener("submit", guardarEnlace);
@@ -260,7 +358,8 @@
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape" || $("modal-nodo").hidden) return;
       e.stopPropagation();
-      if (!$("modal-nd-enlace").hidden) $("modal-nd-enlace").hidden = true;
+      if (!$("nd-lightbox").hidden) $("nd-lightbox").hidden = true;
+      else if (!$("modal-nd-enlace").hidden) $("modal-nd-enlace").hidden = true;
       else if (!$("modal-nd-elem").hidden) $("modal-nd-elem").hidden = true;
       else if (nd.olt) { nd.olt = null; pintar(); } else $("modal-nodo").hidden = true;
     }, true);

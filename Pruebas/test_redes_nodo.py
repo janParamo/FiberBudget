@@ -138,3 +138,83 @@ def test_the_ports_of_an_odf_are_read_from_its_name_else_from_its_cables_else_12
     assert nodo.puertos_del_nombre("NODO CASITA NUEVO ODF PARED 4 PUERTOS", []) == (4, False)
     assert nodo.puertos_del_nombre("ODF NODO IDEAY FUSIONADO / 1-12 H", []) == (12, False)
     assert nodo.puertos_del_nombre("ODF A", [24, 12]) == (24, True) and nodo.puertos_del_nombre("ODF A", [30]) == (48, True) and nodo.puertos_del_nombre("ODF A", []) == (12, True)
+
+
+def _png(color=(200, 30, 30), lado=40):
+    import base64, io
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (lado, lado // 2), color).save(b, "PNG")
+    return "data:image/png;base64," + base64.b64encode(b.getvalue()).decode("ascii")
+
+
+def test_the_layout_of_the_ports_is_editable_and_must_cover_the_ports(zona):
+    con, admin, p, ids = zona
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], nombre="ODF A", puertos=32)
+    odf = r["odfs"][0]
+    assert (odf["columnas"], odf["filas"], odf["disposicion_propia"]) == (12, 3, False)                                  # the automatic one: 12 columns
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], columnas=8, filas=4)
+    odf = r["odfs"][0]
+    assert (odf["columnas"], odf["filas"], odf["disposicion_propia"]) == (8, 4, True)
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], columnas=4)                                     # only the columns: the rows are worked out
+    assert (r["odfs"][0]["columnas"], r["odfs"][0]["filas"]) == (4, 8)
+    for columnas, filas in ((4, 7), (4, 9), (3, 3), (0, 200)):                                                              # not enough places, an empty row, too few, out of range
+        with pytest.raises(DatosInvalidos):
+            nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], columnas=columnas, filas=filas)
+    assert (nodo.leer(con, admin, nodo_id=ids["n"])["odfs"][0]["columnas"]) == 4                                           # a refused change leaves it as it was
+    # resizing it to a number of ports the layout no longer covers goes back to the automatic layout; one it still covers is kept
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], puertos=30)
+    assert (r["odfs"][0]["columnas"], r["odfs"][0]["filas"]) == (4, 8)                                                       # 4 × 8 still fits 30
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], puertos=12)
+    assert (r["odfs"][0]["columnas"], r["odfs"][0]["disposicion_propia"]) == (12, False)
+    # a new layout together with a new number of ports is checked against the new number
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], puertos=24, columnas=6, filas=4)
+    assert (r["odfs"][0]["puertos"], r["odfs"][0]["columnas"], r["odfs"][0]["filas"]) == (24, 6, 4)
+    # empty / 0: the automatic one again
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], columnas=0, filas=0)
+    assert r["odfs"][0]["disposicion_propia"] is False
+    # created with its layout in one go
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], nombre="ODF B", puertos=32, columnas=4, filas=8)
+    assert [(o["nombre"], o["columnas"], o["filas"]) for o in r["odfs"] if o["nombre"] == "ODF B"] == [("ODF B", 4, 8)]
+
+
+def test_the_photo_of_the_real_odf_is_kept_apart_and_can_be_changed_and_taken_off(zona):
+    con, admin, p, ids = zona
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], nombre="ODF A", puertos=24)
+    odf = r["odfs"][0]
+    assert odf["tiene_imagen"] is False and nodo.imagen_odf(con, admin, odf_id=odf["id"]) == {"imagen": None, "version": 0}
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], imagen=_png())
+    assert r["odfs"][0]["tiene_imagen"] is True and r["odfs"][0]["imagen_version"] == 1 and "imagen" not in r["odfs"][0]               # the node does not carry the picture
+    foto = nodo.imagen_odf(con, admin, odf_id=odf["id"])
+    assert foto["imagen"].startswith("data:image/png;base64,") and foto["version"] == 1
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], imagen=_png((10, 10, 200)))
+    assert r["odfs"][0]["imagen_version"] == 2 and nodo.imagen_odf(con, admin, odf_id=odf["id"])["imagen"] != foto["imagen"]
+    with pytest.raises(DatosInvalidos):
+        nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], imagen="data:image/png;base64,AAAA")                         # not an image
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], odf_id=odf["id"], quitar_imagen=True)
+    assert r["odfs"][0]["tiene_imagen"] is False and nodo.imagen_odf(con, admin, odf_id=odf["id"])["imagen"] is None
+    # created with its photo in one go; a reader sees it but cannot change it
+    r = nodo.guardar_odf(con, admin, nodo_id=ids["n"], nombre="ODF B", puertos=12, imagen=_png())
+    assert next(o for o in r["odfs"] if o["nombre"] == "ODF B")["tiene_imagen"] is True
+    lector = usuarios.guardar(con, admin, datos={"nombre": "Ana", "rol": "lector", "persona_visor": "ana"})["usuario"]
+    with pytest.raises(SinPermiso):
+        nodo.guardar_odf(con, lector, nodo_id=ids["n"], odf_id=odf["id"], imagen=_png())
+
+
+def test_the_nearest_mufa_is_offered_and_the_node_is_connected_to_it_with_a_cable(con_redes):
+    from visor_rutas.redes import proyectos, red
+    con = con_redes
+    admin = usuarios.identificar(con, usuario_windows="jgutierrez")
+    p = proyectos.guardar(con, admin, datos={"nombre": "Red existente – Granada", "codigo": "BASE-GRA"})["proyecto"]
+    ids = red.guardar(con, admin, proyecto_id=p["id"], cambios={"elementos": [
+        {"id": "n", "tipo": "nodo", "subtipo": "nodo", "nombre": "NODO GRANADA", "lat": 11.9300, "lon": -85.9560},
+        {"id": "m1", "tipo": "mufa", "subtipo": "empalme", "nombre": "MF CERCANA", "lat": 11.9310, "lon": -85.9560},
+        {"id": "m2", "tipo": "mufa", "subtipo": "empalme", "nombre": "MF LEJANA", "lat": 11.9500, "lon": -85.9560}]})["ids"]
+    v = nodo.leer(con, admin, nodo_id=ids["n"])
+    assert v["cables"] == [] and v["mufa_cercana"]["nombre"] == "MF CERCANA" and 100 < v["mufa_cercana"]["distancia_m"] < 120      # nothing connected yet: the nearest mufa
+    v = nodo.conectar_mufa(con, admin, nodo_id=ids["n"], mufa_id=ids["m1"], hilos=48)
+    assert [(c["nombre"], c["hilos"], c["otro"]["nombre"], len(c["fibras"])) for c in v["cables"]] == [("NODO GRANADA – MF CERCANA", 48, "MF CERCANA", 48)]
+    assert v["mufa_cercana"] is None                                                                  # already connected to a mufa: no suggestion
+    for malo in (7, 6, "x"):
+        with pytest.raises(DatosInvalidos):
+            nodo.conectar_mufa(con, admin, nodo_id=ids["n"], mufa_id=ids["m2"], hilos=malo)

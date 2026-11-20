@@ -50,7 +50,9 @@ METODOS: dict[str, Callable[..., dict[str, Any]]] = {
     "guardar_mufa": mufa.guardar,
     "nodo": nodo.leer,                                        # a node as a physical place: its ODFs (ports as tiles), its OLTs and how they connect
     "convertir_visio_nodo": nodo.convertir_visio,             # administrators: the ODFs and OLTs of the Visio into the structure of their node
+    "conectar_nodo_mufa": nodo.conectar_mufa,                 # a new cable from the node to a mufa: its fibres are assigned to the OLT ports
     "guardar_odf_nodo": nodo.guardar_odf,
+    "nodo_imagen": nodo.imagen_odf,                           # the photo of the real ODF (read apart: it is big)
     "guardar_olt_nodo": nodo.guardar_olt,
     "guardar_enlace_nodo": nodo.guardar_enlace,
     "crear_acometida": acometidas.crear,                      # a new cable (2…96 fibres) from the mufa, drawn as a small card
@@ -194,7 +196,7 @@ PERMITIDOS_TECNICO = {"estado"}
 PERMITIDOS_GUEST = {"estado", "buscar_elementos", "mufa_existente", "estilos_kmz", "cambios_kmz", "capa_importados_kmz"}
 # prueba: read only in everything (it tests the endpoints without risk): these are the methods that only read.
 SOLO_LECTURA = {"estado", "usuarios", "historial_usuario", "proyectos", "proyecto", "historial_proyecto", "usuarios_asignables", "geocodificar", "red_proyecto", "mufa", "mufa_existente",
-                "red_de_mufas", "buscar_elementos", "buscar_clientes", "ruta_fusion_cliente", "acometida_mufas", "nodo", "tablero_migracion", "correcciones_migracion", "exportar_correcciones", "trazar_hilo", "diagramas", "problemas", "problema",
+                "red_de_mufas", "buscar_elementos", "buscar_clientes", "ruta_fusion_cliente", "acometida_mufas", "nodo", "nodo_imagen", "tablero_migracion", "correcciones_migracion", "exportar_correcciones", "trazar_hilo", "diagramas", "problemas", "problema",
                 "foto_problema", "historial_problema", "referencias_proyecto", "pendientes", "historial_pendiente", "respaldos", "lugares", "lugar", "adjunto_lugar", "compartidos_lugares",
                 "exportar_lugares_kmz", "cambios_kmz", "importaciones_kmz", "importacion_kmz", "mapa_importacion_kmz", "capa_importados_kmz", "estilos_kmz", "estado_actualizar_red",
                 "visio_estado", "visio_progreso", "comparar_red_presupuesto", "splitters_de_diagrama", "campo_puntos", "campo_jornadas", "campo_ubicaciones", "campo_foto", "campo_trazos",

@@ -56,3 +56,4 @@ body.tema-oscuro .rb-pestana.activa { background: #19232d; }
 .rb-botones .rb-lz:disabled { opacity: 0.45; }
 .rb-botones .rb-lz[hidden] { display: none; }
 .rb-botones > .lz-zona-caja, .rb-botones > .lz-coord { align-self: center; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 11.5px; margin: 0 6px; }
+#modal-mu-nodo-cable { z-index: 3400; }
