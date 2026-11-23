@@ -568,6 +568,8 @@ def aplicar(con: Any, plan: Plan, usuario_id: int | None, corrida_id: int) -> di
         cables_existentes = {f["clave"]: f for f in con.execute(
             "SELECT ref_visio ->> 'clave' AS clave, id, proyecto_id, estado_migracion FROM redes.cables "
             "WHERE borrado_en IS NULL AND ref_visio ? 'clave'").fetchall()}
+        # a migrated cable that a person deleted (the migration itself never deletes): it is not made again by the next update of the diagrams
+        cables_quitados = {f["clave"] for f in con.execute("SELECT ref_visio ->> 'clave' AS clave FROM redes.cables WHERE borrado_en IS NOT NULL AND ref_visio ? 'clave'").fetchall()}
         regla = metraje.reglas(None)
         try:
             from config import get_settings, load_rules
@@ -584,6 +586,10 @@ def aplicar(con: Any, plan: Plan, usuario_id: int | None, corrida_id: int) -> di
             if ya:
                 conteo["cables_ya_estaban"] += 1
                 logs.append(("enlace", c["clave"], "omitir", "ya migrado", None))
+                continue
+            if c["clave"] in cables_quitados:
+                conteo["cables_eliminados_respetados"] += 1
+                logs.append(("enlace", c["clave"], "omitir", "una persona lo eliminó: no se vuelve a crear", None))
                 continue
             a, b = por_clave[c["origen"]["clave"]], por_clave[c["destino"]["clave"]]
             vertices = [{"lat": float(la), "lon": float(lo), "elemento_id": None} for la, lo in c["puntos"]]

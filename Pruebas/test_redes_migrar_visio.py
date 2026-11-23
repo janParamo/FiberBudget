@@ -146,6 +146,20 @@ def test_second_run_is_idempotent(visio):
     assert con.execute("SELECT count(*) AS n FROM redes.proyectos").fetchone()["n"] == 2
 
 
+def test_a_cable_that_a_person_deleted_is_not_made_again_by_the_next_update(visio):
+    """The Visio read a cable that is not real (a mufa joined to another it should not be): the person deletes it and the update of the diagrams must not bring it back."""
+    con, _ = visio
+    _migrar(con)
+    admin = usuarios.identificar(con, usuario_windows="jgutierrez")
+    fila = con.execute("SELECT id, proyecto_id, version, nombre FROM redes.cables WHERE borrado_en IS NULL AND ref_visio ? 'clave' ORDER BY id LIMIT 1").fetchone()
+    red.guardar(con, admin, proyecto_id=fila["proyecto_id"], cambios={"cables": [{"id": fila["id"], "eliminar": True, "version": fila["version"]}]})
+    antes = con.execute("SELECT count(*) AS n FROM redes.cables WHERE borrado_en IS NULL").fetchone()["n"]
+    _, conteo = _migrar(con)                                                   # «Actualizar diagramas» again
+    assert conteo.get("cables_creados", 0) == 0 and conteo["cables_eliminados_respetados"] == 1
+    assert con.execute("SELECT count(*) AS n FROM redes.cables WHERE borrado_en IS NULL").fetchone()["n"] == antes
+    assert con.execute("SELECT count(*) AS n FROM redes.cables WHERE id = %s AND borrado_en IS NULL", (fila["id"],)).fetchone()["n"] == 0
+
+
 def test_reimport_updates_untouched_and_never_overwrites_validated(visio, tmp_path):
     """Phase 7: the Visio changed. Untouched data follows it, what a person validated / edited is only
     reported, and what the Visio no longer gives is kept."""
