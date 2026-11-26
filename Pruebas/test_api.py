@@ -717,3 +717,21 @@ def test_nearest_node_prefers_real_coordinates_over_estimated_ones():
         assert metro.nodo_mas_cercano(12.13, -86.25, None)["nombre"] == "NODO REAL"
     finally:
         metro._filas_nodos = original
+
+
+def test_metro_with_a_node_name_starts_the_route_at_that_node_not_at_the_nearest(client, monkeypatch):
+    nodos = [(1, "NODO LEJANO", None, 12.20, -86.30, "visio", None, None), (2, "NODO CERCA", None, 12.13, -86.25, "visio", None, None)]
+    consultas, salidas = _metro_preparado(monkeypatch, nodos)
+    response = client.post("/presupuesto", json={**BODY, "ticket_id": "T-METRO-NOMBRE", "technology": "metro", "node_name": "lejano"}, headers=HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert (data["connection_point"]["name"], data["connection_point"]["segment_id"]) == ("NODO LEJANO", "visio:1")
+    assert salidas == [(12.20, -86.30)]                                    # the route starts at the node that was asked for
+    assert data["traffic_origin"]["node"] == "NODO LEJANO"
+
+
+def test_metro_with_an_unknown_node_name_is_404_and_suggests_the_similar_ones(client, monkeypatch):
+    _metro_preparado(monkeypatch, [(2, "NODO MATAGALPA", None, 12.13, -86.25, "visio", None, None)])
+    response = client.post("/presupuesto", json={**BODY, "ticket_id": "T-METRO-MAL", "technology": "metro", "node_name": "Matagalpas"}, headers=HEADERS)
+    assert response.status_code == 404
+    assert "Matagalpas" in response.json()["detail"] and "NODO MATAGALPA" in response.json()["detail"]

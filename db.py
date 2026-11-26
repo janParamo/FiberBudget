@@ -481,6 +481,25 @@ def find_nearest_nodo(lat: float, lon: float) -> dict | None:
     return {"id": row[0], "nombre": (row[1] or "").strip() or "Nodo", "tipo": row[2], "lat": float(row[3]), "lon": float(row[4]), "distancia_m": round(float(row[5]), 1)}
 
 
+_NODOS_KMZ_SQL = """
+SELECT p.id, p.nombre, p.tipo, ST_Y(p.geom) AS lat, ST_X(p.geom) AS lon
+FROM red_puntos p
+WHERE p.geom IS NOT NULL AND lower(trim(p.tipo)) = ANY(%(tipos)s)
+"""
+
+
+def find_nodos_kmz() -> list[dict]:
+    """Every node of the KMZ (folder «nodo» / «nodos»), as [{id, nombre, tipo, lat, lon}] (to pick one by name)."""
+    s = get_settings()
+    try:
+        with psycopg.connect(host=s.db_host, port=s.db_port, dbname=s.db_name, user=s.db_user, password=s.db_password, connect_timeout=5) as conn:
+            rows = conn.execute(_NODOS_KMZ_SQL, {"tipos": NODO_KMZ_TIPOS}).fetchall()
+    except psycopg.Error as exc:
+        log.error("PostGIS node list query failed (%s)", type(exc).__name__)
+        raise DatabaseError(str(exc)) from exc
+    return [{"id": r[0], "nombre": (r[1] or "").strip() or "Nodo", "tipo": r[2], "lat": float(r[3]), "lon": float(r[4])} for r in rows]
+
+
 _LINEAS_CAJA_SQL = """
 SELECT ST_AsGeoJSON(l.geom, 7)
 FROM red_lineas l

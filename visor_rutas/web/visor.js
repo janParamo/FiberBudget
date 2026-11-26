@@ -1761,7 +1761,7 @@
   const cantidad = (v) => (v === null || v === undefined ? "—"
     : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }));
   const CAMPOS_FORM = ["ticket_id", "coordenada", "client_name", "client_code", "sales_exec", "contact_name",
-                       "contact_phone", "service_type", "medium", "bandwidth", "technology", "odf_rack_ports", "raw_comment"];
+                       "contact_phone", "service_type", "medium", "bandwidth", "technology", "node_name", "odf_rack_ports", "raw_comment"];
   const pres = { config: null, cargaConfig: null, actual: null, hoja: "Presupuesto", html: new Map(), pdfUrl: null,
                  pdfDe: null, zoom: 1, generando: false };
   const estim = { token: 0, estado: "vacio", datos: null, error: null };
@@ -1849,6 +1849,21 @@
       }
       campo.value = campos[k];
     });
+    mostrarCampoNodo();
+  }
+  /** The node of the route is asked only for Metro (the other technologies go to the nearest mufa). */
+  function mostrarCampoNodo() {
+    const metro = $("f-technology").value === "metro";
+    $("vp-campo-nodo").hidden = !metro;
+    if (metro && !nodosCargados) cargarNodos();
+  }
+  let nodosCargados = false;
+  async function cargarNodos() {
+    nodosCargados = true;                        // the list of names helps to type; typing any name still works without it
+    try {
+      const r = await api.nodos_lista();
+      if (r && r.ok) $("lista-nodos").innerHTML = r.nodos.map((n) => `<option value="${esc(n)}"></option>`).join("");
+    } catch (e) { /* free text */ }
   }
   function marcarErrores(errores) {
     CAMPOS_FORM.forEach((k) => {
@@ -2398,6 +2413,7 @@
       if (item) abrirDelHistorial(item.dataset.hist);
     });
     $("vp-form").addEventListener("submit", generarPresupuesto);
+    $("f-technology").addEventListener("change", mostrarCampoNodo);
     $("vp-desde-mapa").addEventListener("click", () => usarCoordenadaMapa(true));
     document.querySelectorAll(".vp-pestana").forEach((b) =>
       b.addEventListener("click", () => { if (!b.disabled) mostrarHoja(b.dataset.hoja); }));

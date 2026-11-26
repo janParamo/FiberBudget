@@ -228,3 +228,14 @@ def test_posiciones_postes_nuevos_coinciden_con_el_conteo(entorno, distance, pos
     nuevas = calculo.posiciones_postes_nuevos(distance, 50, positions, 60)
     assert len(nuevas) == count_new_poles_by_gaps(distance, 50, positions, 0, 60)
     assert all(0 < m <= distance for m in nuevas)
+
+
+def test_the_metro_form_asks_for_the_node_and_the_others_do_not():
+    from visor_rutas import presupuesto_visor as pv
+    base = {"coordenada": "12.13, -86.25", "client_name": "Cliente", "client_code": "C1", "sales_exec": "Ana", "contact_phone": "8888", "service_type": "Residencial",
+            "medium": "FO", "bandwidth": "10 Mbps", "raw_comment": ""}
+    with pytest.raises(pv.ErrorFormulario) as exc:
+        pv.construir_solicitud({**base, "technology": "metro"})
+    assert "node_name" in exc.value.errores
+    assert pv.construir_solicitud({**base, "technology": "metro", "node_name": " Nodo Granada "}).node_name == "Nodo Granada"
+    assert pv.construir_solicitud({**base, "technology": "gpon"}).node_name is None

@@ -1276,6 +1276,10 @@
               <option value="ninguno">Ninguno</option><option value="12">12</option><option value="24">24</option>
             </select><small></small></div>
         </div>
+        <div class="vp-campo" id="vp-campo-nodo" hidden><label for="f-node_name">Nodo de la ruta (Metro) *</label>
+          <input id="f-node_name" name="node_name" list="lista-nodos" autocomplete="off" placeholder="Nombre del nodo desde el que sale la ruta" maxlength="200">
+          <datalist id="lista-nodos"></datalist>
+          <small>La ruta se genera desde este nodo hasta el cliente, siguiendo los postes existentes (donde no hay, se ponen nuevos).</small></div>
         <div class="vp-campo"><label for="f-raw_comment">Comentario del ticket</label>
           <textarea id="f-raw_comment" name="raw_comment" rows="4" maxlength="30000"></textarea><small></small></div>
         <div class="vp-acciones-form">

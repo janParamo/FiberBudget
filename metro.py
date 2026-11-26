@@ -10,9 +10,12 @@ differs in two things (rule of 2026-11-17):
 Nothing here changes the GPON path: main.py and visor_rutas/calculo.py call this module only when
 the technology is metro.
 """
+import difflib
 import logging
 import math
+import re
 import sqlite3
+import unicodedata
 from typing import Any, Callable
 
 import psycopg
@@ -76,15 +79,68 @@ def nodo_mas_cercano(lat: float, lon: float, visio_con: Any) -> dict[str, Any] |
     return min(reales or nodos, key=lambda n: n["distancia_m"], default=None)
 
 
-def resolver_nodo(lat: float, lon: float, rules: dict[str, Any], visio_con: Any,
-                  ) -> tuple[db.Segment, red_fibra_pg.BusquedaVisio]:
-    """(connection point = the nearest NODO, the Visio search that stands for it). Raises SinNodo."""
-    nodo = nodo_mas_cercano(lat, lon, visio_con)
-    try:                                              # the KMZ has nodes the diagrams do not (Matagalpa, Jinotega...): the nearest of both
-        kmz = db.find_nearest_nodo(lat, lon)
+def _clave(texto: Any) -> str:
+    """Name of a node to compare: no accents, upper case, only letters and digits, without the word NODO (so «Matagalpa» finds «NODO MATAGALPA»)."""
+    sin = "".join(c for c in unicodedata.normalize("NFD", str(texto or "")) if unicodedata.category(c) != "Mn")
+    palabras = [p for p in re.sub(r"[^A-Z0-9]+", " ", sin.upper()).split() if p != "NODO"]
+    return " ".join(palabras)
+
+
+def _todos_los_nodos(lat: float, lon: float, visio_con: Any) -> list[dict[str, Any]]:
+    """Every node of the Visio network and of the KMZ, with its distance to the point."""
+    nodos = []
+    for id_, nombre, propietario, nlat, nlon, fuente, zona, notas in _filas_nodos(visio_con):
+        nodos.append({"id": id_, "nombre": nombre, "tipo": "NODO", "propietario": propietario, "lat": float(nlat), "lon": float(nlon),
+                      "fuente_coord": fuente, "zona": zona, "notas": notas, "distancia_m": round(_distance_m(lat, lon, float(nlat), float(nlon)), 1)})
+    try:
+        for k in db.find_nodos_kmz():
+            nodos.append({**k, "id": f"kmz{k['id']}", "tipo": "NODO", "propietario": None, "fuente_coord": "kmz", "zona": None, "notas": None,
+                          "distancia_m": round(_distance_m(lat, lon, k["lat"], k["lon"]), 1)})
     except db.DatabaseError:
-        kmz = None
         log.warning("The nodes of the KMZ could not be read; only those of the Visio network are considered")
+    return nodos
+
+
+def nombres_de_nodos(visio_con: Any) -> list[str]:
+    """The names of every node, sorted (to suggest them while the name is typed)."""
+    return sorted({(n["nombre"] or "").strip() for n in _todos_los_nodos(0.0, 0.0, visio_con) if (n["nombre"] or "").strip()}, key=str.casefold)
+
+
+def nodo_por_nombre(nombre: str, lat: float, lon: float, visio_con: Any) -> dict[str, Any]:
+    """The node called `nombre` (same name without accents / case / the word NODO; else the ones that contain it). Several with the same name
+    (the Visio and the KMZ both have it): the one nearest to the client. Raises SinNodo, with suggestions, when there is none."""
+    clave = _clave(nombre)
+    if not clave:
+        raise SinNodo("Escriba el nombre del nodo")
+    nodos = _todos_los_nodos(lat, lon, visio_con)
+    exactos = [n for n in nodos if _clave(n["nombre"]) == clave]
+    parecidos = exactos or [n for n in nodos if clave in _clave(n["nombre"])]       # what was typed is part of the name
+    distintos = sorted({n["nombre"] for n in parecidos}, key=str.casefold) if not exactos else []
+    if len(distintos) > 1:
+        raise SinNodo(f"Hay varios nodos que contienen «{nombre.strip()}»: {', '.join(distintos[:8])}. Escriba el nombre completo")
+    if parecidos:
+        reales = [n for n in parecidos if n["fuente_coord"] != "estimada_vecinos"]
+        return min(reales or parecidos, key=lambda n: n["distancia_m"])
+    nombres = {_clave(n["nombre"]): n["nombre"] for n in nodos}
+    cercanos = difflib.get_close_matches(clave, list(nombres), n=5, cutoff=0.5)
+    sugerencia = f" ¿Quiso decir: {', '.join(nombres[c] for c in cercanos)}?" if cercanos else ""
+    raise SinNodo(f"No se encontró el nodo «{nombre.strip()}» en la red.{sugerencia}")
+
+
+def resolver_nodo(lat: float, lon: float, rules: dict[str, Any], visio_con: Any, nombre: str | None = None,
+                  ) -> tuple[db.Segment, red_fibra_pg.BusquedaVisio]:
+    """(connection point = the node, the Visio search that stands for it). The node is the one called `nombre` when it is given; otherwise the
+    nearest to the client. Raises SinNodo."""
+    if nombre and nombre.strip():
+        nodo = nodo_por_nombre(nombre, lat, lon, visio_con)
+        kmz = None
+    else:
+        nodo = nodo_mas_cercano(lat, lon, visio_con)
+        try:                                          # the KMZ has nodes the diagrams do not (Matagalpa, Jinotega...): the nearest of both
+            kmz = db.find_nearest_nodo(lat, lon)
+        except db.DatabaseError:
+            kmz = None
+            log.warning("The nodes of the KMZ could not be read; only those of the Visio network are considered")
     if kmz is not None and (nodo is None or kmz["distancia_m"] < nodo["distancia_m"]):
         nodo = {**kmz, "id": f"kmz{kmz['id']}", "tipo": "NODO", "propietario": None, "fuente_coord": "kmz", "zona": None, "notas": None}
     if nodo is None:

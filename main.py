@@ -182,6 +182,8 @@ class TicketRequest(BaseModel):
     # Optional: omitted, null or "" all mean "not requested".
     technology: Literal["gpon", "metro"] | None = Field(
         default=None, description="Forces GPON or Metro; otherwise taken from the comment or bandwidth")
+    node_name: str | None = Field(
+        default=None, max_length=200, description="Metro: name of the node the route starts from; omitted, the nearest node is used")
     odf_rack_ports: Literal[12, 24] | None = Field(
         default=None, description="Rack ODF with 12 or 24 couplers instead of the ODF 2 Hilos")
     latitude: float = Field(ge=-90, le=90)
@@ -608,7 +610,7 @@ def _generar_presupuesto_con(req: TicketRequest, visio_con: Any, *, output_dir: 
     # network fills in when the KMZ has nothing near the client. Metro: the nearest NODO.
     if es_metro:
         try:
-            seg, busqueda = metro.resolver_nodo(req.latitude, req.longitude, rules, visio_con)
+            seg, busqueda = metro.resolver_nodo(req.latitude, req.longitude, rules, visio_con, req.node_name)
         except metro.SinNodo as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         desde_visio = True

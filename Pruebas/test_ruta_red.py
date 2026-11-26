@@ -113,3 +113,45 @@ def test_metro_without_nodes_anywhere_raises(monkeypatch):
     monkeypatch.setattr(metro, "_filas_nodos", lambda con: [])
     with pytest.raises(metro.SinNodo):
         metro.resolver_nodo(12.926, -85.918, {}, None)
+
+
+@pytest.mark.parametrize("escrito, esperado", [("matagalpa", "NODO MATAGALPA"), ("  Nodo   Matagalpa ", "NODO MATAGALPA"), ("MATAGALPA", "NODO MATAGALPA"),
+                                               ("jinotega", "NODO JINOTEGA")])
+def test_metro_finds_a_node_by_its_name_without_caring_for_case_accents_or_the_word_nodo(monkeypatch, escrito, esperado):
+    import db
+    import metro
+    monkeypatch.setattr(db, "find_nodos_kmz", lambda: [{"id": 5, "nombre": "NODO JINOTEGA", "tipo": "nodo", "lat": 13.09, "lon": -86.0}])
+    monkeypatch.setattr(metro, "_filas_nodos", lambda con: [(7, "NODO MATAGALPA", None, 12.92, -85.92, "visio", None, None)])
+    seg, busqueda = metro.resolver_nodo(12.926, -85.918, {}, None, escrito)
+    assert seg.nombre == esperado and busqueda.nodo["nombre"] == esperado
+
+
+def test_metro_with_two_nodes_of_the_same_name_takes_the_one_nearest_to_the_client(monkeypatch):
+    import db
+    import metro
+    monkeypatch.setattr(db, "find_nodos_kmz", lambda: [{"id": 5, "nombre": "NODO ESTELI", "tipo": "nodo", "lat": 13.0, "lon": -86.3}])
+    monkeypatch.setattr(metro, "_filas_nodos", lambda con: [(7, "NODO ESTELI", None, 13.2, -86.35, "visio", None, None)])
+    seg, _ = metro.resolver_nodo(13.01, -86.3, {}, None, "esteli")
+    assert seg.id == "visio:kmz5"
+
+
+def test_metro_with_a_name_that_does_not_exist_raises_with_suggestions(monkeypatch):
+    import db
+    import metro
+    monkeypatch.setattr(db, "find_nodos_kmz", lambda: [])
+    monkeypatch.setattr(metro, "_filas_nodos", lambda con: [(7, "NODO MATAGALPA", None, 12.92, -85.92, "visio", None, None)])
+    with pytest.raises(metro.SinNodo, match="Matagalpa"):
+        metro.resolver_nodo(12.926, -85.918, {}, None, "Matagalpaa")
+    with pytest.raises(metro.SinNodo, match="Escriba"):
+        metro.nodo_por_nombre("   ", 0, 0, None)
+    assert metro.nombres_de_nodos(None) == ["NODO MATAGALPA"]
+
+
+def test_metro_with_a_fragment_that_fits_several_nodes_asks_for_the_full_name(monkeypatch):
+    import db
+    import metro
+    monkeypatch.setattr(db, "find_nodos_kmz", lambda: [])
+    monkeypatch.setattr(metro, "_filas_nodos", lambda con: [(1, "NODO LEON NORTE", None, 12.4, -86.9, "visio", None, None), (2, "NODO LEON SUR", None, 12.3, -86.9, "visio", None, None)])
+    with pytest.raises(metro.SinNodo, match="LEON NORTE.*LEON SUR"):
+        metro.resolver_nodo(12.35, -86.9, {}, None, "leon")
+    assert metro.resolver_nodo(12.35, -86.9, {}, None, "leon sur")[0].nombre == "NODO LEON SUR"

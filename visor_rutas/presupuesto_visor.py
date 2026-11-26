@@ -354,6 +354,9 @@ def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None, d
     tecnologia = _normalized(campos.get("technology"))
     if tecnologia not in TECNOLOGIAS:
         errores["technology"] = "Elija Automático, GPON o Metro"
+    nodo = _texto(campos.get("node_name"))
+    if tecnologia == "metro" and not nodo:
+        errores["node_name"] = "Escriba el nombre del nodo desde el que sale la ruta"
     odf = _normalized(campos.get("odf_rack_ports"))
     if odf not in ("", "ninguno", "12", "24"):
         errores["odf_rack_ports"] = "Elija Ninguno, 12 o 24"
@@ -369,6 +372,7 @@ def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None, d
         "comment_edits": campos.get("comment_edits") or ({k: v for k, v in (("plan", _texto(campos.get("service_type"))), ("bandwidth", _texto(campos.get("bandwidth")))) if v} or None
                                                          if desde_formulario else None),
         "technology": TECNOLOGIAS.get(tecnologia),
+        "node_name": nodo or None,
         "odf_rack_ports": int(odf) if odf in ("12", "24") else None,
         "latitude": lat if lat is not None else 0.0,
         "longitude": lon if lon is not None else 0.0,

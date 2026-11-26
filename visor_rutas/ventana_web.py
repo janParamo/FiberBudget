@@ -42,6 +42,7 @@ try:   # local mode: the service code, its .env and databases (not in the remote
 
     import pdf_export
     import recalc
+    import metro
     import red_fibra_pg
     from config import get_settings
     from mapa_ruta import DROP_MIN_M, IMAGERY_URL, LABELS_URL
@@ -808,6 +809,17 @@ class Api:
         except Exception as exc:
             log.exception("Visor web: budget failed")
             return {"ok": False, "error": f"Error inesperado ({type(exc).__name__}): {exc}. Detalle en logs/visor.log"}
+
+    def nodos_lista(self) -> dict[str, Any]:
+        """The names of the nodes of the network (Visio and KMZ), to suggest them in the «Nodo de la ruta» field of the Metro budget."""
+        if self._modo == "remoto":
+            return {"ok": True, "nodos": []}                  # the server resolves the name; the list is only a help
+        try:
+            with self._lock:
+                return {"ok": True, "nodos": metro.nombres_de_nodos(self._conexion_visio())}
+        except Exception as exc:                             # noqa: BLE001 - the list is optional
+            log.warning("Visor web: node names not available (%s)", type(exc).__name__)
+            return {"ok": True, "nodos": []}
 
     def generar_presupuesto(self, campos: dict[str, Any], _dueno: dict[str, str] | None = None) -> dict[str, Any]:
         """Full budget from the form, with the same generation as POST /presupuesto, in output/visor. The route also goes to the Mis lugares of
