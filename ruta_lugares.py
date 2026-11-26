@@ -24,7 +24,7 @@ def _solicitud(req: Any) -> dict[str, Any]:
         return defecto if valor is None else valor
     return {"ticket_id": campo("ticket_id"), "client_name": campo("client_name"), "client_code": campo("client_code"), "sales_exec": campo("sales_exec"),
             "contact_name": campo("contact_name"), "contact_phone": campo("contact_phone"), "raw_comment": campo("raw_comment"), "comment_edits": campo("comment_edits", None) or None,
-            "technology": campo("technology"), "odf_rack_ports": str(campo("odf_rack_ports")), "service_type": campo("service_type"), "medium": campo("medium"),
+            "technology": campo("technology"), "node_name": campo("node_name"), "odf_rack_ports": str(campo("odf_rack_ports")), "service_type": campo("service_type"), "medium": campo("medium"),
             "bandwidth": campo("bandwidth"), "coordenada": f"{campo('latitude', 0.0)}, {campo('longitude', 0.0)}"}
 
 

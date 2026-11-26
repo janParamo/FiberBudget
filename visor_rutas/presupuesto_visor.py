@@ -355,7 +355,7 @@ def construir_solicitud(campos: dict[str, Any], ahora: datetime | None = None, d
     if tecnologia not in TECNOLOGIAS:
         errores["technology"] = "Elija Automático, GPON o Metro"
     nodo = _texto(campos.get("node_name"))
-    if tecnologia == "metro" and not nodo:
+    if tecnologia == "metro" and not nodo and "node_name" in campos:       # asked by the form; a saved budget (route edited in Mis lugares) made before this field has none
         errores["node_name"] = "Escriba el nombre del nodo desde el que sale la ruta"
     odf = _normalized(campos.get("odf_rack_ports"))
     if odf not in ("", "ninguno", "12", "24"):

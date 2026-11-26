@@ -235,7 +235,18 @@ def test_the_metro_form_asks_for_the_node_and_the_others_do_not():
     base = {"coordenada": "12.13, -86.25", "client_name": "Cliente", "client_code": "C1", "sales_exec": "Ana", "contact_phone": "8888", "service_type": "Residencial",
             "medium": "FO", "bandwidth": "10 Mbps", "raw_comment": ""}
     with pytest.raises(pv.ErrorFormulario) as exc:
-        pv.construir_solicitud({**base, "technology": "metro"})
+        pv.construir_solicitud({**base, "technology": "metro", "node_name": ""})                # the form always sends the field
     assert "node_name" in exc.value.errores
     assert pv.construir_solicitud({**base, "technology": "metro", "node_name": " Nodo Granada "}).node_name == "Nodo Granada"
     assert pv.construir_solicitud({**base, "technology": "gpon"}).node_name is None
+
+
+def test_a_saved_metro_budget_can_be_made_again_with_its_node_or_without_one_if_it_has_none():
+    from visor_rutas import presupuesto_visor as pv
+    import ruta_lugares
+    base = {"coordenada": "12.13, -86.25", "client_name": "Cliente", "client_code": "C1", "sales_exec": "Ana", "contact_phone": "8888", "service_type": "Residencial",
+            "medium": "FO", "bandwidth": "10 Mbps", "raw_comment": "", "technology": "metro"}
+    assert pv.construir_solicitud(base).node_name is None                     # old saved budget: no node_name key, nearest node as before
+    guardada = ruta_lugares._solicitud(pv.construir_solicitud({**base, "node_name": "Nodo Uno"}))
+    assert guardada["node_name"] == "Nodo Uno"
+    assert pv.construir_solicitud({**base, **guardada}).node_name == "Nodo Uno"   # it is made again from the same node
