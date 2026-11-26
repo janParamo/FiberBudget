@@ -38,6 +38,8 @@ POLE_COLOR, NEW_POLE_COLOR = (255, 255, 255), (154, 154, 154)       # existing p
 PIN_R = 20                  # radius of the head of the pins (px of the 1000 px picture)
 DROP_COLOR = (0, 230, 90)      # last street point of the route -> the client's coordinate: a dotted green line, as the viewer's acometida
 DROP_DASH, DROP_GAP = 18, 14   # px of line / px of gap
+POLES_HIDE_ROUTE_M = 1000.0     # on a route this long the poles are not drawn: they would cover the route
+POLES_HIDE_COUNT = 80          # nor when there are this many of them
 DROP_MIN_M = 1.0            # closer than this the route already reaches the client
 HALO, OUTLINE = (255, 255, 255), (0, 0, 0)
 
@@ -163,11 +165,14 @@ def generar_mapa_ruta(
     labels_url: str | None = None,
     timeout_s: float = 10,
     max_zoom: int = MAX_ZOOM,
+    ocultar_postes_desde_m: float | None = POLES_HIDE_ROUTE_M,
+    ocultar_postes_desde_cantidad: int | None = POLES_HIDE_COUNT,
 ) -> Path | None:
     """Draw the route and save the PNG; None (logged) when tiles cannot be downloaded.
 
     The picture of the budget: satellite imagery, the route in yellow, a green pin at the connection mufa (with its name), a yellow pin at the client (with the
-    coordinate), white dots for the poles that already stand and grey dots for the new ones. No legend, no other mufas (`alternativas` is kept for the callers
+    coordinate), white dots for the poles that already stand and grey dots for the new ones (not drawn on a long route, or with many poles: they would cover it;
+    `ocultar_postes_desde_m` / `ocultar_postes_desde_cantidad`, None = always). No legend, no other mufas (`alternativas` is kept for the callers
     and ignored). origen / cliente: {"nombre", "lat", "lon"}. The imagery URL defaults to IMAGERY_URL (read at call time); street labels only if `labels_url` is given.
     """
     imagery_url = imagery_url or IMAGERY_URL
@@ -217,10 +222,15 @@ def generar_mapa_ruta(
             _dashed(draw, drop[0], drop[1], ROUTE_EDGE, 9)
             _dashed(draw, drop[0], drop[1], DROP_COLOR, 6)
 
-        for pole in postes_nuevos:                      # grey: new poles to install
-            _dot(draw, *px(pole), NEW_POLE_COLOR)
-        for pole in postes:                             # white: poles that already stand
-            _dot(draw, *px(pole), POLE_COLOR)
+        largo_m = distancia_ruta_m if distancia_ruta_m is not None else sum(_distance_m(a, b) for a, b in zip(route, route[1:]))
+        muchos = len(postes) + len(postes_nuevos)
+        dibujar_postes = not ((ocultar_postes_desde_m is not None and largo_m >= ocultar_postes_desde_m)
+                              or (ocultar_postes_desde_cantidad is not None and muchos >= ocultar_postes_desde_cantidad))
+        if dibujar_postes:
+            for pole in postes_nuevos:                  # grey: new poles to install
+                _dot(draw, *px(pole), NEW_POLE_COLOR)
+            for pole in postes:                         # white: poles that already stand
+                _dot(draw, *px(pole), POLE_COLOR)
         mx, my = px((origen["lat"], origen["lon"]))
         cx, cy = px(client_point)
         _pin(draw, mx, my, PIN_R, ORIGIN_COLOR)

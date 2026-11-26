@@ -294,6 +294,8 @@ route_map:
   tile_timeout_s: 10
   max_zoom: 19          # closest zoom; where Esri has no zoom-19 imagery it falls back to 18
   same_point_m: 15      # nearby network nodes closer than this to the connection point are not drawn
+  hide_poles_over_m: 1000      # on a route this long (m) the poles are not drawn, so the route can be seen (null: always draw them)
+  hide_poles_over_count: 80    # nor when the route has this many poles or more (null: no limit)
 
 # Desktop route viewer (visor_rutas) only: the "Presupuesto aproximado" made right after a route
 # is drawn, from the coordinate alone. It uses the same budget generation as POST /presupuesto

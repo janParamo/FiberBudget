@@ -526,6 +526,8 @@ def _route_map(req: TicketRequest, seg: db.Segment, route: routing.Route, busque
         distancia_ruta_m=route.distance_m,
         timeout_s=float(config.get("tile_timeout_s", 10)),
         max_zoom=int(config.get("max_zoom", mapa_ruta.MAX_ZOOM)),
+        ocultar_postes_desde_m=config.get("hide_poles_over_m", mapa_ruta.POLES_HIDE_ROUTE_M),
+        ocultar_postes_desde_cantidad=config.get("hide_poles_over_count", mapa_ruta.POLES_HIDE_COUNT),
     )
     if png is not None:
         _guardar_ruta(png, req, output_dir)

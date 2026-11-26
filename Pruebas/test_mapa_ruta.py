@@ -133,3 +133,21 @@ def test_picture_joins_the_real_template_drawing_without_losing_its_logos(tmp_pa
     assert drawing.index("Mapa ruta recomendada") < min(drawing.index(n) for n in ("Imagen 8", "Imagen 9"))
     workbook = load_workbook(copy)
     assert len(workbook["Ruta proyectada"]._images) == len(load_workbook(REAL_TEMPLATE)["Ruta proyectada"]._images) + 1     # the template's pictures + the map
+
+
+def _puntos_blancos(imagen: Path) -> int:
+    """How many pixels are the white of an existing pole (the fake tiles are green, the route yellow)."""
+    with Image.open(imagen) as im:
+        return sum(1 for p in im.convert("RGB").getdata() if p == mapa_ruta.POLE_COLOR)
+
+
+@pytest.mark.parametrize("largo_m, postes, se_dibujan", [(95.0, 1, True), (1500.0, 1, False), (95.0, 120, False)])
+def test_poles_are_not_drawn_on_a_long_route_or_with_many_poles(tmp_path, monkeypatch, largo_m, postes, se_dibujan):
+    monkeypatch.setattr(mapa_ruta._session, "get", lambda url, **kw: _FakeResponse(200, _tile_bytes()))
+    lista = [(12.1535 + i * 1e-5, -86.2637) for i in range(postes)]
+    base = _puntos_blancos(mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [], False, tmp_path / "base.png", postes=[], distancia_ruta_m=largo_m))   # the pins and labels have white too
+    out = mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [], False, tmp_path / "p.png", postes=lista, distancia_ruta_m=largo_m)
+    assert (_puntos_blancos(out) > base) is se_dibujan
+    always = mapa_ruta.generar_mapa_ruta(ROUTE, ORIGEN, CLIENTE, [], False, tmp_path / "q.png", postes=lista, distancia_ruta_m=largo_m,
+                                         ocultar_postes_desde_m=None, ocultar_postes_desde_cantidad=None)
+    assert _puntos_blancos(always) > base                   # null: they are always drawn
