@@ -73,7 +73,7 @@ def _call_api(params: dict) -> dict:
     return data
 
 
-POR_DEFECTO = {"enabled": True, "detour_factor": 2.0, "min_extra_m": 150, "walking_gain": 0.85, "direct_max_m": 150, "direct_detour_factor": 3.0}
+POR_DEFECTO = {"enabled": True, "always_walking": True, "detour_factor": 2.0, "min_extra_m": 150, "walking_gain": 0.85, "direct_max_m": 150, "direct_detour_factor": 3.0}
 
 
 @lru_cache(maxsize=4)
@@ -105,16 +105,27 @@ def calibrar(ruta: Route, origin: tuple[float, float], destination: tuple[float,
     a client on a footpath), so a client 40 m away can come back as 700 m. When the route is longer than `detour_factor` x the straight line
     (and `min_extra_m` more), the WALKING route is asked (paths and footways) and used if it is clearly shorter (`walking_gain`); if the client is
     still close (`direct_max_m`) and the route is `direct_detour_factor` x the straight line, the straight line is used (a drop across the block).
+    With `always_walking` (the default) the walking route is asked EVERY time and the shorter of the two is used, whatever the detour; the warning is
+    given only when the walking route saves a real amount (50 m or 10 %).
     The reason goes in `aviso`. `caminando(origin, destination)` returns the walking Route or raises (a failure leaves the driving route)."""
     cfg = cfg or calibracion()
     recta = _recta_m(origin, destination)
-    if not cfg.get("enabled", True) or ruta.distance_m <= cfg["detour_factor"] * recta + cfg["min_extra_m"]:
+    if not cfg.get("enabled", True):
+        return ruta
+    siempre = bool(cfg.get("always_walking", True))
+    if not siempre and ruta.distance_m <= cfg["detour_factor"] * recta + cfg["min_extra_m"]:
         return ruta
     mejor = ruta
     if caminando is not None:
         try:
             a_pie = caminando(origin, destination)
-            if a_pie.distance_m < ruta.distance_m * cfg["walking_gain"]:
+            if siempre and a_pie.distance_m < ruta.distance_m:
+                ahorro = ruta.distance_m - a_pie.distance_m
+                avisar = ahorro >= max(50.0, 0.10 * ruta.distance_m)
+                mejor = Route(a_pie.distance_m, a_pie.duration_s, a_pie.points, "walking",
+                              (f"Ruta por calles de Google (en auto) de {ruta.distance_m:.0f} m; se usó el camino a pie ({a_pie.distance_m:.0f} m, "
+                               f"{ahorro:.0f} m menos): validar el trazado") if avisar else None)
+            elif not siempre and a_pie.distance_m < ruta.distance_m * cfg["walking_gain"]:
                 mejor = Route(a_pie.distance_m, a_pie.duration_s, a_pie.points, "walking",
                               f"Ruta por calles de Google (en auto) de {ruta.distance_m:.0f} m para {recta:.0f} m en línea recta; se usó el camino a pie "
                               f"({a_pie.distance_m:.0f} m): validar el trazado")

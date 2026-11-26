@@ -540,6 +540,7 @@ route_guidance:
 # si el cliente está cerca (direct_max_m) y la ruta sigue siendo direct_detour_factor veces la recta, se usa la línea recta. Se avisa en el resultado.
 route_calibration:
   enabled: true
+  always_walking: true    # ask the walking route every time and use the shorter one (false: only when the driving route is a big detour, with the values below)
   detour_factor: 2.0
   min_extra_m: 150
   walking_gain: 0.85
